@@ -35,6 +35,7 @@
       <jobNames>
         <comparator class="hudson.util.CaseInsensitiveComparator"/>
         <string>pic-sure-db-migration-base-image</string>
+        <string>pic-sure-db-mysql-database</string>
       </jobNames>
       <jobFilters/>
       <columns>
