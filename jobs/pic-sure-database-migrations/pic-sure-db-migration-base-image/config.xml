@@ -1,0 +1,63 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job@2.35">
+  <actions>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@1.3.9"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@1.3.9">
+      <jobProperties/>
+      <triggers/>
+      <parameters/>
+      <options/>
+    </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
+  </actions>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties/>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.74">
+    <script>pipeline {
+ 
+  agent any 
+  
+  stages { 
+    stage(&apos;Checkout code&apos;){ 
+        steps {
+            sh  &apos;git clone https://github.com/hms-dbmi/pic-sure-db-migrations.git&apos;
+        } 
+    }  
+   
+    
+    stage(&apos;Build Base Docker Image&apos;){ 
+        steps { 
+            dir(&apos;pic-sure-db-migrations/schema-migrations/docker/baseimage&apos;) {  
+                sh &quot;docker build -f DockerFile -t dbmi/pic-sure-db-migrations:base_image .&quot; 
+            } 
+        } 
+    }
+    
+    stage(&apos;Push Base Docker Image to Docker Hub&apos;){ 
+        
+        environment {
+            DOCKER_HUB_CREDENTIALS = credentials(&apos;DOCKER_HUB_CREDENTIALS&apos;)
+        }
+  
+
+        steps {  
+            
+            sh &quot;docker login -u $DOCKER_HUB_CREDENTIALS_USR -p $DOCKER_HUB_CREDENTIALS_PSW&quot;
+            sh &quot;docker push dbmi/pic-sure-db-migrations:base_image&quot;  
+        } 
+    }     
+    
+    stage(&apos;Clean up&apos;){ 
+        steps {  
+            cleanWs()
+        } 
+    }      
+    
+  }
+  
+}</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>
