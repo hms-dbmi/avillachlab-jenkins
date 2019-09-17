@@ -35,9 +35,12 @@
       <jobNames>
         <comparator class="hudson.util.CaseInsensitiveComparator"/>
         <string>pic-sure-db-migration-authschema-image</string>
+        <string>pic-sure-db-migration-authschema-orchestrator</string>
         <string>pic-sure-db-migration-base-image</string>
         <string>pic-sure-db-migration-irctschema-image</string>
+        <string>pic-sure-db-migration-irctschema-orchestrator</string>
         <string>pic-sure-db-migration-picsureschema-image</string>
+        <string>pic-sure-db-migration-picsureschema-orchestrator</string>
         <string>pic-sure-db-mysql-database</string>
       </jobNames>
       <jobFilters/>
