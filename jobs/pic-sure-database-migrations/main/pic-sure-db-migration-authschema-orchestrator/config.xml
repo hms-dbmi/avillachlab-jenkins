@@ -72,6 +72,20 @@
 			&apos;&apos;&apos; 
 
         } 
+    }    
+    
+    
+    stage(&apos;Clean up&apos;){ 
+        steps {  
+        	 sh &apos;&apos;&apos;
+        	 	CONTAINER_NAME=&quot;authdb_schema_migrations_base_container&quot;
+				CONTAINER_FOUND=&quot;$(docker ps --all --quiet --filter=name=&quot;$CONTAINER_NAME&quot;)&quot;
+				if [ -n &quot;$CONTAINER_FOUND&quot; ]; then
+  					docker stop $CONTAINER_FOUND &amp;&amp; docker rm $CONTAINER_FOUND
+				fi 
+			&apos;&apos;&apos; 
+
+        } 
     }        
  
      
