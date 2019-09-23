@@ -25,19 +25,19 @@ write_files:
     path: /home/centos/jenkins/docker-compose-install-plugins.yml
     permissions: '0644'
   - content: |
-      ${base64encode(file("../jenkins-configuration/plugins.txt"))}
+      ${base64encode(file("../jenkins-config/plugins.txt"))}
     encoding: b64
     owner: root:root
     path: /opt/local/jenkins_home/plugins.txt
     permissions: '0644'
   - content: |
-      ${base64encode(file("../jenkins-configuration/config.xml"))}
+      ${base64encode(file("../jenkins-config/config.xml"))}
     encoding: b64
     owner: root:root
     path: /opt/local/jenkins_home/config.xml
     permissions: '0644'
   - content: |
-      ${filebase64("../jenkins-configuration/jobs.tar.gz")}
+      ${filebase64("../jenkins-config/jobs.tar.gz")}
     encoding: b64
     owner: root:root
     path: /opt/local/jenkins_home/jobs.tar.gz
