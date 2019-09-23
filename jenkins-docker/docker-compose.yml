@@ -1,0 +1,15 @@
+version: '3.1'
+services:
+  jenkins:
+    container_name: jenkins
+    restart: always
+    image: avillach-lab-dev-jenkins
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    ports:
+        - '80:8080'
+    volumes:
+        - /var/run/docker.sock:/var/run/docker.sock
+        - /opt/local/jenkins_home:/var/jenkins_home
+

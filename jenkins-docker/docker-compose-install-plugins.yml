@@ -1,0 +1,17 @@
+version: '3.1'
+services:
+  jenkins-install-plugins:
+    container_name: jenkins-install-plugins
+    image: avillach-lab-dev-jenkins
+    user: root
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: bash -c "/usr/local/bin/install-plugins.sh < /usr/share/jenkins/ref/plugins.txt"
+    ports:
+        - '80:8080'
+    volumes:
+        - /var/run/docker.sock:/var/run/docker.sock
+        - /opt/local/jenkins_home:/var/jenkins_home
+        - /opt/local/jenkins_home/plugins:/usr/share/jenkins/ref/plugins
+        - /opt/local/jenkins_home/plugins.txt:/usr/share/jenkins/ref/plugins.txt

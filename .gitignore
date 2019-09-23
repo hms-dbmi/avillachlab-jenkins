@@ -1,1 +1,3 @@
 .project
+terraform.tfstate.backup
+terraform.tfstate
