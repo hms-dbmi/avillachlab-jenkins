@@ -7,7 +7,6 @@ services:
     build: 
       context: .
       dockerfile: Dockerfile
-    entrypoint: bash -c "/usr/local/bin/install-plugins.sh < /usr/share/jenkins/ref/plugins.txt"
     ports:
         - '80:8080'
     volumes:
