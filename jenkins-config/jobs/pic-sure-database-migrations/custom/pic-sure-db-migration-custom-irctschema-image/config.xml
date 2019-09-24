@@ -48,12 +48,12 @@
         steps { 
         
         	 sh &apos;&apos;&apos;
-        	 	CONTAINER_NAME=&quot;irctdb_schema_migrations_base_container&quot;
+        	 	CONTAINER_NAME=&quot;custom_irct_image_container&quot;
 				CONTAINER_FOUND=&quot;$(docker ps --all --quiet --filter=name=&quot;$CONTAINER_NAME&quot;)&quot;
 				if [ -n &quot;$CONTAINER_FOUND&quot; ]; then
   					docker stop $CONTAINER_FOUND &amp;&amp; docker rm $CONTAINER_FOUND
 				fi			
-				docker run --name irctdb_schema_migrations_base_container -d dbmi/pic-sure-db-migrations:base_image		 
+				docker run --name custom_irct_image_container -d dbmi/pic-sure-db-migrations:base_image		 
 			&apos;&apos;&apos; 
 			
             sleep(time:15,unit:&quot;SECONDS&quot;)
@@ -71,14 +71,14 @@
         
         steps { 
         
-			sh &quot;docker exec -i irctdb_schema_migrations_base_container bash -c \&quot;/picsure-db-migrations/scripts/custom/irct/get-irct-custom-schema-from-repo.sh https://$GITHUB_CREDENTIALS_USR:$GITHUB_CREDENTIALS_PSW@github.com/hms-dbmi/pic-sure-db-datastage-custom-migrations.git ${env.PIC_SURE_AUTH_BRANCH_NAME}\&quot;&quot;			
+			sh &quot;docker exec -i custom_irct_image_container bash -c \&quot;/picsure-db-migrations/scripts/custom/irct/get-irct-custom-schema-from-repo.sh https://$GITHUB_CREDENTIALS_USR:$GITHUB_CREDENTIALS_PSW@github.com/hms-dbmi/pic-sure-db-datastage-custom-migrations.git ${env.PIC_SURE_AUTH_BRANCH_NAME}\&quot;&quot;			
         
         }
     } 
     
     stage(&apos;Commit changes&apos;){ 
         steps { 
-            sh &quot;docker commit -m &apos;jenkins job commit&apos; irctdb_schema_migrations_base_container dbmi/pic-sure-db-migrations:irctdb_custom_image_v1.0&quot;
+            sh &quot;docker commit -m &apos;jenkins job commit&apos; custom_irct_image_container dbmi/pic-sure-db-migrations:irctdb_custom_image_v1.0&quot;
         } 
     }    
     
@@ -98,7 +98,7 @@
     stage(&apos;Clean up&apos;){ 
         steps {  
         	 sh &apos;&apos;&apos;
-        	 	CONTAINER_NAME=&quot;irctdb_schema_migrations_base_container&quot;
+        	 	CONTAINER_NAME=&quot;custom_irct_image_container&quot;
 				CONTAINER_FOUND=&quot;$(docker ps --all --quiet --filter=name=&quot;$CONTAINER_NAME&quot;)&quot;
 				if [ -n &quot;$CONTAINER_FOUND&quot; ]; then
   					docker stop $CONTAINER_FOUND &amp;&amp; docker rm $CONTAINER_FOUND

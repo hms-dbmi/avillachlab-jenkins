@@ -47,7 +47,7 @@
              
         
         	 sh &apos;&apos;&apos;
-        	 	CONTAINER_NAME=&quot;picsuredb_schema_migrations_base_container&quot;
+        	 	CONTAINER_NAME=&quot;custom_picsure_orchestrator_container&quot;
 				CONTAINER_FOUND=&quot;$(docker ps --all --quiet --filter=name=&quot;$CONTAINER_NAME&quot;)&quot;
 				if [ -n &quot;$CONTAINER_FOUND&quot; ]; then
   					docker stop $CONTAINER_FOUND &amp;&amp; docker rm $CONTAINER_FOUND
@@ -55,7 +55,7 @@
 			   
 			&apos;&apos;&apos; 
 			
-			sh &quot;docker run --name picsuredb_schema_migrations_base_container -v /flyway-configs:/flyway-configs  -d dbmi/pic-sure-db-migrations:${env.DOCKER_IMAGE_RELEASE_TAG}&quot;	 
+			sh &quot;docker run --name custom_picsure_orchestrator_container -v /flyway-configs:/flyway-configs  -d dbmi/pic-sure-db-migrations:${env.DOCKER_IMAGE_RELEASE_TAG}&quot;	 
 			
             sleep(time:15,unit:&quot;SECONDS&quot;)
         } 
@@ -64,7 +64,7 @@
     stage(&apos;Run DB Migration&apos;){ 
         steps {  
         	 sh &apos;&apos;&apos;
-        	 	docker exec -i picsuredb_schema_migrations_base_container bash -c \&quot;/picsure-db-migrations/scripts/custom/picsure/picsure-custom-migration-orchestrator.sh\&quot;
+        	 	docker exec -i custom_picsure_orchestrator_container bash -c \&quot;/picsure-db-migrations/scripts/custom/picsure/picsure-custom-migration-orchestrator.sh\&quot;
 			&apos;&apos;&apos; 
 
         } 
@@ -73,7 +73,7 @@
     stage(&apos;Clean up resources&apos;){ 
         steps {  
         	 sh &apos;&apos;&apos;
-        	 	CONTAINER_NAME=&quot;picsuredb_schema_migrations_base_container&quot;
+        	 	CONTAINER_NAME=&quot;custom_picsure_orchestrator_container&quot;
 				CONTAINER_FOUND=&quot;$(docker ps --all --quiet --filter=name=&quot;$CONTAINER_NAME&quot;)&quot;
 				if [ -n &quot;$CONTAINER_FOUND&quot; ]; then
   					docker stop $CONTAINER_FOUND &amp;&amp; docker rm $CONTAINER_FOUND

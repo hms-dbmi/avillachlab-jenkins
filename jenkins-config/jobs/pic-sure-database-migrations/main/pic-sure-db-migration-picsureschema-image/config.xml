@@ -42,12 +42,12 @@
         steps { 
         
         	 sh &apos;&apos;&apos;
-        	 	CONTAINER_NAME=&quot;picsuredb_schema_migrations_base_container&quot;
+        	 	CONTAINER_NAME=&quot;main_picsure_image_container&quot;
 				CONTAINER_FOUND=&quot;$(docker ps --all --quiet --filter=name=&quot;$CONTAINER_NAME&quot;)&quot;
 				if [ -n &quot;$CONTAINER_FOUND&quot; ]; then
   					docker stop $CONTAINER_FOUND &amp;&amp; docker rm $CONTAINER_FOUND
 				fi			
-				docker run --name picsuredb_schema_migrations_base_container -d dbmi/pic-sure-db-migrations:base_image		 
+				docker run --name main_picsure_image_container -d dbmi/pic-sure-db-migrations:base_image		 
 			&apos;&apos;&apos; 
 			
             sleep(time:15,unit:&quot;SECONDS&quot;)
@@ -56,13 +56,13 @@
 
     stage(&apos;Prepare db changes for pic-sure-auth-microapp in the container&apos;){ 
         steps {  
-        	sh &quot;docker exec -i picsuredb_schema_migrations_base_container bash -c \&quot;/picsure-db-migrations/scripts/main/picsure/get-picsure-schema-from-repo.sh https://github.com/hms-dbmi/pic-sure.git ${env.PIC_SURE_AUTH_BRANCH_NAME}\&quot;&quot; 
+        	sh &quot;docker exec -i main_picsure_image_container bash -c \&quot;/picsure-db-migrations/scripts/main/picsure/get-picsure-schema-from-repo.sh https://github.com/hms-dbmi/pic-sure.git ${env.PIC_SURE_AUTH_BRANCH_NAME}\&quot;&quot; 
         } 
     } 
     
     stage(&apos;Commit changes&apos;){ 
         steps { 
-            sh &quot;docker commit -m &apos;jenkins job commit&apos; picsuredb_schema_migrations_base_container dbmi/pic-sure-db-migrations:picsuredb_image_v1.0&quot;
+            sh &quot;docker commit -m &apos;jenkins job commit&apos; main_picsure_image_container dbmi/pic-sure-db-migrations:picsuredb_image_v1.0&quot;
         } 
     }    
     
@@ -81,7 +81,7 @@
     stage(&apos;Clean up&apos;){ 
         steps {  
         	 sh &apos;&apos;&apos;
-        	 	CONTAINER_NAME=&quot;picsuredb_schema_migrations_base_container&quot;
+        	 	CONTAINER_NAME=&quot;main_picsure_image_container&quot;
 				CONTAINER_FOUND=&quot;$(docker ps --all --quiet --filter=name=&quot;$CONTAINER_NAME&quot;)&quot;
 				if [ -n &quot;$CONTAINER_FOUND&quot; ]; then
   					docker stop $CONTAINER_FOUND &amp;&amp; docker rm $CONTAINER_FOUND
