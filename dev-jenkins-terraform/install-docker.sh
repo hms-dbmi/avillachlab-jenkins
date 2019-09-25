@@ -16,12 +16,6 @@ echo "user-data progress finished docker install enabling docker service"
 sudo systemctl enable docker
 echo "user-data progress finished enabling docker service starting docker"
 sudo service docker start
-cd /opt/local/jenkins_home
-tar -xvzf jobs.tar.gz
-mv jobs/pic-sure-database-migrations/main/* jobs/
-mv jobs/pic-sure-database-migrations/custom/* jobs/
-rm -rf pic-sure-database-migrations
 cd /home/centos/jenkins
-sudo docker-compose -f docker-compose-install-plugins.yml up
 sudo docker-compose up -d
 echo "setup script finished"

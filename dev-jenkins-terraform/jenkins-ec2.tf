@@ -1,49 +1,18 @@
+resource "tls_private_key" "provisioning-key" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+output "provisioning-private-key" {
+  value = tls_private_key.provisioning-key.private_key_pem
+}
+resource "aws_key_pair" "generated_key" {
+  key_name   = "jenkins-provisioning-key"
+  public_key = "${tls_private_key.provisioning-key.public_key_openssh}"
+}
+
 data "template_cloudinit_config" "config" {
   gzip          = true
   base64_encode = true
-
-  part {
-    content_type = "text/cloud-config"
-    content = <<EOF
-write_files:
-  - content: |
-      ${base64encode(file("../jenkins-docker/Dockerfile"))}
-    encoding: b64
-    owner: root:root
-    path: /home/centos/jenkins/Dockerfile
-    permissions: '0644'
-  - content: |
-      ${base64encode(file("../jenkins-docker/docker-compose.yml"))}
-    encoding: b64
-    owner: root:root
-    path: /home/centos/jenkins/docker-compose.yml
-    permissions: '0644'
-  - content: |
-      ${base64encode(file("../jenkins-docker/docker-compose-install-plugins.yml"))}
-    encoding: b64
-    owner: root:root
-    path: /home/centos/jenkins/docker-compose-install-plugins.yml
-    permissions: '0644'
-  - content: |
-      ${base64encode(file("../jenkins-config/plugins.txt"))}
-    encoding: b64
-    owner: root:root
-    path: /opt/local/jenkins_home/plugins.txt
-    permissions: '0644'
-  - content: |
-      ${base64encode(file("../jenkins-config/config.xml"))}
-    encoding: b64
-    owner: root:root
-    path: /opt/local/jenkins_home/config.xml
-    permissions: '0644'
-  - content: |
-      ${filebase64("../jenkins-config/jobs.tar.gz")}
-    encoding: b64
-    owner: root:root
-    path: /opt/local/jenkins_home/jobs.tar.gz
-    permissions: '0644'
-EOF
-  }
 
   # user_data
   part {
@@ -57,12 +26,23 @@ resource "aws_instance" "dev-jenkins" {
   ami = "ami-02eac2c0129f6376b"
   instance_type = "m5.xlarge"
   associate_public_ip_address = true
-  key_name = "jps49"
+  key_name = "jenkins-provisioning-key"
 
   root_block_device {
     delete_on_termination = true
     encrypted = true
     volume_size = 50
+  }
+
+  provisioner "file" {
+    source      = "../jenkins-docker"
+    destination = "/home/centos/jenkins"
+    connection {
+      type     = "ssh"
+      user     = "centos"
+      private_key = tls_private_key.provisioning-key.private_key_pem
+      host = self.public_ip
+    }
   }
 
   vpc_security_group_ids = [
