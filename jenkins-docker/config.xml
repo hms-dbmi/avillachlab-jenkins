@@ -79,11 +79,11 @@
         <string>PIC-SURE API Java Build</string>
         <string>PIC-SURE Auth Micro-App Docker Build</string>
         <string>PIC-SURE Auth Micro-App Java Build</string>
+        <string>PIC-SURE Pipeline</string>
         <string>PIC-SURE-HPDS Docker Build</string>
         <string>PIC-SURE-HPDS Java Build</string>
         <string>PIC-SURE-HPDS-UI Docker Build</string>
         <string>PIC-SURE-HPDS-UI-copdgene</string>
-        <string>PIC-SURE Pipeline</string>
       </jobNames>
       <jobFilters/>
       <columns>

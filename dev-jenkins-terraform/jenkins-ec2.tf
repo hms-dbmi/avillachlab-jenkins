@@ -28,6 +28,8 @@ resource "aws_instance" "dev-jenkins" {
   associate_public_ip_address = true
   key_name = "jenkins-provisioning-key"
 
+  iam_instance_profile = aws_iam_instance_profile.jenkins-s3-profile.name
+
   root_block_device {
     delete_on_termination = true
     encrypted = true

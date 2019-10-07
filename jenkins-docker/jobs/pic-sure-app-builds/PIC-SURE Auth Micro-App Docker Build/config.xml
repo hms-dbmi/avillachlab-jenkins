@@ -3,7 +3,18 @@
   <actions/>
   <description></description>
   <keepDependencies>false</keepDependencies>
-  <properties/>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>pipeline_build_id</name>
+          <description></description>
+          <defaultValue>MANUAL_RUN</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
   <scm class="hudson.plugins.git.GitSCM" plugin="git@3.12.1">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
@@ -41,6 +52,7 @@ GIT_COMMIT_SHORT=`echo ${GIT_COMMIT} | cut -c1-7`
 cd pic-sure-auth-services
 docker build -t hms-dbmi/pic-sure-auth-microapp:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
 docker save hms-dbmi/pic-sure-auth-microapp:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-auth-microapp-${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}.tar.gz
+aws s3 --sse=AES256 cp pic-sure-auth-microapp-${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}.tar.gz s3://avillach-datastage-pic-sure-jenkins-dev-builds/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-auth-microapp-${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}.tar.gz
 </command>
     </hudson.tasks.Shell>
   </builders>

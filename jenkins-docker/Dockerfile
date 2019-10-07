@@ -20,6 +20,10 @@ RUN apt-get update
 
 RUN apt-get -y install apt-transport-https
 
+RUN apt-get -y install python3-pip
+
+RUN pip3 install --no-input awscli --upgrade
+
 RUN curl -fsSL https://get.docker.com | sh
 
 RUN docker --version 
