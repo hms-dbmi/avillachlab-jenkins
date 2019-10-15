@@ -8,7 +8,7 @@
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
-        <url>https://github.com/hms-dbmi/pic-sure-auth-microapp.git</url>
+        <url>https://github.com/hms-dbmi/avillachlab-jenkins-dev-release-control.git</url>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
@@ -26,19 +26,10 @@
   <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
   <triggers/>
   <concurrentBuild>false</concurrentBuild>
-  <builders>
-    <hudson.tasks.Maven>
-      <targets>clean install -DskipTests</targets>
-      <mavenName>Maven 3.6.2</mavenName>
-      <usePrivateRepository>false</usePrivateRepository>
-      <settings class="jenkins.mvn.DefaultSettingsProvider"/>
-      <globalSettings class="jenkins.mvn.DefaultGlobalSettingsProvider"/>
-      <injectBuildVariables>false</injectBuildVariables>
-    </hudson.tasks.Maven>
-  </builders>
+  <builders/>
   <publishers>
     <hudson.tasks.ArtifactArchiver>
-      <artifacts>pic-sure-auth-services/target/pic-sure-auth-services.war, pic-sure-auth-services/target/modules/**</artifacts>
+      <artifacts>build-spec.json</artifacts>
       <allowEmptyArchive>false</allowEmptyArchive>
       <onlyIfSuccessful>false</onlyIfSuccessful>
       <fingerprint>false</fingerprint>

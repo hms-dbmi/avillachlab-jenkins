@@ -12,6 +12,12 @@
           <defaultValue>MANUAL_RUN</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>commit_hash</name>
+          <description></description>
+          <defaultValue>*/master</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -19,12 +25,12 @@
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
-        <url>https://github.com/hms-dbmi/pic-sure-auth-microapp.git</url>
+        <url>https://github.com/hms-dbmi/pic-sure-hpds.git</url>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
       <hudson.plugins.git.BranchSpec>
-        <name>*/master</name>
+        <name>${commit_hash}</name>
       </hudson.plugins.git.BranchSpec>
     </branches>
     <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
@@ -38,21 +44,28 @@
   <triggers/>
   <concurrentBuild>false</concurrentBuild>
   <builders>
-    <hudson.plugins.copyartifact.CopyArtifact plugin="copyartifact@1.42.1">
-      <project>PIC-SURE Auth Micro-App Java Build</project>
-      <filter>pic-sure-auth-services/target/pic-sure-auth-services.war, pic-sure-auth-services/target/modules/**</filter>
-      <target></target>
-      <excludes></excludes>
-      <selector class="hudson.plugins.copyartifact.StatusBuildSelector"/>
-      <doNotFingerprintArtifacts>false</doNotFingerprintArtifacts>
-    </hudson.plugins.copyartifact.CopyArtifact>
+    <hudson.tasks.Maven>
+      <targets>clean install -DskipTests</targets>
+      <mavenName>Maven 3.6.2</mavenName>
+      <usePrivateRepository>false</usePrivateRepository>
+      <settings class="jenkins.mvn.DefaultSettingsProvider"/>
+      <globalSettings class="jenkins.mvn.DefaultGlobalSettingsProvider"/>
+      <injectBuildVariables>false</injectBuildVariables>
+    </hudson.tasks.Maven>
     <hudson.tasks.Shell>
       <command>GIT_BRANCH_SHORT=`echo ${GIT_BRANCH} | cut -d &quot;/&quot; -f 2` 
 GIT_COMMIT_SHORT=`echo ${GIT_COMMIT} | cut -c1-7`
-cd pic-sure-auth-services
-docker build -t hms-dbmi/pic-sure-auth-microapp:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
-docker save hms-dbmi/pic-sure-auth-microapp:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-auth-microapp-${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}.tar.gz
-aws s3 --sse=AES256 cp pic-sure-auth-microapp-${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}.tar.gz s3://avillach-datastage-pic-sure-jenkins-dev-builds/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-auth-microapp-${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}.tar.gz
+cd docker/pic-sure-hpds
+docker build -t hms-dbmi/pic-sure-hpds:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
+cd ../pic-sure-hpds-etl
+docker build -t hms-dbmi/pic-sure-hpds-etl:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
+cd ../../
+mkdir -p docker_image_output
+cd docker_image_output
+docker save hms-dbmi/pic-sure-hpds:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-hpds.tar.gz
+aws s3 --sse=AES256 cp pic-sure-hpds.tar.gz s3://avillach-datastage-pic-sure-jenkins-dev-builds-2/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds.tar.gz
+docker save hms-dbmi/pic-sure-hpds-etl:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-hpds-etl.tar.gz
+aws s3 --sse=AES256 cp pic-sure-hpds-etl.tar.gz s3://avillach-datastage-pic-sure-jenkins-dev-builds-2/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds-etl.tar.gz
 </command>
     </hudson.tasks.Shell>
   </builders>

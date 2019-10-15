@@ -50,25 +50,12 @@
       <command>GIT_BRANCH_SHORT=`echo ${GIT_BRANCH} | cut -d &quot;/&quot; -f 2` 
 GIT_COMMIT_SHORT=`echo ${GIT_COMMIT} | cut -c1-7`
 cd pic-sure-hpds-ui
-docker build -t hms-dbmi/pic-sure-hpds-ui:$GIT_BRANCH_SHORT_$GIT_COMMIT_SHORT .
-cd ../
-mkdir -p docker_image_output
-cd docker_image_output
-docker save hms-dbmi/pic-sure-hpds-ui:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-hpds-ui_${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}.tar.gz
-aws s3 --sse=AES256 cp pic-sure-hpds-ui_${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}.tar.gz s3://avillach-datastage-pic-sure-jenkins-dev-builds/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds-ui_${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}.tar.gz
+docker build -t hms-dbmi/pic-sure-hpds-ui:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
+docker save hms-dbmi/pic-sure-hpds-ui:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-hpds-ui.tar.gz
+aws s3 --sse=AES256 cp pic-sure-hpds-ui.tar.gz s3://avillach-datastage-pic-sure-jenkins-dev-builds-2/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds-ui.tar.gz
 
 </command>
     </hudson.tasks.Shell>
   </builders>
-  <publishers>
-    <hudson.tasks.ArtifactArchiver>
-      <artifacts>docker_image_output/*.tar.gz</artifacts>
-      <allowEmptyArchive>false</allowEmptyArchive>
-      <onlyIfSuccessful>false</onlyIfSuccessful>
-      <fingerprint>false</fingerprint>
-      <defaultExcludes>true</defaultExcludes>
-      <caseSensitive>true</caseSensitive>
-    </hudson.tasks.ArtifactArchiver>
-  </publishers>
   <buildWrappers/>
 </project>

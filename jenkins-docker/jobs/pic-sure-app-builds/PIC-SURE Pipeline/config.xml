@@ -16,19 +16,13 @@
     <script>pipeline {
     agent any 
     stages {
-        stage(&apos;Initial Deps&apos;) { 
+        stage(&apos;PIC-SURE API, PIC-SURE-HPDS UI&apos;) { 
             steps {
                 parallel (
-                    picsureapijava:{
+                    picsureapi:{
                         script {
-                            def result = build job: &apos;PIC-SURE API Java Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: env.BUILD_NUMBER]]
+                            def result = build job: &apos;PIC-SURE-API Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: env.BUILD_NUMBER]]
                             env.PSAJ_NUM = result.number
-                        }
-                    },
-                    picsureauthjava:{
-                        script{
-                            def result = build job: &apos;PIC-SURE Auth Micro-App Java Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: env.BUILD_NUMBER]]
-                            env.PSAMAJ_NUM = result.number
                         }
                     },
                     picsurehpdsui:{
@@ -40,40 +34,22 @@
                 )
             }
         }
-        stage(&apos;Intermediate&apos;) { 
+        stage(&apos;PSAMA, DataSTAGE UI and PIC-SURE HPDS&apos;){
             steps {
                 parallel (
-                    picsurehpdsjava:{
+                    picsurehpds:{
                         script {
-                            def result = build job: &apos;PIC-SURE-HPDS Java Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: env.BUILD_NUMBER]]
-                            env.PSHJ_NUM = result.number
-                        }
-                    },
-                    picsureapidocker:{
-                        script {
-                            def result = build job: &apos;PIC-SURE API Docker Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: env.BUILD_NUMBER]]
-                            env.PSAD_NUM = result.number
-                        }
-                    }
-                )
-            }
-        }
-        stage(&apos;Final Builds&apos;){
-            steps {
-                parallel (
-                    picsureauthdocker:{
-                        script {
-                            def result = build job: &apos;PIC-SURE Auth Micro-App Docker Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: env.BUILD_NUMBER]]
-                            env.PSAMAD_NUM = result.number
-                        }
-                    },
-                    picsurehpdsdocker:{
-                        script {
-                            def result = build job: &apos;PIC-SURE-HPDS Docker Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: env.BUILD_NUMBER]]
+                            def result = build job: &apos;PIC-SURE-HPDS Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: env.BUILD_NUMBER]]
                             env.PSHD_NUM = result.number
                         }
                     },
-                    picsurecopdgeneui:{
+                    picsureauth:{
+                        script{
+                            def result = build job: &apos;PIC-SURE Auth Micro-App Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: env.BUILD_NUMBER]]
+                            env.PSAMAJ_NUM = result.number
+                        }
+                    },
+                    datastageui:{
                         script {
                             def result = build job: &apos;PIC-SURE-HPDS-UI-copdgene&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: env.BUILD_NUMBER]]
                             env.PSHUC_NUM = result.number

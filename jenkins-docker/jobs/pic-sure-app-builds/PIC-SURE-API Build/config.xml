@@ -38,33 +38,24 @@
   <triggers/>
   <concurrentBuild>false</concurrentBuild>
   <builders>
-    <hudson.plugins.copyartifact.CopyArtifact plugin="copyartifact@1.42.1">
-      <project>PIC-SURE API Java Build</project>
-      <filter>pic-sure-api-war/target/pic-sure-api-war.war,pic-sure-api-war/target/modules/**</filter>
-      <target></target>
-      <excludes></excludes>
-      <selector class="hudson.plugins.copyartifact.StatusBuildSelector"/>
-      <doNotFingerprintArtifacts>false</doNotFingerprintArtifacts>
-    </hudson.plugins.copyartifact.CopyArtifact>
+    <hudson.tasks.Maven>
+      <targets>clean install -DskipTests -Dwildfly.skip=true</targets>
+      <mavenName>Maven 3.6.2</mavenName>
+      <usePrivateRepository>false</usePrivateRepository>
+      <settings class="jenkins.mvn.DefaultSettingsProvider"/>
+      <globalSettings class="jenkins.mvn.DefaultGlobalSettingsProvider"/>
+      <injectBuildVariables>false</injectBuildVariables>
+    </hudson.tasks.Maven>
     <hudson.tasks.Shell>
       <command>GIT_BRANCH_SHORT=`echo ${GIT_BRANCH} | cut -d &quot;/&quot; -f 2` 
 GIT_COMMIT_SHORT=`echo ${GIT_COMMIT} | cut -c1-7`
 cd pic-sure-api-war
 docker build -t hms-dbmi/pic-sure-api:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
-docker save hms-dbmi/pic-sure-api:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-api-${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}.tar.gz
-aws s3 --sse=AES256 cp pic-sure-api-${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}.tar.gz s3://avillach-datastage-pic-sure-jenkins-dev-builds/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-api-${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}.tar.gz
+docker save hms-dbmi/pic-sure-api:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-api.tar.gz
+aws s3 --sse=AES256 cp pic-sure-api.tar.gz s3://avillach-datastage-pic-sure-jenkins-dev-builds-2/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-api.tar.gz
 </command>
     </hudson.tasks.Shell>
   </builders>
-  <publishers>
-    <hudson.tasks.ArtifactArchiver>
-      <artifacts>artifact_s3_url.txt</artifacts>
-      <allowEmptyArchive>false</allowEmptyArchive>
-      <onlyIfSuccessful>false</onlyIfSuccessful>
-      <fingerprint>false</fingerprint>
-      <defaultExcludes>true</defaultExcludes>
-      <caseSensitive>true</caseSensitive>
-    </hudson.tasks.ArtifactArchiver>
-  </publishers>
+  <publishers/>
   <buildWrappers/>
 </project>

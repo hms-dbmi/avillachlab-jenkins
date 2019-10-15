@@ -1,9 +1,9 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <hudson>
   <disabledAdministrativeMonitors/>
-  <version>2.176.3</version>
+  <version>2.190.1</version>
   <installStateName>RUNNING</installStateName>
-  <numExecutors>2</numExecutors>
+  <numExecutors>3</numExecutors>
   <mode>NORMAL</mode>
   <useSecurity>true</useSecurity>
   <authorizationStrategy class="hudson.security.AuthorizationStrategy$Unsecured"/>
@@ -23,6 +23,7 @@
   <viewsTabBar class="hudson.views.DefaultViewsTabBar"/>
   <myViewsTabBar class="hudson.views.DefaultMyViewsTabBar"/>
   <clouds/>
+  <quietPeriod>5</quietPeriod>
   <scmCheckoutRetryCount>0</scmCheckoutRetryCount>
   <views>
     <hudson.model.AllView>
@@ -75,15 +76,13 @@
       <properties class="hudson.model.View$PropertyList"/>
       <jobNames>
         <comparator class="hudson.util.CaseInsensitiveComparator"/>
-        <string>PIC-SURE API Docker Build</string>
-        <string>PIC-SURE API Java Build</string>
-        <string>PIC-SURE Auth Micro-App Docker Build</string>
-        <string>PIC-SURE Auth Micro-App Java Build</string>
+        <string>PIC-SURE Auth Micro-App Build</string>
         <string>PIC-SURE Pipeline</string>
-        <string>PIC-SURE-HPDS Docker Build</string>
-        <string>PIC-SURE-HPDS Java Build</string>
+        <string>PIC-SURE-API Build</string>
+        <string>PIC-SURE-HPDS Build</string>
         <string>PIC-SURE-HPDS-UI Docker Build</string>
         <string>PIC-SURE-HPDS-UI-copdgene</string>
+        <string>Retrieve Build Spec</string>
       </jobNames>
       <jobFilters/>
       <columns>

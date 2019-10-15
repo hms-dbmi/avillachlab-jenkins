@@ -3,7 +3,18 @@
   <actions/>
   <description></description>
   <keepDependencies>false</keepDependencies>
-  <properties/>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>pipeline_build_id</name>
+          <description></description>
+          <defaultValue>MANUAL_RUN</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
   <scm class="hudson.plugins.git.GitSCM" plugin="git@3.12.1">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
@@ -27,35 +38,21 @@
   <triggers/>
   <concurrentBuild>false</concurrentBuild>
   <builders>
-    <hudson.plugins.copyartifact.CopyArtifact plugin="copyartifact@1.42.1">
-      <project>PIC-SURE-HPDS-UI Docker Build</project>
-      <filter>docker_image_output/pic-sure-hpds-ui.tar.gz</filter>
-      <target></target>
-      <excludes></excludes>
-      <selector class="hudson.plugins.copyartifact.StatusBuildSelector"/>
-      <doNotFingerprintArtifacts>false</doNotFingerprintArtifacts>
-    </hudson.plugins.copyartifact.CopyArtifact>
     <hudson.tasks.Shell>
-      <command>docker load -i docker_image_output/pic-sure-hpds-ui.tar.gz
+      <command>aws s3 --sse=AES256 cp s3://avillach-datastage-pic-sure-jenkins-dev-builds-2/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds-ui.tar.gz .
+docker load -i ./pic-sure-hpds-ui.tar.gz
 GIT_BRANCH_SHORT=`echo ${GIT_BRANCH} | cut -d &quot;/&quot; -f 2` 
 GIT_COMMIT_SHORT=`echo ${GIT_COMMIT} | cut -c1-7`
 cd httpd
-docker build -t hms-dbmi/pic-sure-hpds-copdgene-ui:$GIT_BRANCH_SHORT_$GIT_COMMIT_SHORT .
+docker build -t hms-dbmi/pic-sure-hpds-copdgene-ui:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
 cd ../
 mkdir -p docker_image_output
 cd docker_image_output
-docker save hms-dbmi/pic-sure-hpds-copdgene-ui:$GIT_BRANCH_SHORT_$GIT_COMMIT_SHORT | gzip &gt; pic-sure-hpds-copdgene-ui-$GIT_BRANCH_SHORT_$GIT_COMMIT_SHORT.tar.gz</command>
+docker save hms-dbmi/pic-sure-hpds-copdgene-ui:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-hpds-copdgene-ui.tar.gz
+aws s3 --sse=AES256 cp pic-sure-hpds-copdgene-ui.tar.gz s3://avillach-datastage-pic-sure-jenkins-dev-builds-2/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds-copdgene-ui.tar.gz
+</command>
     </hudson.tasks.Shell>
   </builders>
-  <publishers>
-    <hudson.tasks.ArtifactArchiver>
-      <artifacts>docker_image_output/pic-sure-hpds-copdgene-ui-*.tar.gz</artifacts>
-      <allowEmptyArchive>false</allowEmptyArchive>
-      <onlyIfSuccessful>false</onlyIfSuccessful>
-      <fingerprint>false</fingerprint>
-      <defaultExcludes>true</defaultExcludes>
-      <caseSensitive>true</caseSensitive>
-    </hudson.tasks.ArtifactArchiver>
-  </publishers>
+  <publishers/>
   <buildWrappers/>
 </project>
