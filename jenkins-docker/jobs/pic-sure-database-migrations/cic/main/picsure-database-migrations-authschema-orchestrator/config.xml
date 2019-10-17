@@ -40,7 +40,7 @@
     stage(&apos;Copy Image from S3 to Local&apos;){ 
         steps {
             sh &apos;&apos;&apos;
-            	aws s3 cp s3://$S3_BUCKET_NAME/$AUTHSCHEMA_IMAGE_NAME . --profile $S3_PROFILE_NAME 
+            	aws s3 cp s3://$S3_BUCKET_NAME/$AUTHSCHEMA_IMAGE_NAME\&quot;.tar.gz\&quot; . --profile $S3_PROFILE_NAME 
             &apos;&apos;&apos;
         } 
     }
@@ -48,7 +48,7 @@
     stage(&apos;Load Docker Image&apos;){ 
         steps {
             sh &apos;&apos;&apos; 
-            	docker load &lt; $AUTHSCHEMA_IMAGE_NAME
+            	docker load &lt; $AUTHSCHEMA_IMAGE_NAME\&quot;.tar.gz\&quot;
 			&apos;&apos;&apos;
         } 
     }

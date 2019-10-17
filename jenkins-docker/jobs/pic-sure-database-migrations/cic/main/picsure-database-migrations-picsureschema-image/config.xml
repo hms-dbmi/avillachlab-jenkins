@@ -89,7 +89,7 @@
     
     stage(&apos;Push Docker Image to S3&apos;){  
         steps {   
- 			sh &quot;aws s3 --sse=AES256 cp $AUTH_IMAGE_TAG_NAME s3://$S3_BUCKET_NAME/$AUTH_IMAGE_TAG_NAME --profile $S3_PROFILE_NAME&quot; 
+ 			sh &quot;aws s3 --sse=AES256 cp $AUTH_IMAGE_TAG_NAME s3://$S3_BUCKET_NAME/$AUTH_IMAGE_TAG_NAME\&quot;.tar.gz\&quot; --profile $S3_PROFILE_NAME&quot; 
         } 
     }      
     
