@@ -1,0 +1,31 @@
+{
+  "database": [
+    {
+      "auth": {
+        "git_hash": "ae3d48d87a78bdc119fe1fe53d9ab99951f76ec3"
+      }
+    },
+    {
+      "picsure": {
+        "git_hash": "a51fe71a5da129576c05389457d75e7c6349f2ad"
+      }
+    }
+  ],
+  "s3_profiles":[
+  	{
+  		"datastage_prod":{ 
+  			"s3_profile_name": "datastage-prod",
+  			"s3_bucket_name" : "ad381-datastage",
+  			"s3_bucket_properties_file_name": "dataSTAGE-properties.json"
+  		}
+  	}
+  ],
+  "application": [
+    {
+      "project_name": "psama",
+      "git_hash": "SDKFLJASL:"
+    }
+  ]
+}
+
+ 
