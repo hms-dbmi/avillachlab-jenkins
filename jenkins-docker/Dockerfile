@@ -10,6 +10,8 @@ COPY jobs/pic-sure-app-builds/ /var/jenkins_home/jobs/
 
 COPY config.xml /var/jenkins_home/config.xml
 
+COPY scriptApproval.xml /var/jenkins_home/scriptApproval.xml
+
 COPY hudson.tasks.Maven.xml /var/jenkins_home/hudson.tasks.Maven.xml
 
 USER root 
