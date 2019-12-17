@@ -13,9 +13,9 @@
   <concurrentBuild>false</concurrentBuild>
   <builders>
     <hudson.tasks.Shell>
-      <command>set LOCK_STATE = &quot;$(aws s3api get-object-legal-hold --bucket avillach-datastage-pic-sure-jenkins-dev-builds-3 --key deployment_state_metadata/stacks.json | grep Status | cut -d &apos;:&apos; -f 2 | sed &apos;s/[ \&quot;]//&apos;)&quot;
-set OFF_STATE = &quot;OFF&quot;
-if [ $LOCK_STATE == $OFF_STATE ]
+      <command>aws s3api get-object-legal-hold --bucket avillach-datastage-pic-sure-jenkins-dev-builds-3 --key deployment_state_metadata/stacks.json &gt; lockStatus.txt
+LOCK_STATE=$(cat lockStatus.txt | grep Status | cut -d &apos;:&apos; -f 2 | sed &apos;s/[ \\\&quot;]//g&apos;)
+if [ $LOCK_STATE = &quot;OFF&quot; ]
     then 
         echo &quot;Deployment state not currently locked.&quot;
         
@@ -28,6 +28,7 @@ if [ $LOCK_STATE == $OFF_STATE ]
         
     else
         echo &quot;Deployment state is currently locked. Another deployment may be in progress or have failed for some reason. Please investigate before manually clearning the lock state.&quot;
+		exit -1
 fi</command>
     </hudson.tasks.Shell>
   </builders>

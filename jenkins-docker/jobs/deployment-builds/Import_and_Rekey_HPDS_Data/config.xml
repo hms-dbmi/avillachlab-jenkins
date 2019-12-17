@@ -1,0 +1,61 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>source_file_s3_link</name>
+          <description></description>
+          <defaultValue>s3://avillach-73-bdcatalyst-etl/general/hpds/javabin/biocatalyst_javabins_11_26_2019.tar.gz</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>pipeline_build_id</name>
+          <description></description>
+          <defaultValue>3ad54ffaacac069980ef94842515ccb7d3c248a6</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.scm.NullSCM"/>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>aws sts assume-role --duration-seconds 900 --role-arn arn:aws:iam::736265540791:role/curated-datasets-s3-role --role-session-name &quot;s3-test&quot; &gt; assume-role-output.txt
+export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+aws s3 cp s3://avillach-73-bdcatalyst-etl/general/hpds/javabin/biocatalyst_javabins_11_26_2019.tar.gz .
+tar -xvzf *.tar.gz
+unset AWS_ACCESS_KEY_ID
+unset AWS_SECRET_ACCESS_KEY
+unset AWS_SESSION_TOKEN
+aws s3 --sse=AES256 cp s3://avillach-datastage-pic-sure-jenkins-dev-builds-3/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds-etl.tar.gz pic-sure-hpds-etl.tar.gz 
+docker load -i ./pic-sure-hpds-etl.tar.gz 
+docker run -v /var/lib/docker/volumes/f0f42cd97550ea3e04c9da231450341f2b3c9467b7d00802dd671f509aa96557/_data/workspace/Import_and_Rekey_HPDS_Data/:/opt/local/hpds --entrypoint java hms-dbmi/pic-sure-hpds-etl:detached_a96fe79  -Xmx2048m -jar CSVDumper-jar-with-dependencies.jar
+rm *.javabin
+head /dev/urandom | tr -dc a-f0-9 | head -c 32 &gt; encryption_key
+docker run -v /var/lib/docker/volumes/f0f42cd97550ea3e04c9da231450341f2b3c9467b7d00802dd671f509aa96557/_data/workspace/Import_and_Rekey_HPDS_Data/:/opt/local/hpds --entrypoint java hms-dbmi/pic-sure-hpds-etl:detached_a96fe79  -Xmx8192m -jar CSVLoader-jar-with-dependencies.jar
+tar -cvzf biocatalyst_javabins_11_26_2019_rekeyed.tar.gz *.javabin encryption_key
+aws s3 --sse=AES256 cp biocatalyst_javabins_11_26_2019_rekeyed.tar.gz s3://avillach-datastage-pic-sure-jenkins-dev-builds-3/data/biocatalyst_javabins_11_26_2019_rekeyed.tar.gz</command>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.37">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
+</project>

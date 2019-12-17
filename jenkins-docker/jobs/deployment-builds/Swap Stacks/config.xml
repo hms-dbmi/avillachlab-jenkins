@@ -15,7 +15,7 @@
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
-          <name>deployment_git_hash</name>
+          <name>stacks_json</name>
           <description></description>
           <defaultValue></defaultValue>
           <trim>false</trim>
@@ -24,43 +24,29 @@
     </hudson.model.ParametersDefinitionProperty>
   </properties>
   <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.76">
-    <script>import groovy.json.JsonSlurper;
+    <script>import groovy.json.*;
 
-def retrieveDepStateId
-def stacksJson
+def stacksJson = ${stacks_json}
 pipeline {
     agent any 
     stages {
-        stage(&apos;Acquire and lock deployment state&apos;) { 
+        stage(&apos;Flip DNS and State&apos;) { 
             steps {
                 script {
-                    def result = build job: &apos;Retrieve Deployment State&apos;
-                    retrieveDepStateId = result.number
+                    def stacks = new JsonSlurper().parseText(stacksJson)
+                    def prod = stacks.environments.prod
+                    stacks.environments.prod = stacks.environments.next_prod
+                    stacks.environments.next_prod = prod
+                    stacksJson = JsonOutput.toJson(stacks)
                 }
-                script {
-                    copyArtifacts filter: &apos;*&apos;, projectName: &apos;Retrieve Deployment State&apos;, selector: specific(&quot;&quot;+retrieveDepStateId)
-                    sh &apos;cat stacks.json&apos;
-                    stacksJson = new File(&apos;/var/jenkins_home/workspace/Deployment Pipeline/stacks.json&apos;).text
-                }
-            }
-        }
-        stage(&apos;Teardown and Rebuild Stage Environment&apos;) { 
-            steps {
-                script {
-                    def target_stack = new JsonSlurper().parseText(stacksJson).environments.next_prod
-                    def result = build job: &apos;Teardown and Rebuild Stage Environment&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack],[$class: &apos;StringParameterValue&apos;, name: &apos;deployment_git_hash&apos;, value: env.deployment_git_hash]]
-                }
-            }
-        }
-        stage(&apos;Update and unlock deployment state&apos;) {
-            steps {
                 script {
                     def result = build job: &apos;Write Stack State&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;stacks_json&apos;, value: stacksJson]]
                 }
             }
         }
     }
-}</script>
+}
+</script>
     <sandbox>true</sandbox>
   </definition>
   <triggers/>

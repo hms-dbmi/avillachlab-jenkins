@@ -11,7 +11,7 @@ resource "aws_iam_role_policy" "jenkins-s3-policy" {
         "s3:PutObject"
       ],
       "Effect": "Allow",
-      "Resource": "arn:aws:s3:::avillach-datastage-pic-sure-jenkins-dev-builds-2/*"
+      "Resource": "arn:aws:s3:::${var.deployment-s3-bucket}/*"
     }
   ]
 }

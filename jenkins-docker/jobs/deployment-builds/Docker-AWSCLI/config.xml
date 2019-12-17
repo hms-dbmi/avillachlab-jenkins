@@ -1,0 +1,70 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job@2.36">
+  <actions>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@1.4.0"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@1.4.0">
+      <jobProperties/>
+      <triggers/>
+      <parameters/>
+      <options/>
+    </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
+  </actions>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties/>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.76">
+    <script>import groovy.json.JsonSlurper;
+def target_stack
+def instance_state
+def instance_id
+pipeline {
+   agent any
+   stages {
+      stage(&apos;Build&apos;) {
+         steps {
+            git branch: &apos;subnet-only-net-seg&apos;, url: &apos;https://github.com/hms-dbmi/avillachlab-secure-infrastructure.git&apos;
+            sh &apos;&apos;&apos;
+                aws s3 cp s3://avillach-datastage-pic-sure-jenkins-dev-builds-3/deployment_state_metadata/stacks.json /var/jenkins_home/workspace/Docker-AWSCLI/stacks.json
+            &apos;&apos;&apos;
+            script{
+                target_stack = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/Docker-AWSCLI/stacks.json&apos;)).environments.next_prod
+                echo target_stack
+            }
+            sh &quot;&quot;&quot;
+                cd centos-ami
+                aws s3 cp s3://avillach-datastage-pic-sure-jenkins-dev-builds-3/deployment_state_metadata/${target_stack}/stack_variables.tf .
+                terraform init
+                terraform destroy -auto-approve 
+                terraform apply -auto-approve
+                terraform state show aws_instance.docker-awscli-base &gt; /var/jenkins_home/workspace/Docker-AWSCLI/instance_id.txt
+                cat /var/jenkins_home/workspace/Docker-AWSCLI/instance_id.txt
+            &quot;&quot;&quot;
+            script{
+                instance_state = new File(&apos;/var/jenkins_home/workspace/Docker-AWSCLI/instance_id.txt&apos;).text
+                for(def line : instance_state.split(&quot;\n&quot;)){
+                    def splitLine = line.split(&quot;\&quot;&quot;)
+                    if(splitLine.length &gt; 1){
+                        echo splitLine[1];
+                        if(splitLine[1].matches(&quot;i-[0-9a-f]+&quot;)){
+                            instance_id = splitLine[1]
+                        }
+                    }
+                }
+                echo instance_id
+            }
+            sh &quot;&quot;&quot;
+            echo &quot;&quot; &gt; /var/jenkins_home/workspace/Docker-AWSCLI/tags.txt
+            while ! grep &quot;InitComplete&quot; /var/jenkins_home/workspace/Docker-AWSCLI/tags.txt;do sleep 30 &amp;&amp; aws --region us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${instance_id}&quot; &gt;/var/jenkins_home/workspace/Docker-AWSCLI/tags.txt;done
+            cat /var/jenkins_home/workspace/Docker-AWSCLI/tags.txt
+            aws --region us-east-1 ec2 create-image --instance-id ${instance_id} --name &quot;Docker-AWSCLI-CIS&quot; --description &quot;Docker-AWSCLI AMI based off of CIS Benchmark Centos 7&quot;
+            &quot;&quot;&quot;
+         }
+
+      }
+   }
+}</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>

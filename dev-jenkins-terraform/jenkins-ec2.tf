@@ -33,7 +33,7 @@ resource "aws_instance" "dev-jenkins" {
   root_block_device {
     delete_on_termination = true
     encrypted = true
-    volume_size = 50
+    volume_size = 500
   }
 
   provisioner "file" {

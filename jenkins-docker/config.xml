@@ -1,7 +1,7 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <hudson>
   <disabledAdministrativeMonitors/>
-  <version>2.190.1</version>
+  <version>2.190.2</version>
   <installStateName>RUNNING</installStateName>
   <numExecutors>3</numExecutors>
   <mode>NORMAL</mode>
@@ -69,6 +69,7 @@
         <comparator class="hudson.util.CaseInsensitiveComparator"/>
         <string>PIC-SURE Auth Micro-App Build</string>
         <string>PIC-SURE Pipeline</string>
+        <string>PIC-SURE Wildfly Image Build</string>
         <string>PIC-SURE-API Build</string>
         <string>PIC-SURE-HPDS Build</string>
         <string>PIC-SURE-HPDS-UI Docker Build</string>
@@ -98,7 +99,31 @@
         <string>Deployment Pipeline</string>
         <string>Retrieve Build Spec</string>
         <string>Retrieve Deployment State</string>
+        <string>Swap Stacks</string>
         <string>Teardown and Rebuild Stage Environment</string>
+        <string>Write Stack State</string>
+      </jobNames>
+      <jobFilters/>
+      <columns>
+        <hudson.views.StatusColumn/>
+        <hudson.views.WeatherColumn/>
+        <hudson.views.JobColumn/>
+        <hudson.views.LastSuccessColumn/>
+        <hudson.views.LastFailureColumn/>
+        <hudson.views.LastDurationColumn/>
+        <hudson.views.BuildButtonColumn/>
+      </columns>
+      <recurse>false</recurse>
+    </listView>
+    <listView>
+      <owner class="hudson" reference="../../.."/>
+      <name>AMI</name>
+      <filterExecutors>false</filterExecutors>
+      <filterQueue>false</filterQueue>
+      <properties class="hudson.model.View$PropertyList"/>
+      <jobNames>
+        <comparator class="hudson.util.CaseInsensitiveComparator"/>
+        <string>Docker-AWSCLI</string>
       </jobNames>
       <jobFilters/>
       <columns>
@@ -120,5 +145,19 @@
     <excludeClientIPFromCrumb>false</excludeClientIPFromCrumb>
   </crumbIssuer>
   <nodeProperties/>
-  <globalNodeProperties/>
+  <globalNodeProperties>
+    <hudson.slaves.EnvironmentVariablesNodeProperty>
+      <envVars serialization="custom">
+        <unserializable-parents/>
+        <tree-map>
+          <default>
+            <comparator class="hudson.util.CaseInsensitiveComparator" reference="../../../../../../views/listView[4]/jobNames/comparator"/>
+          </default>
+          <int>1</int>
+          <string>stack_s3_bucket</string>
+          <string>foobar</string>
+        </tree-map>
+      </envVars>
+    </hudson.slaves.EnvironmentVariablesNodeProperty>
+  </globalNodeProperties>
 </hudson>

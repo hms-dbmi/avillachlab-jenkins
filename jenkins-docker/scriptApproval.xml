@@ -1,12 +1,21 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <scriptApproval plugin="script-security@1.67">
-  <approvedScriptHashes/>
+  <approvedScriptHashes>
+    <string>017d0db438428731cd600b6ebda805065433520f</string>
+  </approvedScriptHashes>
   <approvedSignatures>
     <string>method groovy.json.JsonSlurper parse java.io.File</string>
+    <string>method java.lang.Process waitFor</string>
     <string>new java.io.File java.lang.String</string>
+    <string>new java.lang.StringBuffer</string>
+    <string>staticField java.lang.System out</string>
+    <string>staticMethod org.codehaus.groovy.runtime.DefaultGroovyMethods execute java.lang.String</string>
     <string>staticMethod org.codehaus.groovy.runtime.DefaultGroovyMethods getAt java.lang.Object java.lang.String</string>
     <string>staticMethod org.codehaus.groovy.runtime.DefaultGroovyMethods getText java.io.File</string>
     <string>staticMethod org.codehaus.groovy.runtime.DefaultGroovyMethods putAt java.lang.Object java.lang.String java.lang.Object</string>
+    <string>staticMethod org.codehaus.groovy.runtime.DefaultGroovyMethods write java.io.File java.lang.String</string>
+    <string>staticMethod org.codehaus.groovy.runtime.ProcessGroovyMethods getText java.lang.Process</string>
+    <string>staticMethod org.codehaus.groovy.runtime.ProcessGroovyMethods waitForProcessOutput java.lang.Process java.lang.Appendable java.lang.Appendable</string>
   </approvedSignatures>
   <aclApprovedSignatures/>
   <approvedClasspathEntries/>

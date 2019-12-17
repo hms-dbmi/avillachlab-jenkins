@@ -21,7 +21,7 @@
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@3.12.1">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.0.0">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
@@ -45,7 +45,7 @@
   <concurrentBuild>false</concurrentBuild>
   <builders>
     <hudson.tasks.Shell>
-      <command>aws s3 --sse=AES256 cp s3://avillach-datastage-pic-sure-jenkins-dev-builds-2/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds-ui.tar.gz .
+      <command>aws s3 --sse=AES256 cp s3://avillach-datastage-pic-sure-jenkins-dev-builds-3/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds-ui.tar.gz .
 docker load -i ./pic-sure-hpds-ui.tar.gz
 GIT_BRANCH_SHORT=`echo ${GIT_BRANCH} | cut -d &quot;/&quot; -f 2` 
 GIT_COMMIT_SHORT=`echo ${GIT_COMMIT} | cut -c1-7`
@@ -55,7 +55,7 @@ cd ../
 mkdir -p docker_image_output
 cd docker_image_output
 docker save hms-dbmi/pic-sure-hpds-copdgene-ui:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-hpds-copdgene-ui.tar.gz
-aws s3 --sse=AES256 cp pic-sure-hpds-copdgene-ui.tar.gz s3://avillach-datastage-pic-sure-jenkins-dev-builds-2/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds-copdgene-ui.tar.gz
+aws s3 --sse=AES256 cp pic-sure-hpds-copdgene-ui.tar.gz s3://avillach-datastage-pic-sure-jenkins-dev-builds-3/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds-copdgene-ui.tar.gz
 </command>
     </hudson.tasks.Shell>
   </builders>
