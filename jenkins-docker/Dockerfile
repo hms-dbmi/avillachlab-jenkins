@@ -44,6 +44,6 @@ RUN apt-get install jq -y
 
 RUN /usr/local/bin/install-plugins.sh < /usr/share/jenkins/ref/plugins.txt
 
-RUN wget https://releases.hashicorp.com/terraform/0.12.15/terraform_0.12.15_linux_amd64.zip && unzip terraform_0.12.15_linux_amd64.zip && mv terraform /usr/local/bin/
+RUN wget https://releases.hashicorp.com/terraform/0.12.16/terraform_0.12.16_linux_amd64.zip && unzip terraform_0.12.16_linux_amd64.zip && mv terraform /usr/local/bin/
 
 USER root
