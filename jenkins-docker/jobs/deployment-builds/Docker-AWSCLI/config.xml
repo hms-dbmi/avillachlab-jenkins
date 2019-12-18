@@ -80,7 +80,7 @@ pipeline {
                 while ! grep &quot;InitComplete&quot; /var/jenkins_home/workspace/Docker-AWSCLI/tags.txt;do sleep 30 &amp;&amp; aws --region us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${instance_id}&quot; &gt;/var/jenkins_home/workspace/Docker-AWSCLI/tags.txt;done
                 cat /var/jenkins_home/workspace/Docker-AWSCLI/tags.txt
                 aws --region us-east-1 ec2 create-image --instance-id ${instance_id} --name &quot;Docker-AWSCLI-CIS-`date +&quot;%Y%m%d-%H%M&quot;`&quot; --description &quot;Docker-AWSCLI AMI based off of CIS Benchmark Centos 7&quot; &gt; image_id.txt
-                aws ec2 create-tags --resources `grep ImageId image_id.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\\\&quot;]//g&quot;` --tags &apos;Key=&quot;approval-status&quot;,Value=untested&apos;
+                aws --region us-east-1 ec2 create-tags --resources `grep ImageId image_id.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\\\&quot;]//g&quot;` --tags &apos;Key=&quot;approval-status&quot;,Value=untested&apos;
                 terraform destroy -auto-approve -var=&quot;target-vpc=${VPC_ID}&quot; -var=&quot;target-subnet-id=${SUBNET_ID}&quot;
                 
             &quot;&quot;&quot;
