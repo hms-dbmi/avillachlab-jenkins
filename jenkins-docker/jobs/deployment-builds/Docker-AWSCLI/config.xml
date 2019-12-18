@@ -11,7 +11,30 @@
   </actions>
   <description></description>
   <keepDependencies>false</keepDependencies>
-  <properties/>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>ROLE_TO_ASSUME_ARN</name>
+          <description></description>
+          <defaultValue>arn:aws:iam::191687121306:role/hms-dbmi-cnc-role</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>SUBNET_ID</name>
+          <description></description>
+          <defaultValue>subnet-0519886118ff11eee</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>VPC_ID</name>
+          <description></description>
+          <defaultValue>vpc-037509eb9baffa584</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
   <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.76">
     <script>import groovy.json.JsonSlurper;
 def target_stack
@@ -22,20 +45,16 @@ pipeline {
    stages {
       stage(&apos;Build&apos;) {
          steps {
-            git branch: &apos;subnet-only-net-seg&apos;, url: &apos;https://github.com/hms-dbmi/avillachlab-secure-infrastructure.git&apos;
-            sh &apos;&apos;&apos;
-                aws s3 cp s3://avillach-datastage-pic-sure-jenkins-dev-builds-3/deployment_state_metadata/stacks.json /var/jenkins_home/workspace/Docker-AWSCLI/stacks.json
-            &apos;&apos;&apos;
-            script{
-                target_stack = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/Docker-AWSCLI/stacks.json&apos;)).environments.next_prod
-                echo target_stack
-            }
+            git branch: &apos;master&apos;, url: &apos;https://github.com/hms-dbmi/avillachlab-secure-infrastructure.git&apos;
             sh &quot;&quot;&quot;
+                aws sts assume-role --duration-seconds 900 --role-arn &quot;${ROLE_TO_ASSUME_ARN}&quot; --role-session-name &quot;ami-builder&quot; &gt; assume-role-output.txt
+                export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\\\&quot;]//g&quot;`
+                export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\\\&quot;]//g&quot;`
+                export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\\\&quot;]//g&quot;`
                 cd centos-ami
-                aws s3 cp s3://avillach-datastage-pic-sure-jenkins-dev-builds-3/deployment_state_metadata/${target_stack}/stack_variables.tf .
                 terraform init
-                terraform destroy -auto-approve 
-                terraform apply -auto-approve
+                terraform destroy -auto-approve -var=&quot;target-vpc=${VPC_ID}&quot; -var=&quot;target-subnet-id=${SUBNET_ID}&quot;
+                terraform apply -auto-approve -var=&quot;target-vpc=${VPC_ID}&quot; -var=&quot;target-subnet-id=${SUBNET_ID}&quot;
                 terraform state show aws_instance.docker-awscli-base &gt; /var/jenkins_home/workspace/Docker-AWSCLI/instance_id.txt
                 cat /var/jenkins_home/workspace/Docker-AWSCLI/instance_id.txt
             &quot;&quot;&quot;
@@ -53,10 +72,17 @@ pipeline {
                 echo instance_id
             }
             sh &quot;&quot;&quot;
-            echo &quot;&quot; &gt; /var/jenkins_home/workspace/Docker-AWSCLI/tags.txt
-            while ! grep &quot;InitComplete&quot; /var/jenkins_home/workspace/Docker-AWSCLI/tags.txt;do sleep 30 &amp;&amp; aws --region us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${instance_id}&quot; &gt;/var/jenkins_home/workspace/Docker-AWSCLI/tags.txt;done
-            cat /var/jenkins_home/workspace/Docker-AWSCLI/tags.txt
-            aws --region us-east-1 ec2 create-image --instance-id ${instance_id} --name &quot;Docker-AWSCLI-CIS&quot; --description &quot;Docker-AWSCLI AMI based off of CIS Benchmark Centos 7&quot;
+                aws sts assume-role --duration-seconds 1800 --role-arn &quot;${ROLE_TO_ASSUME_ARN}&quot; --role-session-name &quot;ami-builder&quot; &gt; assume-role-output.txt
+                export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\\\&quot;]//g&quot;`
+                export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\\\&quot;]//g&quot;`
+                export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\\\&quot;]//g&quot;`
+                echo &quot;&quot; &gt; /var/jenkins_home/workspace/Docker-AWSCLI/tags.txt
+                while ! grep &quot;InitComplete&quot; /var/jenkins_home/workspace/Docker-AWSCLI/tags.txt;do sleep 30 &amp;&amp; aws --region us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${instance_id}&quot; &gt;/var/jenkins_home/workspace/Docker-AWSCLI/tags.txt;done
+                cat /var/jenkins_home/workspace/Docker-AWSCLI/tags.txt
+                aws --region us-east-1 ec2 create-image --instance-id ${instance_id} --name &quot;Docker-AWSCLI-CIS-`date +&quot;%Y%m%d-%H%M&quot;`&quot; --description &quot;Docker-AWSCLI AMI based off of CIS Benchmark Centos 7&quot; &gt; image_id.txt
+                aws ec2 create-tags --resources `grep ImageId image_id.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\\\&quot;]//g&quot;` --tags &apos;Key=&quot;approval-status&quot;,Value=untested&apos;
+                terraform destroy -auto-approve -var=&quot;target-vpc=${VPC_ID}&quot; -var=&quot;target-subnet-id=${SUBNET_ID}&quot;
+                
             &quot;&quot;&quot;
          }
 
