@@ -1,3 +1,4 @@
+groovy
 timestamper
 credentials-binding
 email-ext

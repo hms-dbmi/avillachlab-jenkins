@@ -1,8 +1,8 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <flow-definition plugin="workflow-job@2.36">
   <actions>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@1.4.0"/>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@1.4.0">
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@1.5.0"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@1.5.0">
       <jobProperties/>
       <triggers/>
       <parameters/>
@@ -15,27 +15,21 @@
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
-          <name>ROLE_TO_ASSUME_ARN</name>
+          <name>VPC_ID</name>
           <description></description>
-          <defaultValue>arn:aws:iam::191687121306:role/hms-dbmi-cnc-role</defaultValue>
+          <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>SUBNET_ID</name>
           <description></description>
-          <defaultValue>subnet-0519886118ff11eee</defaultValue>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>VPC_ID</name>
-          <description></description>
-          <defaultValue>vpc-037509eb9baffa584</defaultValue>
+          <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.76">
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.78">
     <script>import groovy.json.JsonSlurper;
 def target_stack
 def instance_state
@@ -47,7 +41,7 @@ pipeline {
          steps {
             git branch: &apos;master&apos;, url: &apos;https://github.com/hms-dbmi/avillachlab-secure-infrastructure.git&apos;
             sh &quot;&quot;&quot;
-                aws sts assume-role --duration-seconds 900 --role-arn &quot;${ROLE_TO_ASSUME_ARN}&quot; --role-session-name &quot;ami-builder&quot; &gt; assume-role-output.txt
+                aws sts assume-role --duration-seconds 900 --role-arn &quot;arn:aws:iam::191687121306:role/hms-dbmi-cnc-role&quot; --role-session-name &quot;ami-builder&quot; &gt; assume-role-output.txt
                 export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\\\&quot;]//g&quot;`
                 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\\\&quot;]//g&quot;`
                 export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\\\&quot;]//g&quot;`
@@ -72,7 +66,7 @@ pipeline {
                 echo instance_id
             }
             sh &quot;&quot;&quot;
-                aws sts assume-role --duration-seconds 1800 --role-arn &quot;${ROLE_TO_ASSUME_ARN}&quot; --role-session-name &quot;ami-builder&quot; &gt; assume-role-output.txt
+                aws sts assume-role --duration-seconds 1800 --role-arn &quot;arn:aws:iam::191687121306:role/hms-dbmi-cnc-role&quot; --role-session-name &quot;ami-builder&quot; &gt; assume-role-output.txt
                 export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\\\&quot;]//g&quot;`
                 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\\\&quot;]//g&quot;`
                 export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\\\&quot;]//g&quot;`
@@ -86,7 +80,6 @@ pipeline {
                 
             &quot;&quot;&quot;
          }
-
       }
    }
 }</script>

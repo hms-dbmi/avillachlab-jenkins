@@ -1,8 +1,8 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <flow-definition plugin="workflow-job@2.36">
   <actions>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@1.4.0"/>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@1.4.0">
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@1.5.0"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@1.5.0">
       <jobProperties/>
       <triggers/>
       <parameters/>
@@ -11,36 +11,35 @@
   </actions>
   <description></description>
   <keepDependencies>false</keepDependencies>
-  <properties>
-    <hudson.model.ParametersDefinitionProperty>
-      <parameterDefinitions>
-        <hudson.model.StringParameterDefinition>
-          <name>stacks_json</name>
-          <description></description>
-          <defaultValue></defaultValue>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
-      </parameterDefinitions>
-    </hudson.model.ParametersDefinitionProperty>
-  </properties>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.76">
+  <properties/>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.78">
     <script>import groovy.json.*;
 
-def stacksJson = ${stacks_json}
 pipeline {
     agent any 
     stages {
-        stage(&apos;Flip DNS and State&apos;) { 
+        stage(&apos;Acquire and lock deployment state&apos;) { 
             steps {
                 script {
-                    def stacks = new JsonSlurper().parseText(stacksJson)
+                    def stacksJson
+                    def result = build job: &apos;Retrieve Deployment State&apos;
+                    retrieveDepStateId = result.number
+                    copyArtifacts filter: &apos;*&apos;, projectName: &apos;Retrieve Deployment State&apos;, selector: specific(&quot;&quot;+retrieveDepStateId)
+                    sh &apos;cat stacks.json&apos;
+                    stacksJson = new File(&apos;/var/jenkins_home/workspace/Deployment Pipeline/stacks.json&apos;).text
+                    def stacks = new JsonSlurperClassic().parseText(stacksJson)
                     def prod = stacks.environments.prod
                     stacks.environments.prod = stacks.environments.next_prod
                     stacks.environments.next_prod = prod
+                    def target_prod_stack = stacks.environments.prod.toString()
+                    def target_next_prod_stack = stacks.environments.next_prod.toString()
+                    println(target_prod_stack)
+                    println(target_next_prod_stack)
                     stacksJson = JsonOutput.toJson(stacks)
-                }
-                script {
-                    def result = build job: &apos;Write Stack State&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;stacks_json&apos;, value: stacksJson]]
+                    println(stacksJson)
+                    build job: &apos;Move Prod DNS Pointer&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_prod_stack&apos;, value: target_prod_stack],[$class: &apos;StringParameterValue&apos;, name: &apos;target_next_prod_stack&apos;, value: target_next_prod_stack]]
+                    println(&quot;Moved pointer&quot;)
+                    build job: &apos;Write Stack State&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;stacks_json&apos;, value: stacksJson]]
                 }
             }
         }

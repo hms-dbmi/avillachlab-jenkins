@@ -2,13 +2,15 @@ FROM jenkins/jenkins:lts
 
 COPY plugins.txt /usr/share/jenkins/ref/plugins.txt
 
-COPY jobs/pic-sure-database-migrations/main/ /var/jenkins_home/jobs/
+#COPY jobs/pic-sure-database-migrations/main/ /var/jenkins_home/jobs/
 
-COPY jobs/pic-sure-database-migrations/custom/ /var/jenkins_home/jobs/
+#COPY jobs/pic-sure-database-migrations/custom/ /var/jenkins_home/jobs/
 
 COPY jobs/pic-sure-app-builds/ /var/jenkins_home/jobs/
 
 COPY jobs/deployment-builds/ /var/jenkins_home/jobs/
+
+COPY jobs/configuration-builds/ /var/jenkins_home/jobs/
 
 COPY config.xml /var/jenkins_home/config.xml
 

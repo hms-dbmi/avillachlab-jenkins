@@ -12,6 +12,12 @@
           <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>S3_BUCKET_NAME</name>
+          <description></description>
+          <defaultValue>${stack_s3_bucket}</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -25,12 +31,19 @@
   <builders>
     <hudson.tasks.Shell>
       <command>echo $stacks_json &gt; stacks.json
+        
 aws s3api put-object-legal-hold \
-        --bucket avillach-datastage-pic-sure-jenkins-dev-builds-3 \
+        --bucket $S3_BUCKET_NAME \
         --key deployment_state_metadata/stacks.json \
         --legal-hold Status=OFF
-        
-#aws s3 cp stacks.json s3://avillach-datastage-pic-sure-jenkins-dev-builds-3/deployment_state_metadata/stacks.json</command>
+
+aws s3 cp stacks.json s3://${stack_s3_bucket}/deployment_state_metadata/stacks.json
+
+aws s3api put-object-legal-hold \
+        --bucket $S3_BUCKET_NAME \
+        --key deployment_state_metadata/stacks.json \
+        --legal-hold Status=OFF
+</command>
     </hudson.tasks.Shell>
   </builders>
   <publishers/>

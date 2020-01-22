@@ -18,6 +18,12 @@
           <defaultValue>*/master</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>S3_BUCKET_NAME</name>
+          <description></description>
+          <defaultValue>${stack_s3_bucket}</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -58,7 +64,7 @@ GIT_COMMIT_SHORT=`echo ${GIT_COMMIT} | cut -c1-7`
 cd pic-sure-hpds-ui
 docker build -t hms-dbmi/pic-sure-hpds-ui:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
 docker save hms-dbmi/pic-sure-hpds-ui:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-hpds-ui.tar.gz
-aws s3 --sse=AES256 cp pic-sure-hpds-ui.tar.gz s3://avillach-datastage-pic-sure-jenkins-dev-builds-3/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds-ui.tar.gz
+aws s3 --sse=AES256 cp pic-sure-hpds-ui.tar.gz s3://$S3_BUCKET_NAME/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds-ui.tar.gz
 
 </command>
     </hudson.tasks.Shell>

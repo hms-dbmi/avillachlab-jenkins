@@ -1,0 +1,72 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>new_client_secret</name>
+          <description></description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>new_client_id</name>
+          <description></description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.scm.NullSCM"/>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>
+aws sts assume-role --duration-seconds 900 --role-arn &quot;arn:aws:iam::752463128620:role/system/jenkins-s3-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
+
+export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+
+aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/a/stack_variables.tf .
+
+export old_client_secret=`cat stack_variables.tf | grep -A3 fence_client_secret | head -n 3 | tail -1 | cut -d &apos; &apos; -f 5 | sed &apos;s/&quot;//g&apos;`
+export old_client_id=`cat stack_variables.tf | grep -A3 fence_client_secret | head -n 3 | tail -1 | cut -d &apos; &apos; -f 5 | sed &apos;s/&quot;//g&apos;`
+
+sed -i &quot;s/$old_client_secret/$new_client_secret/g&quot; stack_variables.tf
+sed -i &quot;s/$old_client_id/$new_client_id/g&quot; stack_variables.tf
+
+aws s3 cp stack_variables.tf s3://$stack_s3_bucket/deployment_state_metadata/a/stack_variables.tf 
+
+rm stack_variables.tf
+
+aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/b/stack_variables.tf .
+
+export old_client_secret=`cat stack_variables.tf | grep -A3 fence_client_secret | head -n 3 | tail -1 | cut -d &apos; &apos; -f 5 | sed &apos;s/&quot;//g&apos;`
+export old_client_id=`cat stack_variables.tf | grep -A3 fence_client_secret | head -n 3 | tail -1 | cut -d &apos; &apos; -f 5 | sed &apos;s/&quot;//g&apos;`
+
+sed -i &quot;s/$old_client_secret/$new_client_secret/g&quot; stack_variables.tf
+sed -i &quot;s/$old_client_id/$new_client_id/g&quot; stack_variables.tf
+
+aws s3 cp stack_variables.tf s3://$stack_s3_bucket/deployment_state_metadata/b/stack_variables.tf 
+
+rm stack_variables.tf
+
+unset AWS_ACCESS_KEY_ID
+unset AWS_SECRET_ACCESS_KEY
+unset AWS_SESSION_TOKEN
+</command>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers/>
+</project>
