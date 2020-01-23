@@ -1,8 +1,3 @@
-
-variable "deployment-s3-bucket" {
-  type = string
-}
-
 variable "stack-id" {
 	type = string
 	default = "test"
