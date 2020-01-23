@@ -19,6 +19,10 @@ variable "access-cidr" {
 	type = string
 }
 
+variable "provisioning-cidr" {
+	type = string
+}
+
 variable "stack-s3-bucket" {
 	type = string
 }
