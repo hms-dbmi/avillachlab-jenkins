@@ -52,7 +52,7 @@ resource "aws_instance" "dev-jenkins" {
       type     = "ssh"
       user     = "centos"
       private_key = tls_private_key.provisioning-key.private_key_pem
-      host = self.public_ip
+      host = self.private_ip
     }
   }
 
