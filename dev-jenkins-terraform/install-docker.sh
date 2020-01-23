@@ -107,13 +107,12 @@ sudo systemctl enable docker
 echo "user-data progress finished enabling docker service starting docker"
 sudo service docker start
 cd /home/centos/jenkins
-mkdir -P /var/jenkins_home/jobs/
+mkdir -p /var/jenkins_home/jobs/
 cp -r jobs/pic-sure-app-builds/* /var/jenkins_home/jobs/
 cp -r jobs/configuration-builds/* /var/jenkins_home/jobs/
 cp -r jobs/deployment-builds/* /var/jenkins_home/jobs/
-sudo export stack_s3_bucket=${stack_s3_bucket}
 sudo docker build -t avillach-lab-dev-jenkins .
-sudo docker run -d -v /var/jenkins_home/jobs:/var/jenkins_home/jobs -v /var/run/docker.sock:/var/run/docker.sock -p 80:8080 --name jenkins --restart always avillach-lab-dev-jenkins
+sudo docker run --env "stack_s3_bucket=${stack_s3_bucket}" -d -v /var/jenkins_home/jobs:/var/jenkins_home/jobs -v /var/run/docker.sock:/var/run/docker.sock -p 80:8080 --name jenkins --restart always avillach-lab-dev-jenkins
 echo "setup script finished"
 
 sudo docker logs -f jenkins > /var/log/jenkins-docker-logs/jenkins.log &
