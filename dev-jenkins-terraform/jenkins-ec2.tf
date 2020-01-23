@@ -60,7 +60,7 @@ resource "aws_instance" "dev-jenkins" {
     aws_security_group.outbound-jenkins-to-internet.id
   ]
 
-  subnet_id = aws_subnet.jenkins-subnet-us-east-1a.id
+  subnet_id = var.subnet-id
 
   tags = {
     Owner       = "Avillach_Lab"
