@@ -8,7 +8,7 @@ resource "aws_security_group" "inbound-jenkins-from-lma" {
     to_port = 80
     protocol = "tcp"
     cidr_blocks = [
-      "134.174.0.0/16"
+      var.access-cidr
     ]
   }
 
@@ -17,7 +17,7 @@ resource "aws_security_group" "inbound-jenkins-from-lma" {
     to_port = 443
     protocol = "tcp"
     cidr_blocks = [
-      "134.174.0.0/16"
+      var.access-cidr
     ]
   }
 
@@ -26,7 +26,7 @@ resource "aws_security_group" "inbound-jenkins-from-lma" {
     to_port = 22
     protocol = "tcp"
     cidr_blocks = [
-      "134.174.0.0/16"
+      var.access-cidr
     ]
   }
 
