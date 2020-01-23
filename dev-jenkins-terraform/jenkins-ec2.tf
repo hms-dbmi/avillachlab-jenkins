@@ -15,6 +15,7 @@ data "template_file" "jenkins-user_data" {
   template = file("install-docker.sh")
   vars = {
     stack_s3_bucket = var.stack-s3-bucket
+    stack_id = var.stack-id
   }
 }
 
