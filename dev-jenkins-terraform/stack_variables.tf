@@ -15,7 +15,7 @@ variable "instance-profile-name" {
 	type = string
 }
 
-variable "accessCidr" {
+variable "access-cidr" {
 	type = string
 }
 
