@@ -80,7 +80,7 @@ echo "
             {
                \"file_path\":\"/var/jenkins_home/jobs/*/builds/*/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-app-logs \",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs \",
                \"timestamp_format\":\"UTC\"
             }
          ]
