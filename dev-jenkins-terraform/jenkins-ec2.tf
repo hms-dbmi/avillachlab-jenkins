@@ -6,8 +6,16 @@ output "provisioning-private-key" {
   value = tls_private_key.provisioning-key.private_key_pem
 }
 resource "aws_key_pair" "generated_key" {
-  key_name   = "jenkins-provisioning-key"
+  key_name   = "jenkins-provisioning-key-${var.stack-id}"
   public_key = "${tls_private_key.provisioning-key.public_key_openssh}"
+}
+
+
+data "template_file" "jenkins-user_data" {
+  template = file("install-docker.sh")
+  vars = {
+    stack_s3_bucket = var.stack-s3-bucket
+  }
 }
 
 data "template_cloudinit_config" "config" {
@@ -17,7 +25,7 @@ data "template_cloudinit_config" "config" {
   # user_data
   part {
     content_type = "text/x-shellscript"
-    content      = file("install-docker.sh")
+    content      = data.template_file.jenkins-user_data.rendered
   }
 
 }
@@ -28,7 +36,7 @@ resource "aws_instance" "dev-jenkins" {
   associate_public_ip_address = true
   key_name = "jenkins-provisioning-key"
 
-  iam_instance_profile = aws_iam_instance_profile.jenkins-s3-profile.name
+  iam_instance_profile = var.instance-profile-name
 
   root_block_device {
     delete_on_termination = true
@@ -57,7 +65,7 @@ resource "aws_instance" "dev-jenkins" {
   tags = {
     Owner       = "Avillach_Lab"
     Environment = "development"
-    Name        = "FISMA Terraform Playground - Dev Jenkins"
+    Name        = "FISMA Terraform Playground - Dev Jenkins - ${var.stack-id}"
   }
 
   user_data = data.template_cloudinit_config.config.rendered

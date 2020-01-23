@@ -19,3 +19,7 @@ variable "instance-profile-name" {
 variable "access-cidr" {
 	type = string
 }
+
+variable "stack-s3-bucket" {
+	type = string
+}

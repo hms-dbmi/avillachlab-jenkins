@@ -4,6 +4,8 @@ services:
     container_name: jenkins
     restart: always
     image: avillach-lab-dev-jenkins
+    environment:
+      - stack_s3_bucket
     build: 
       context: .
       dockerfile: Dockerfile
@@ -11,5 +13,6 @@ services:
         - '80:8080'
     volumes:
         - /var/run/docker.sock:/var/run/docker.sock
-        - /var/log/jenkins-container/:/var/log
+        - /var/log/jenkins-docker-logs/:/var/log
+        - /var/jenkins_home/jobs/:/var/jenkins_home/jobs/
 

@@ -141,7 +141,7 @@
           </default>
           <int>1</int>
           <string>stack_s3_bucket</string>
-          <string>avillach-biodatacatalyst-deployments-a93cbf1</string>
+          <string>${stack_s3_bucket}</string>
         </tree-map>
       </envVars>
     </hudson.slaves.EnvironmentVariablesNodeProperty>
