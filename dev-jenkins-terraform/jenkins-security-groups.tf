@@ -33,7 +33,7 @@ resource "aws_security_group" "inbound-jenkins-from-lma" {
   tags = {
     Owner       = "Avillach_Lab"
     Environment = "development"
-    Name        = "FISMA Terraform Playground - inbound-jenkins-from-lma Security Group"
+    Name        = "FISMA Terraform Playground - inbound-jenkins-from-lma Security Group - ${var.stack-id}"
   }
 }
 
@@ -54,6 +54,6 @@ resource "aws_security_group" "outbound-jenkins-to-internet" {
   tags = {
     Owner       = "Avillach_Lab"
     Environment = "development"
-    Name        = "FISMA Terraform Playground - outbound-jenkins-to-internet Security Group"
+    Name        = "FISMA Terraform Playground - outbound-jenkins-to-internet Security Group - ${var.stack-id}"
   }
 }
