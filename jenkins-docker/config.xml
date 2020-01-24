@@ -110,6 +110,9 @@
         <string>Update HTTPD Certs and Key</string>
         <string>Update PIC-SURE Token Introspection Token</string>
         <string>Update VPC Settings</string>
+        <string>Backup Jenkins Home</string>
+        <string>Create new Jenkins Server</string>
+        <string>Destroy Old Jenkins Server</string>
       </jobNames>
       <jobFilters/>
       <columns>

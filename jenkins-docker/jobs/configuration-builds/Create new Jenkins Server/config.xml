@@ -1,0 +1,100 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>new_stack_s3_bucket</name>
+          <description></description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>stack_id</name>
+          <description></description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>subnet_id</name>
+          <description></description>
+          <defaultValue>subnet-002719488d0e4f10d</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>instance_profile_name</name>
+          <description></description>
+          <defaultValue>jenkins-s3-profile</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>access_cidr</name>
+          <description></description>
+          <defaultValue>172.24.0.68/32</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>vpc_id</name>
+          <description></description>
+          <defaultValue>vpc-07fdd0533a5ec2e35</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>provisioning_cidr</name>
+          <description></description>
+          <defaultValue>172.36.0.0/25</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.0.0">
+    <configVersion>2</configVersion>
+    <userRemoteConfigs>
+      <hudson.plugins.git.UserRemoteConfig>
+        <url>https://github.com/hms-dbmi/avillachlab-jenkins.git</url>
+      </hudson.plugins.git.UserRemoteConfig>
+    </userRemoteConfigs>
+    <branches>
+      <hudson.plugins.git.BranchSpec>
+        <name>*/master</name>
+      </hudson.plugins.git.BranchSpec>
+    </branches>
+    <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+    <submoduleCfg class="list"/>
+    <extensions/>
+  </scm>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>cd dev-jenkins-terraform
+env &gt; env.txt
+terraform init
+terraform apply -auto-approve \
+-var &quot;stack-s3-bucket=${new_stack_s3_bucket}&quot; \
+-var &quot;stack-id=${stack_id}&quot; \
+-var &quot;subnet-id=${subnet_id}&quot; \
+-var &quot;vpc-id=${vpc_id}&quot; \
+-var &quot;instance-profile-name=${instance_profile_name}&quot; \
+-var &quot;access-cidr=${access_cidr}&quot; \
+-var &quot;provisioning-cidr=${provisioning_cidr}&quot;
+
+aws s3 --sse=AES256 cp terraform.tfstate s3://${new_stack_s3_bucket}/jenkins_state/terraform.tfstate 
+aws s3 --sse=AES256 cp env.txt s3://${new_stack_s3_bucket}/jenkins_state/last_env.txt
+
+
+
+</command>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers/>
+</project>
