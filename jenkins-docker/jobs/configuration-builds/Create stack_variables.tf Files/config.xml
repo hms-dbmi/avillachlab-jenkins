@@ -37,7 +37,8 @@ export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apo
 
 cd deployment-s3-bucket
 
-terraform apply -var &apos;stack_s3_bucket=${stack_s3_bucket}&apos;
+terraform init
+terraform apply  -auto-approve -var &apos;stack_s3_bucket=${stack_s3_bucket}&apos;
 
 unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY
