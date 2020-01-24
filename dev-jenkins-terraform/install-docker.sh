@@ -107,7 +107,8 @@ sudo systemctl enable docker
 echo "user-data progress finished enabling docker service starting docker"
 sudo service docker start
 cd /home/centos/jenkins
-mkdir -p /var/jenkins_home/jobs/
+sudo mkdir -p /var/jenkins_home/jobs/
+sudo mkdir -p /var/log/jenkins-docker-logs
 cp -r jobs/pic-sure-app-builds/* /var/jenkins_home/jobs/
 cp -r jobs/configuration-builds/* /var/jenkins_home/jobs/
 cp -r jobs/deployment-builds/* /var/jenkins_home/jobs/
