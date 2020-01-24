@@ -144,7 +144,7 @@
           </default>
           <int>1</int>
           <string>stack_s3_bucket</string>
-          <string>${stack_s3_bucket}</string>
+          <string>stack_s3_bucket_var</string>
         </tree-map>
       </envVars>
     </hudson.slaves.EnvironmentVariablesNodeProperty>
