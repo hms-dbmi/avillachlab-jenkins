@@ -12,6 +12,8 @@ COPY hudson.tasks.Maven.xml /var/jenkins_home/hudson.tasks.Maven.xml
 
 USER root 
 
+RUN echo "s/stack_s3_bucket_var/$S3_BUCKET/"
+
 RUN sed -i "s/stack_s3_bucket_var/$S3_BUCKET/" /var/jenkins_home/config.xml
 
 RUN echo deb http://deb.debian.org/debian stretch-backports main >> /etc/apt/sources.list
@@ -41,5 +43,3 @@ RUN apt-get install jq -y
 RUN /usr/local/bin/install-plugins.sh < /usr/share/jenkins/ref/plugins.txt
 
 RUN wget https://releases.hashicorp.com/terraform/0.12.16/terraform_0.12.16_linux_amd64.zip && unzip terraform_0.12.16_linux_amd64.zip && mv terraform /usr/local/bin/
-
-USER root
