@@ -7,7 +7,7 @@ output "provisioning-private-key" {
 }
 resource "aws_key_pair" "generated_key" {
   key_name   = "jenkins-provisioning-key-${var.stack-id}"
-  public_key = "${tls_private_key.provisioning-key.public_key_openssh}"
+  public_key = tls_private_key.provisioning-key.public_key_openssh
 }
 
 
