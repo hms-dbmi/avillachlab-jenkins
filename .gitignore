@@ -1,3 +1,6 @@
+provisioning_private_key
+provisioning_private_key.pem
+provisioning-private-key
 provisioning-private-key.pem
 .terraform/
 .project
