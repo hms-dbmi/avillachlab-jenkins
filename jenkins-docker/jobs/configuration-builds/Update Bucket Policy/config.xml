@@ -46,7 +46,8 @@ pipeline {
                     def target_stack = &quot;$target_stack&quot;
                     def stack_githash = &quot;$stack_githash&quot;
                     for(def statement : bucket_policy.Statement){
-                        if(statement.Sid!=null &amp;&amp; statement.Sid.startsWith(&quot;stack-&quot;+target_stack+&quot;-statement&quot;)){
+                        if(statement.Sid!=null &amp;&amp; statement.Sid.startsWith(&quot;stack-&quot;+target_stack+&quot;-statement&quot;)
+                        ||statement.Principal.AWS.size()&lt;22){
                             // This is an identifier that AWS uses for deleted stuff... not really sure past that
                             statements_to_remove.push(statement)
                         }
