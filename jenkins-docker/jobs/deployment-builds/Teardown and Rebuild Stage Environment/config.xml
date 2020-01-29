@@ -75,7 +75,9 @@ export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apo
 
 aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate .
 aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/stack_variables.tf .
+aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/subnet_variables.tf .
 cp stack_variables.tf ../s3-deployment-roles/
+cp subnet_variables.tf ../s3-deployment-roles/
 aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate_roles ../s3-deployment-roles/terraform.tfstate || echo &quot;role state doesnt exist, it will be created&quot;
 
 unset AWS_ACCESS_KEY_ID
