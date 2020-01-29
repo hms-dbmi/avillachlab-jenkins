@@ -15,7 +15,6 @@
         <hudson.model.StringParameterDefinition>
           <name>pipeline_build_id</name>
           <description></description>
-          <defaultValue>3ad54ffaacac069980ef94842515ccb7d3c248a6</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
@@ -34,16 +33,14 @@
 export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-aws s3 cp s3://avillach-73-bdcatalyst-etl/general/hpds/javabin/biocatalyst_javabins_11_26_2019.tar.gz .
-tar -xvzf *.tar.gz
+aws s3 cp s3://avillach-73-bdcatalyst-etl/general/hpds/javabin/biocatalyst_javabins_11_26_2019.tar.gz javabins.tar.gz
+tar -xvzf javabins.tar.gz
 unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY
 unset AWS_SESSION_TOKEN
 aws s3 --sse=AES256 cp s3://${stack_s3_bucket}/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds-etl.tar.gz pic-sure-hpds-etl.tar.gz 
 HPDS_ETL_IMAGE=`docker load &lt; ./pic-sure-hpds-etl.tar.gz  | cut -d &apos; &apos; -f 3`
 ls -alh `pwd`
-docker stop dumper
-docker rm dumper
 docker run --name dumper -d --entrypoint sleep ${HPDS_ETL_IMAGE}  10000000
 docker exec dumper mkdir -p /opt/local/hpds
 docker cp columnMeta.javabin dumper:/opt/local/hpds/columnMeta.javabin
@@ -60,7 +57,10 @@ docker cp dumper:/opt/local/hpds/allObservationsStore.javabin .
 docker cp dumper:/opt/local/hpds/encryption_key .
 docker cp dumper:/opt/local/hpds/columnMeta.javabin .
 tar -cvzf biocatalyst_javabins_11_26_2019_rekeyed.tar.gz *.javabin encryption_key
-aws s3 --sse=AES256 cp biocatalyst_javabins_11_26_2019_rekeyed.tar.gz s3://${stack_s3_bucket}/data/biocatalyst_javabins_11_26_2019_rekeyed.tar.gz</command>
+aws s3 --sse=AES256 cp biocatalyst_javabins_11_26_2019_rekeyed.tar.gz s3://${stack_s3_bucket}/data/biocatalyst_javabins_11_26_2019_rekeyed.tar.gz
+docker stop dumper
+docker rm dumper
+</command>
     </hudson.tasks.Shell>
   </builders>
   <publishers/>
