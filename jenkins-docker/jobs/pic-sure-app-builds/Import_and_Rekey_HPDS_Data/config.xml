@@ -30,15 +30,15 @@
   <concurrentBuild>false</concurrentBuild>
   <builders>
     <hudson.tasks.Shell>
-      <command>#aws sts assume-role --duration-seconds 900 --role-arn arn:aws:iam::736265540791:role/curated-datasets-s3-role --role-session-name &quot;s3-test&quot; &gt; assume-role-output.txt
-#export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-#export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-#export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-#aws s3 cp s3://avillach-73-bdcatalyst-etl/general/hpds/javabin/biocatalyst_javabins_11_26_2019.tar.gz .
-#tar -xvzf *.tar.gz
-#unset AWS_ACCESS_KEY_ID
-#unset AWS_SECRET_ACCESS_KEY
-#unset AWS_SESSION_TOKEN
+      <command>aws sts assume-role --duration-seconds 900 --role-arn arn:aws:iam::736265540791:role/curated-datasets-s3-role --role-session-name &quot;s3-test&quot; &gt; assume-role-output.txt
+export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+aws s3 cp s3://avillach-73-bdcatalyst-etl/general/hpds/javabin/biocatalyst_javabins_11_26_2019.tar.gz .
+tar -xvzf *.tar.gz
+unset AWS_ACCESS_KEY_ID
+unset AWS_SECRET_ACCESS_KEY
+unset AWS_SESSION_TOKEN
 aws s3 --sse=AES256 cp s3://${stack_s3_bucket}/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds-etl.tar.gz pic-sure-hpds-etl.tar.gz 
 HPDS_ETL_IMAGE=`docker load &lt; ./pic-sure-hpds-etl.tar.gz  | cut -d &apos; &apos; -f 3`
 ls -alh `pwd`
