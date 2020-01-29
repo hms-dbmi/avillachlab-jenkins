@@ -7,7 +7,7 @@
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
-          <name>new_stack_s3_bucket</name>
+          <name>old_stack_s3_bucket</name>
           <description></description>
           <defaultValue></defaultValue>
           <trim>false</trim>
