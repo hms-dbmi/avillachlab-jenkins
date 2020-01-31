@@ -4,7 +4,7 @@
     <string>jenkins.diagnostics.RootUrlNotSetMonitor</string>
     <string>jenkins.diagnostics.SecurityIsOffMonitor</string>
   </disabledAdministrativeMonitors>
-  <version>2.190.3</version>
+  <version>2.204.2</version>
   <installStateName>RUNNING</installStateName>
   <numExecutors>3</numExecutors>
   <mode>NORMAL</mode>
@@ -45,14 +45,7 @@
       <jobNames>
         <comparator class="hudson.util.CaseInsensitiveComparator"/>
         <string>Import_and_Rekey_HPDS_Data</string>
-        <string>PIC-SURE Auth Micro-App Build</string>
         <string>PIC-SURE Pipeline</string>
-        <string>PIC-SURE Wildfly Image Build</string>
-        <string>PIC-SURE-API Build</string>
-        <string>PIC-SURE-HPDS Build</string>
-        <string>PIC-SURE-HPDS-UI Docker Build</string>
-        <string>PIC-SURE-HPDS-UI-copdgene</string>
-        <string>Retrieve Build Spec</string>
       </jobNames>
       <jobFilters/>
       <columns>
@@ -76,12 +69,7 @@
         <comparator class="hudson.util.CaseInsensitiveComparator"/>
         <string>Deployment Pipeline</string>
         <string>Move Prod DNS Pointer</string>
-        <string>Retrieve Build Spec</string>
-        <string>Retrieve Deployment State</string>
         <string>Swap Stacks</string>
-        <string>Teardown and Rebuild Stage Environment</string>
-        <string>Update Bucket Policy</string>
-        <string>Write Stack State</string>
       </jobNames>
       <jobFilters/>
       <columns>
@@ -105,14 +93,47 @@
         <comparator class="hudson.util.CaseInsensitiveComparator"/>
         <string>Create stack_variables.tf Files</string>
         <string>Docker-AWSCLI</string>
-        <string>List Instance Profiles</string>
         <string>Update Fence Client Credentials</string>
         <string>Update HTTPD Certs and Key</string>
         <string>Update PIC-SURE Token Introspection Token</string>
         <string>Update VPC Settings</string>
+      </jobNames>
+      <jobFilters/>
+      <columns>
+        <hudson.views.StatusColumn/>
+        <hudson.views.WeatherColumn/>
+        <hudson.views.JobColumn/>
+        <hudson.views.LastSuccessColumn/>
+        <hudson.views.LastFailureColumn/>
+        <hudson.views.LastDurationColumn/>
+        <hudson.views.BuildButtonColumn/>
+      </columns>
+      <recurse>false</recurse>
+    </listView>
+    <listView>
+      <owner class="hudson" reference="../../.."/>
+      <name>Supporting Jobs</name>
+      <filterExecutors>false</filterExecutors>
+      <filterQueue>false</filterQueue>
+      <properties class="hudson.model.View$PropertyList"/>
+      <jobNames>
+        <comparator class="hudson.util.CaseInsensitiveComparator"/>
         <string>Backup Jenkins Home</string>
+        <string>biodatacatalyst-ui</string>
         <string>Create new Jenkins Server</string>
+        <string>Create stack_variables.tf Files</string>
         <string>Destroy Old Jenkins Server</string>
+        <string>List Instance Profiles</string>
+        <string>PIC-SURE Auth Micro-App Build</string>
+        <string>PIC-SURE Wildfly Image Build</string>
+        <string>PIC-SURE-API Build</string>
+        <string>PIC-SURE-HPDS Build</string>
+        <string>PIC-SURE-HPDS-UI Docker Build</string>
+        <string>PIC-SURE-HPDS-UI-copdgene</string>
+        <string>Retrieve Build Spec</string>
+        <string>Retrieve Deployment State</string>
+        <string>Teardown and Rebuild Stage Environment</string>
+        <string>Update Bucket Policy</string>
       </jobNames>
       <jobFilters/>
       <columns>
@@ -127,7 +148,7 @@
       <recurse>false</recurse>
     </listView>
   </views>
-  <primaryView>all</primaryView>
+  <primaryView>Deployment</primaryView>
   <slaveAgentPort>50000</slaveAgentPort>
   <label></label>
   <crumbIssuer class="hudson.security.csrf.DefaultCrumbIssuer">
@@ -140,11 +161,11 @@
         <unserializable-parents/>
         <tree-map>
           <default>
-            <comparator class="hudson.util.CaseInsensitiveComparator" reference="../../../../../../views/listView[3]/jobNames/comparator"/>
+            <comparator class="hudson.util.CaseInsensitiveComparator" reference="../../../../../../views/listView[4]/jobNames/comparator"/>
           </default>
           <int>1</int>
           <string>stack_s3_bucket</string>
-          <string>stack_s3_bucket_var</string>
+          <string>avillach-biodatacatalyst-deployments-f1b4a32</string>
         </tree-map>
       </envVars>
     </hudson.slaves.EnvironmentVariablesNodeProperty>
