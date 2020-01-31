@@ -57,6 +57,7 @@ export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apo
 
 aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/terraform.tfstate_prod_dns terraform.tfstate || echo &quot;prod_dns state doesnt exist, it will be created&quot;
 aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_prod_stack}/stack_variables.tf .
+aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_prod_stack}/subnet_variables.tf .
 
 unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY
