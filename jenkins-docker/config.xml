@@ -68,7 +68,6 @@
       <jobNames>
         <comparator class="hudson.util.CaseInsensitiveComparator"/>
         <string>Deployment Pipeline</string>
-        <string>Move Prod DNS Pointer</string>
         <string>Swap Stacks</string>
       </jobNames>
       <jobFilters/>
@@ -134,6 +133,7 @@
         <string>Retrieve Deployment State</string>
         <string>Teardown and Rebuild Stage Environment</string>
         <string>Update Bucket Policy</string>
+        <string>Move Prod DNS Pointer</string>
       </jobNames>
       <jobFilters/>
       <columns>
