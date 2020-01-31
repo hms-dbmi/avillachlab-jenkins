@@ -7,7 +7,7 @@
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
-          <name>new_stack_s3_bucket</name>
+          <name>stack_s3_bucket</name>
           <description></description>
           <defaultValue></defaultValue>
           <trim>false</trim>
@@ -51,7 +51,7 @@
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.0.0">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.1.1">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
@@ -79,7 +79,7 @@
 env &gt; env.txt
 terraform init
 terraform apply -auto-approve \
--var &quot;stack-s3-bucket=${new_stack_s3_bucket}&quot; \
+-var &quot;stack-s3-bucket=${stack_s3_bucket}&quot; \
 -var &quot;stack-id=${stack_id}&quot; \
 -var &quot;subnet-id=${subnet_id}&quot; \
 -var &quot;vpc-id=${vpc_id}&quot; \
@@ -87,8 +87,8 @@ terraform apply -auto-approve \
 -var &quot;access-cidr=${access_cidr}&quot; \
 -var &quot;provisioning-cidr=${provisioning_cidr}&quot;
 
-aws s3 --sse=AES256 cp terraform.tfstate s3://${new_stack_s3_bucket}/jenkins_state/terraform.tfstate 
-aws s3 --sse=AES256 cp env.txt s3://${new_stack_s3_bucket}/jenkins_state/last_env.txt
+aws s3 --sse=AES256 cp terraform.tfstate s3://${new_stack_s3_bucket}/jenkins_state_${GIT_COMMIT}/terraform.tfstate 
+aws s3 --sse=AES256 cp env.txt s3://${new_stack_s3_bucket}/jenkins_state_${GIT_COMMIT}/last_env.txt
 
 
 

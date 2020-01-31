@@ -7,7 +7,7 @@
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
-          <name>old_stack_s3_bucket</name>
+          <name>stack_s3_bucket</name>
           <description></description>
           <defaultValue></defaultValue>
           <trim>false</trim>
@@ -48,10 +48,16 @@
           <defaultValue>172.36.0.0/25</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>jenkins_githash_to_destroy</name>
+          <description></description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.0.0">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.1.1">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
@@ -76,11 +82,11 @@
   <builders>
     <hudson.tasks.Shell>
       <command>cd dev-jenkins-terraform
-aws s3 --sse=AES256 cp s3://${old_stack_s3_bucket}/jenkins_state/terraform.tfstate terraform.tfstate 
+aws s3 --sse=AES256 cp s3://${stack_s3_bucket}/jenkins_state/terraform.tfstate terraform.tfstate 
 env &gt; env.txt
 terraform init
 terraform destroy  -auto-approve \
--var &quot;stack-s3-bucket=${old_stack_s3_bucket}&quot; \
+-var &quot;stack-s3-bucket=${stack_s3_bucket}&quot; \
 -var &quot;stack-id=${stack_id}&quot; \
 -var &quot;subnet-id=${subnet_id}&quot; \
 -var &quot;vpc-id=${vpc_id}&quot; \
@@ -88,8 +94,8 @@ terraform destroy  -auto-approve \
 -var &quot;access-cidr=${access_cidr}&quot; \
 -var &quot;provisioning-cidr=${provisioning_cidr}&quot;
 
-aws s3 --sse=AES256 cp terraform.tfstate s3://${old_stack_s3_bucket}/jenkins_state/terraform.tfstate 
-aws s3 --sse=AES256 cp env.txt s3://${old_stack_s3_bucket}/jenkins_state/last_env.txt
+aws s3 --sse=AES256 cp terraform.tfstate s3://${stack_s3_bucket}/jenkins_state_${jenkins_githash_to_destroy}/terraform.tfstate 
+aws s3 --sse=AES256 cp env.txt s3://${stack_s3_bucket}/jenkins_state_${jenkins_githash_to_destroy}/last_env.txt
 
 
 
