@@ -6,7 +6,7 @@ output "provisioning-private-key" {
   value = tls_private_key.provisioning-key.private_key_pem
 }
 resource "aws_key_pair" "generated_key" {
-  key_name   = "jenkins-provisioning-key-${var.stack-id}"
+  key_name   = "jenkins-provisioning-key-${var.stack-id}-${var.git-commit}"
   public_key = tls_private_key.provisioning-key.public_key_openssh
 }
 
@@ -66,7 +66,7 @@ resource "aws_instance" "dev-jenkins" {
   tags = {
     Owner       = "Avillach_Lab"
     Environment = "development"
-    Name        = "FISMA Terraform Playground - Dev Jenkins - ${var.stack-id}"
+    Name        = "FISMA Terraform Playground - Dev Jenkins - ${var.stack-id} - ${var.git-commit}"
   }
 
   user_data = data.template_cloudinit_config.config.rendered

@@ -3,6 +3,10 @@ variable "stack-id" {
 	default = "test"
 }
 
+variable "git-commit" {
+    type = string
+}
+
 variable "subnet-id" {
     type = string
 }
