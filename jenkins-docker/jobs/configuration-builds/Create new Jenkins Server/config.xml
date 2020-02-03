@@ -79,7 +79,7 @@
 env &gt; env.txt
 terraform init
 terraform apply -auto-approve \
--var &quot;git-commit=&grave;echo ${GIT_COMMIT} |cut -c1-7&grave;&quot; \
+-var &quot;git-commit=`echo ${GIT_COMMIT} |cut -c1-7`&quot; \
 -var &quot;stack-s3-bucket=${stack_s3_bucket}&quot; \
 -var &quot;stack-id=${stack_id}&quot; \
 -var &quot;subnet-id=${subnet_id}&quot; \
@@ -91,9 +91,11 @@ terraform apply -auto-approve \
 aws s3 --sse=AES256 cp terraform.tfstate s3://${stack_s3_bucket}/jenkins_state_${GIT_COMMIT}/terraform.tfstate 
 aws s3 --sse=AES256 cp env.txt s3://${stack_s3_bucket}/jenkins_state_${GIT_COMMIT}/last_env.txt
 
+INSTANCE_ID=`terraform state show aws_instance.dev-jenkins | grep &quot;\&quot;i-[a-f0-9]&quot; | cut -f 2 -d &quot;=&quot; | sed &apos;s/&quot;//g&apos;`
 
+while [ -z $(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do echo &quot;still initializing&quot;;sleep 10;done
 
-</command>
+echo &quot;http://`terraform state show aws_instance.dev-jenkins | grep private_ip | cut -f 2 -d &quot;=&quot; | sed &apos;s/\&quot;//g&apos; | sed &apos;s/ //g&apos;`&quot;</command>
     </hudson.tasks.Shell>
   </builders>
   <publishers/>
