@@ -238,6 +238,24 @@ echo "
                \"log_group_name\":\"jenkins-logs\",
                \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs biodatacatalyst-ui\",
                \"timestamp_format\":\"UTC\"
+            },
+            {
+               \"file_path\":\"/var/jenkins_home/jobs/Await Initialization/**/log\",
+               \"log_group_name\":\"jenkins-logs\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs biodatacatalyst-ui\",
+               \"timestamp_format\":\"UTC\"
+            },
+            {
+               \"file_path\":\"/var/jenkins_home/jobs/Backup Jenkins Home/**/log\",
+               \"log_group_name\":\"jenkins-logs\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs biodatacatalyst-ui\",
+               \"timestamp_format\":\"UTC\"
+            },
+            {
+               \"file_path\":\"/var/jenkins_home/jobs/Check For Updates/**/log\",
+               \"log_group_name\":\"jenkins-logs\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs biodatacatalyst-ui\",
+               \"timestamp_format\":\"UTC\"
             }
          ]
       }
@@ -265,9 +283,7 @@ sudo service docker start
 cd /home/centos/jenkins
 sudo mkdir -p /var/jenkins_home/jobs/
 sudo mkdir -p /var/log/jenkins-docker-logs
-cp -r jobs/pic-sure-app-builds/* /var/jenkins_home/jobs/
-cp -r jobs/configuration-builds/* /var/jenkins_home/jobs/
-cp -r jobs/deployment-builds/* /var/jenkins_home/jobs/
+cp -r jobs/* /var/jenkins_home/jobs/
 sudo docker build --build-arg S3_BUCKET=${stack_s3_bucket} -t avillach-lab-dev-jenkins .
 sudo docker run -d -v /var/jenkins_home/jobs:/var/jenkins_home/jobs -v /var/run/docker.sock:/var/run/docker.sock -p 80:8080 --name jenkins --restart always avillach-lab-dev-jenkins
 echo "setup script finished"

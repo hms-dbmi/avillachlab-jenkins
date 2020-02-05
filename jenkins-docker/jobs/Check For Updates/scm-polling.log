@@ -1,0 +1,10 @@
+Started on Feb 5, 2020 12:16:00 PM
+Using strategy: Default
+[poll] Last Built Revision: Revision 0a89249cfcd268a7761f02c6eb2a17b709a0058a (refs/remotes/origin/master)
+No credentials specified
+ > git --version # timeout=10
+ > git ls-remote -h -- https://github.com/hms-dbmi/avillachlab-jenkins-dev-release-control # timeout=10
+Found 1 remote heads on https://github.com/hms-dbmi/avillachlab-jenkins-dev-release-control
+[poll] Latest remote head revision on refs/heads/master is: 0a89249cfcd268a7761f02c6eb2a17b709a0058a - already built by 9
+Done. Took 0.13 sec
+No changes

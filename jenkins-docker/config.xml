@@ -6,7 +6,7 @@
   </disabledAdministrativeMonitors>
   <version>2.204.2</version>
   <installStateName>RUNNING</installStateName>
-  <numExecutors>3</numExecutors>
+  <numExecutors>5</numExecutors>
   <mode>NORMAL</mode>
   <useSecurity>true</useSecurity>
   <authorizationStrategy class="hudson.security.AuthorizationStrategy$Unsecured"/>
@@ -67,6 +67,7 @@
       <properties class="hudson.model.View$PropertyList"/>
       <jobNames>
         <comparator class="hudson.util.CaseInsensitiveComparator"/>
+        <string>Check For Updates</string>
         <string>Deployment Pipeline</string>
         <string>Swap Stacks</string>
       </jobNames>
@@ -117,6 +118,7 @@
       <properties class="hudson.model.View$PropertyList"/>
       <jobNames>
         <comparator class="hudson.util.CaseInsensitiveComparator"/>
+        <string>Await Initialization</string>
         <string>Backup Jenkins Home</string>
         <string>biodatacatalyst-ui</string>
         <string>Create new Jenkins Server</string>
@@ -161,7 +163,7 @@
         <unserializable-parents/>
         <tree-map>
           <default>
-            <comparator class="hudson.util.CaseInsensitiveComparator" reference="../../../../../../views/listView[4]/jobNames/comparator"/>
+            <comparator class="hudson.util.CaseInsensitiveComparator"/>
           </default>
           <int>1</int>
           <string>stack_s3_bucket</string>
