@@ -13,36 +13,6 @@ Create new S3 bucket for new Jenkins instance to use setting the following optio
    - Enable versioning
    - Server access logging enabled (hms-dbmi-cnc-cloudtrail, no target prefix)
 
-Clone https://github.com/hms-dbmi/avillachlab-jenkins
-
-Run the following commands after replacing all __VARIABLE_NAME__ entries with their correct values for the environment:
-
------------------------------------------------------
-
-cd dev-jenkins-terraform
-env > env.txt
-terraform init
-terraform apply -auto-approve \
--var "git-commit=__GIT_COMMIT_FOR_JENKINS_REPO__" \
--var "stack-s3-bucket=__S3_BUCKET_NAME_YOU_CREATED__" \
--var "stack-id=__S3_BUCKET_NAME_SUFFIX__" \
--var "subnet-id=__JENKINS_SUBNET_ID__" \
--var "vpc-id=__JENKINS_VPC_ID__" \
--var "instance-profile-name=__JENKINS_INSTANCE_PROFILE_NAME__" \
--var "access-cidr=__JENKINS_ACCESS_CIDR__" \
--var "provisioning-cidr=__JENKINS_PROVISIONING_CIDR__"
-
-aws s3 --sse=AES256 cp terraform.tfstate s3://${stack_s3_bucket}/jenkins_state_${GIT_COMMIT}/terraform.tfstate 
-aws s3 --sse=AES256 cp env.txt s3://${stack_s3_bucket}/jenkins_state_${GIT_COMMIT}/last_env.txt
-
-INSTANCE_ID=`terraform state show aws_instance.dev-jenkins | grep "\"i-[a-f0-9]" | cut -f 2 -d "=" | sed 's/"//g'`
-
-while [ -z $(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters "Name=resource-id,Values=${INSTANCE_ID}" | grep InitComplete) ];do echo "still initializing";sleep 10;done
-
-echo "http://`terraform state show aws_instance.dev-jenkins | grep private_ip | cut -f 2 -d "=" | sed 's/\"//g' | sed 's/ //g'`"
-
------------------------------------------------------
-
 Set Bucket Policy in the Permissions section for the bucket to the following after replacing __BUCKET_NAME__ with the bucket name:
 
 -----------------------------------------------------
@@ -83,6 +53,38 @@ Set Bucket Policy in the Permissions section for the bucket to the following aft
 }
 -----------------------------------------------------
 
+
+
+
+Clone https://github.com/hms-dbmi/avillachlab-jenkins
+
+Run the following commands after replacing all __VARIABLE_NAME__ entries with their correct values for the environment:
+
+-----------------------------------------------------
+
+cd dev-jenkins-terraform
+env > env.txt
+terraform init
+terraform apply -auto-approve \
+-var "git-commit=__GIT_COMMIT_FOR_JENKINS_REPO__" \
+-var "stack-s3-bucket=__S3_BUCKET_NAME_YOU_CREATED__" \
+-var "stack-id=__S3_BUCKET_NAME_SUFFIX__" \
+-var "subnet-id=__JENKINS_SUBNET_ID__" \
+-var "vpc-id=__JENKINS_VPC_ID__" \
+-var "instance-profile-name=__JENKINS_INSTANCE_PROFILE_NAME__" \
+-var "access-cidr=__JENKINS_ACCESS_CIDR__" \
+-var "provisioning-cidr=__JENKINS_PROVISIONING_CIDR__"
+
+aws s3 --sse=AES256 cp terraform.tfstate s3://${stack_s3_bucket}/jenkins_state_${GIT_COMMIT}/terraform.tfstate 
+aws s3 --sse=AES256 cp env.txt s3://${stack_s3_bucket}/jenkins_state_${GIT_COMMIT}/last_env.txt
+
+INSTANCE_ID=`terraform state show aws_instance.dev-jenkins | grep "\"i-[a-f0-9]" | cut -f 2 -d "=" | sed 's/"//g'`
+
+while [ -z $(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters "Name=resource-id,Values=${INSTANCE_ID}" | grep InitComplete) ];do echo "still initializing";sleep 10;done
+
+echo "http://`terraform state show aws_instance.dev-jenkins | grep private_ip | cut -f 2 -d "=" | sed 's/\"//g' | sed 's/ //g'`"
+
+-----------------------------------------------------
 
 
 Set stack_s3_bucket Value to new S3 bucket name in new Jenkins
