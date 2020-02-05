@@ -11,6 +11,7 @@ Create new S3 bucket for new Jenkins instance to use setting the following optio
    - Encryption should be AES-256
    - Enable Object-level logging as secrets are stored in this bucket
    - Enable versioning
+   - Server access logging enabled (hms-dbmi-cnc-cloudtrail, no target prefix)
 
 Clone https://github.com/hms-dbmi/avillachlab-jenkins
 
@@ -41,6 +42,48 @@ while [ -z $(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters "
 echo "http://`terraform state show aws_instance.dev-jenkins | grep private_ip | cut -f 2 -d "=" | sed 's/\"//g' | sed 's/ //g'`"
 
 -----------------------------------------------------
+
+Set Bucket Policy in the Permissions section for the bucket to the following after replacing __BUCKET_NAME__ with the bucket name:
+
+-----------------------------------------------------
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::191687121306:role/hms-dbmi-cnc-role"
+            },
+            "Action": [
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:PutObjectAcl",
+                "s3:GetObjectAcl",
+                "s3:GetObjectTagging",
+                "s3:DeleteObject"
+            ],
+            "Resource": "arn:aws:s3:::__BUCKET_NAME__/*"
+        },
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::752463128620:role/system/jenkins-s3-role"
+            },
+            "Action": [
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:PutObjectAcl",
+                "s3:GetObjectAcl",
+                "s3:GetObjectTagging",
+                "s3:DeleteObject"
+            ],
+            "Resource": "arn:aws:s3:::__BUCKET_NAME__/*"
+        }
+    ]
+}
+-----------------------------------------------------
+
+
 
 Set stack_s3_bucket Value to new S3 bucket name in new Jenkins
    - Manage Jenkins > Configure System
