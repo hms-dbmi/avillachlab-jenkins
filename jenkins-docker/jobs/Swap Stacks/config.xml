@@ -1,8 +1,8 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <flow-definition plugin="workflow-job@2.36">
   <actions>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@1.5.0"/>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@1.5.0">
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@1.5.1"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@1.5.1">
       <jobProperties/>
       <triggers/>
       <parameters/>
@@ -26,13 +26,15 @@ pipeline {
                     retrieveDepStateId = result.number
                     copyArtifacts filter: &apos;*&apos;, projectName: &apos;Retrieve Deployment State&apos;, selector: specific(&quot;&quot;+retrieveDepStateId)
                     sh &apos;cat stacks.json&apos;
-                    stacksJson = new File(&apos;/var/jenkins_home/workspace/Deployment Pipeline/stacks.json&apos;).text
+                    stacksJson = new File(&apos;/var/jenkins_home/workspace/Retrieve Deployment State/stacks.json&apos;).text
                     def stacks = new JsonSlurperClassic().parseText(stacksJson)
                     def prod = stacks.environments.prod
+                    println(stacks.environments.next_prod)
+                    println(stacks.environments.prod)
                     stacks.environments.prod = stacks.environments.next_prod
                     stacks.environments.next_prod = prod
-                    def target_prod_stack = stacks.environments.prod.toString()
-                    def target_next_prod_stack = stacks.environments.next_prod.toString()
+                    def target_prod_stack = stacks.environments.prod
+                    def target_next_prod_stack = stacks.environments.next_prod
                     println(target_prod_stack)
                     println(target_next_prod_stack)
                     stacksJson = JsonOutput.toJson(stacks)

@@ -28,13 +28,12 @@ data "template_cloudinit_config" "config" {
     content_type = "text/x-shellscript"
     content      = data.template_file.jenkins-user_data.rendered
   }
-
 }
 
 resource "aws_instance" "dev-jenkins" {
   ami = "ami-05091d5b01d0fda35"
   instance_type = "m5.xlarge"
-  associate_public_ip_address = true
+  associate_public_ip_address = false
   key_name = aws_key_pair.generated_key.key_name
 
   iam_instance_profile = var.instance-profile-name

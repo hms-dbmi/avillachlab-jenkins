@@ -40,7 +40,7 @@
   <builders>
     <hudson.tasks.Shell>
       <command>cd app-infrastructure
-wget https://releases.hashicorp.com/terraform/0.12.16/terraform_0.12.16_linux_amd64.zip &amp;&amp; unzip terraform_0.12.16_linux_amd64.zip &amp;&amp; mv terraform /usr/local/bin/
+wget https://releases.hashicorp.com/terraform/0.12.21/terraform_0.12.21_linux_amd64.zip &amp;&amp; unzip terraform_0.12.21_linux_amd64.zip &amp;&amp; mv terraform /usr/local/bin/
 terraform init
 
 aws sts assume-role --duration-seconds 900 --role-arn &quot;arn:aws:iam::752463128620:role/system/jenkins-s3-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
@@ -65,21 +65,15 @@ export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut 
 export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 
 INSTANCE_ID=`terraform state show aws_instance.wildfly-ec2 | grep &quot;\&quot;i-[a-f0-9]&quot; | cut -f 2 -d &quot;=&quot; | sed &apos;s/&quot;//g&apos;`
-
 while [ -z $(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do echo &quot;still initializing&quot;;sleep 10;done
-
 echo &quot;Wildfly EC2 Initialization Complete&quot;
 
 INSTANCE_ID=`terraform state show aws_instance.httpd-ec2 | grep &quot;\&quot;i-[a-f0-9]&quot; | cut -f 2 -d &quot;=&quot; | sed &apos;s/&quot;//g&apos;`
-
 while [ -z $(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do echo &quot;still initializing&quot;;sleep 10;done
-
 echo &quot;HTTPD EC2 Initialization Complete&quot;
 
 INSTANCE_ID=`terraform state show aws_instance.hpds-ec2 | grep &quot;\&quot;i-[a-f0-9]&quot; | cut -f 2 -d &quot;=&quot; | sed &apos;s/&quot;//g&apos;`
-
 while [ -z $(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do echo &quot;still initializing&quot;;sleep 10;done
-
 echo &quot;HPDS EC2 Initialization Complete&quot;
 
 unset AWS_ACCESS_KEY_ID
@@ -88,5 +82,12 @@ unset AWS_SESSION_TOKEN</command>
     </hudson.tasks.Shell>
   </builders>
   <publishers/>
-  <buildWrappers/>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.38">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
 </project>
