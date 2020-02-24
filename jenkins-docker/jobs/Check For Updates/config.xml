@@ -53,7 +53,7 @@ Jenkins.instance.getItemByFullName(&quot;PIC-SURE Pipeline&quot;)
     <hudson.tasks.Shell>
       <command>LAST_DATASET_MODIFICATION_COMMIT=`git blame --abbrev=39 build-spec.json | grep source_dataset_s3_url | cut -f 1 -d &apos; &apos;`
 
-sudo docker exec jenkins /usr/local/bin/aws s3api head-object --bucket $stack_s3_bucket --key &quot;data/${LAST_DATASET_MODIFICATION_COMMIT}/javabins_rekeyed.tar.gz&quot; || not_exist=true
+docker exec jenkins /usr/local/bin/aws s3api head-object --bucket $stack_s3_bucket --key &quot;data/${LAST_DATASET_MODIFICATION_COMMIT}/javabins_rekeyed.tar.gz&quot; || not_exist=true
 if [ $not_exist ]; then
   echo $LAST_DATASET_MODIFICATION_COMMIT &gt; toBeRekeyed.txt
   echo &quot;Will rekey new dataset.&quot;
@@ -98,5 +98,12 @@ Jenkins.instance.getItemByFullName(&quot;Deployment Pipeline&quot;)
     </hudson.plugins.groovy.SystemGroovy>
   </builders>
   <publishers/>
-  <buildWrappers/>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.38">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
 </project>

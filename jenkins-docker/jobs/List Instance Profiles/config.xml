@@ -4,7 +4,7 @@
   <description></description>
   <keepDependencies>false</keepDependencies>
   <properties/>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.0.0">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.1.1">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
@@ -42,9 +42,9 @@ aws iam list-instance-profiles
 #aws iam delete-instance-profile --instance-profile-name wildfly-deployment-s3-profile-25db717
 #aws iam delete-instance-profile --instance-profile-name hpds-deployment-s3-profile-25db717
 
-aws iam delete-instance-profile --instance-profile-name hpds-deployment-s3-profile-a-1330e2a
-aws iam delete-instance-profile --instance-profile-name httpd-deployment-s3-profile-a-1330e2a
-aws iam delete-instance-profile --instance-profile-name wildfly-deployment-s3-profile-a-1330e2a
+aws iam delete-instance-profile --instance-profile-name hpds-deployment-s3-profile-a-c200e89
+aws iam delete-instance-profile --instance-profile-name httpd-deployment-s3-profile-a-c200e89
+aws iam delete-instance-profile --instance-profile-name wildfly-deployment-s3-profile-a-c200e89
 
 echo
 echo
