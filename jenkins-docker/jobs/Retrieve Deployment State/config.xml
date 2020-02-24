@@ -35,7 +35,7 @@ if [ $LOCK_STATE = &quot;OFF&quot; ]
         --key deployment_state_metadata/stacks.json \
         --legal-hold Status=ON
         
-        aws s3 cp --sse-kms-key-id 7108c590-ce25-4c2d-a0e3-9f9b18afec43 s3://$S3_BUCKET_NAME/deployment_state_metadata/stacks.json .
+        aws s3  --sse=AES256 cp s3://$S3_BUCKET_NAME/deployment_state_metadata/stacks.json .
         
     else
         echo &quot;Deployment state is currently locked. Another deployment may be in progress or have failed for some reason. Please investigate before manually clearning the lock state.&quot;
