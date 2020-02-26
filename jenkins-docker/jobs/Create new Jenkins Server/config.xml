@@ -19,6 +19,12 @@
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
+          <name>stack_jenkins_dockerfile</name>
+          <description></description>
+          <defaultValue>Dockerfile</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
           <name>subnet_id</name>
           <description></description>
           <defaultValue>subnet-002719488d0e4f10d</defaultValue>
@@ -81,6 +87,7 @@ terraform init
 terraform apply -auto-approve \
 -var &quot;git-commit=`echo ${GIT_COMMIT} |cut -c1-7`&quot; \
 -var &quot;stack-s3-bucket=${stack_s3_bucket}&quot; \
+-var &quot;stack-jenkins-dockerfile=${stack_jenkins_dockerfile}&quot; \
 -var &quot;stack-id=${stack_id}&quot; \
 -var &quot;subnet-id=${subnet_id}&quot; \
 -var &quot;vpc-id=${vpc_id}&quot; \
