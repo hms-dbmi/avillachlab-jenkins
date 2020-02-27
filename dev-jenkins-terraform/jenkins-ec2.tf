@@ -16,6 +16,7 @@ data "template_file" "jenkins-user_data" {
   vars = {
     stack_s3_bucket = var.stack-s3-bucket
     stack_id = var.stack-id
+    stack_jenkins_dockerfile = var.stack-jenkins-dockerfile
   }
 }
 
