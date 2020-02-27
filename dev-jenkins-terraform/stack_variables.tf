@@ -31,6 +31,6 @@ variable "stack-s3-bucket" {
 	type = string
 }
 
-variable "stack_jenkins_dockerfile" {
+variable "stack-jenkins-dockerfile" {
 	type = string
 }
