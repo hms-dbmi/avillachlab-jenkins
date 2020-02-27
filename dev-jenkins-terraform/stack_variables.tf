@@ -30,3 +30,7 @@ variable "provisioning-cidr" {
 variable "stack-s3-bucket" {
 	type = string
 }
+
+variable "stack_jenkins_dockerfile" {
+	type = string
+}
