@@ -35,7 +35,7 @@ resource "aws_instance" "dev-jenkins" {
   # AMI on 90 account 
   ami = "ami-0f644567956fefe71"
   instance_type = "m5.xlarge"
-  associate_public_ip_address = false
+  associate_public_ip_address = true
   key_name = aws_key_pair.generated_key.key_name
 
   iam_instance_profile = var.instance-profile-name
