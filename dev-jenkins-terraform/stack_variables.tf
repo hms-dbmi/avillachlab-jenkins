@@ -34,3 +34,7 @@ variable "stack-s3-bucket" {
 variable "stack-jenkins-dockerfile" {
 	type = string
 }
+
+variable "cis-centos-linux-ami-id" {
+	type = string
+}

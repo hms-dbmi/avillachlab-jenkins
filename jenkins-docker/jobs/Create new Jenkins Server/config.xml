@@ -54,6 +54,12 @@
           <defaultValue>0.0.0.0/0</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>cis-centos-linux-ami-id</name>
+          <description></description>
+          <defaultValue>ami-0f644567956fefe71</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -93,7 +99,8 @@ terraform apply -auto-approve \
 -var &quot;vpc-id=${vpc_id}&quot; \
 -var &quot;instance-profile-name=${instance_profile_name}&quot; \
 -var &quot;access-cidr=${access_cidr}&quot; \
--var &quot;provisioning-cidr=${provisioning_cidr}&quot;
+-var &quot;provisioning-cidr=${provisioning_cidr}&quot; \
+-var &quot;cis-centos-linux-ami-id=${cis_centos_linux_ami_id}&quot;
 
 aws s3 --sse=AES256 cp terraform.tfstate s3://${stack_s3_bucket}/jenkins_state_${GIT_COMMIT}/terraform.tfstate 
 aws s3 --sse=AES256 cp env.txt s3://${stack_s3_bucket}/jenkins_state_${GIT_COMMIT}/last_env.txt

@@ -73,7 +73,9 @@ terraform apply -auto-approve \
 -var "vpc-id=__JENKINS_VPC_ID__" \
 -var "instance-profile-name=__JENKINS_INSTANCE_PROFILE_NAME__" \
 -var "access-cidr=__JENKINS_ACCESS_CIDR__" \
--var "provisioning-cidr=__JENKINS_PROVISIONING_CIDR__"
+-var "provisioning-cidr=__JENKINS_PROVISIONING_CIDR__"\
+-var "cis-centos-linux-ami-id=__CIS_CENTOS_AMI_AVAILABLE_FROM_THAT_AWS_ACCOUNT__"
+-var "stack-jenkins-dockerfile=__Dockerfile__"
 
 aws s3 --sse=AES256 cp terraform.tfstate s3://${stack_s3_bucket}/jenkins_state_${GIT_COMMIT}/terraform.tfstate 
 aws s3 --sse=AES256 cp env.txt s3://${stack_s3_bucket}/jenkins_state_${GIT_COMMIT}/last_env.txt
