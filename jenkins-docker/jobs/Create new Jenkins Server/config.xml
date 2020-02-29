@@ -8,26 +8,26 @@
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
           <name>stack_s3_bucket</name>
-          <description></description>
+          <description>avillach-biodatacatalyst-deployments-3drb48r</description>
           <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>stack_id</name>
           <description></description>
-          <defaultValue></defaultValue>
+          <defaultValue>3drb48r</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>stack_jenkins_dockerfile</name>
           <description></description>
-          <defaultValue>Dockerfile</defaultValue>
+          <defaultValue>Dockerfile_nonFisma</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>subnet_id</name>
           <description></description>
-          <defaultValue>subnet-002719488d0e4f10d</defaultValue>
+          <defaultValue>subnet-00a35d901a151ab01</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
@@ -39,19 +39,19 @@
         <hudson.model.StringParameterDefinition>
           <name>access_cidr</name>
           <description></description>
-          <defaultValue>172.24.0.68/32</defaultValue>
+          <defaultValue>134.174.0.0/16</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>vpc_id</name>
           <description></description>
-          <defaultValue>vpc-07fdd0533a5ec2e35</defaultValue>
+          <defaultValue>vpc-06d289a45c9021bdc</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>provisioning_cidr</name>
           <description></description>
-          <defaultValue>172.36.0.0/25</defaultValue>
+          <defaultValue>0.0.0.0/0</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>

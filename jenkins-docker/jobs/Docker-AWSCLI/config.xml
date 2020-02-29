@@ -17,13 +17,13 @@
         <hudson.model.StringParameterDefinition>
           <name>VPC_ID</name>
           <description></description>
-          <defaultValue></defaultValue>
+          <defaultValue>vpc-06d289a45c9021bdc</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>SUBNET_ID</name>
           <description></description>
-          <defaultValue></defaultValue>
+          <defaultValue>subnet-00a35d901a151ab01</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
