@@ -158,7 +158,7 @@ def getSubnetForName(String name, def subnetsResponse){
     <hudson.tasks.Shell>
       <command># Push new subnet variables files to bucket
 
-aws sts assume-role --duration-seconds 900 --role-arn &quot;arn:aws:iam::$aws_account_cnc:role/system/jenkins-s3-role&quot; --role-session-name &quot;configure-vpc-settings&quot; &gt; assume-role-output.txt
+aws sts assume-role --duration-seconds 900 --role-arn $arn_role_cnc --role-session-name &quot;configure-vpc-settings&quot; &gt; assume-role-output.txt
 
 export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
