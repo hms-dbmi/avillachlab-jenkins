@@ -29,7 +29,7 @@
   <builders>
     <hudson.tasks.Shell>
       <command>SOURCE_FILE_S3_LINK=`grep source_dataset_s3_url build-spec.json | cut -d &apos;:&apos; -f 2,3 | sed &apos;s/&quot;//g&apos;`
-aws sts assume-role --duration-seconds 900 --role-arn arn:aws:iam::736265540791:role/curated-datasets-s3-role --role-session-name &quot;s3-test&quot; &gt; assume-role-output.txt
+aws sts assume-role --duration-seconds 900 --role-arn $arn_role_data --role-session-name &quot;s3-test&quot; &gt; assume-role-output.txt
 export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`

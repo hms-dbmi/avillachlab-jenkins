@@ -257,12 +257,12 @@ urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress
             <comparator class="hudson.util.CaseInsensitiveComparator"/>
           </default>
           <int>5</int>
-          <string>aws_account_app</string>
-          <string>900561893673</string>
-          <string>aws_account_cnc</string>
-          <string>900561893673</string>
-          <string>aws_account_data</string>
-          <string>736265540791</string>
+          <string>arn_role_app</string>
+          <string>arn:aws:iam::900561893673:role/hms-dbmi-cnc-role</string>
+          <string>arn_role_cnc</string>
+          <string>arn:aws:iam::900561893673:role/system/jenkins-s3-role</string>
+          <string>arn_role_data</string>
+          <string>arn:aws:iam::736265540791:role/curated-datasets-s3-role</string>
           <string>stack_s3_bucket</string>
           <string>avillach-biodatacatalyst-deployments-3drb48r</string>
           <string>git_branch_avillachlab_secure_infrastructure</string>
