@@ -256,9 +256,15 @@ urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress
           <default>
             <comparator class="hudson.util.CaseInsensitiveComparator"/>
           </default>
-          <int>1</int>
+          <int>4</int>
+          <string>aws_account_app</string>
+          <string>900561893673</string>
+          <string>aws_account_cnc</string>
+          <string>900561893673</string>
+          <string>aws_account_data</string>
+          <string>736265540791</string>
           <string>stack_s3_bucket</string>
-          <string>avillach-biodatacatalyst-deployments-b7rwpwv</string>
+          <string>avillach-biodatacatalyst-deployments-3drb48r</string>
         </tree-map>
       </envVars>
     </hudson.slaves.EnvironmentVariablesNodeProperty>
