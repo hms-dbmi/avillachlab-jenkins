@@ -288,10 +288,6 @@ sudo docker build --build-arg S3_BUCKET=${stack_s3_bucket} -t avillach-lab-dev-j
 sudo docker run -d -v /var/jenkins_home/jobs:/var/jenkins_home/jobs -v /var/run/docker.sock:/var/run/docker.sock -p 80:8080 --name jenkins --restart always avillach-lab-dev-jenkins
 echo "setup script finished"
 
-sudo docker exec jenkins java -jar /var/jenkins_home/war/WEB-INF/jenkins-cli.jar -s http://127.0.0.1:8080/ install-plugin saml -deploy
-sudo docker exec jenkins java -jar /var/jenkins_home/war/WEB-INF/jenkins-cli.jar -s http://127.0.0.1:8080/ install-plugin role-strategy -restart
-echo "install SAML and role-strategy for Okta finished"
-
 sudo docker logs -f jenkins > /var/log/jenkins-docker-logs/jenkins.log &
 
 INSTANCE_ID=$(curl -H "X-aws-ec2-metadata-token: $(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")" --silent http://169.254.169.254/latest/meta-data/instance-id)
