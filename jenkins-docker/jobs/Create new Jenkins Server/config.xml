@@ -8,8 +8,8 @@
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
           <name>stack_s3_bucket</name>
-          <description>avillach-biodatacatalyst-deployments-3drb48r</description>
-          <defaultValue></defaultValue>
+          <description></description>
+          <defaultValue>avillach-biodatacatalyst-deployments-3drb48r</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>

@@ -256,7 +256,7 @@ urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress
           <default>
             <comparator class="hudson.util.CaseInsensitiveComparator"/>
           </default>
-          <int>6</int>
+          <int>7</int>
           <string>arn_role_app</string>
           <string>arn:aws:iam::900561893673:role/hms-dbmi-cnc-role</string>
           <string>arn_role_cnc</string>
@@ -266,6 +266,8 @@ urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress
           <string>stack_s3_bucket</string>
           <string>avillach-biodatacatalyst-deployments-3drb48r</string>
           <string>git_branch_avillachlab_secure_infrastructure</string>
+          <string>paul-non-FISMA</string>
+          <string>git_branch_avillachlab_jenkins_dev_release_control</string>
           <string>paul-non-FISMA</string>
           <string>aws_account_app</string>
           <string>900561893673</string>
