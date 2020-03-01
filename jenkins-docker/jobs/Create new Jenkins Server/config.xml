@@ -55,7 +55,7 @@
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>cis-centos-linux-ami-id</name>
+          <name>cis_centos_linux_ami_id</name>
           <description></description>
           <defaultValue>ami-0f644567956fefe71</defaultValue>
           <trim>false</trim>
