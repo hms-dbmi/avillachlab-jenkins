@@ -20,6 +20,13 @@ data "template_file" "jenkins-user_data" {
   }
 }
 
+data "template_file" "jenkins-config-xml" {
+  template = file("../jenkins-docker/${config-xml-filename}")
+  vars = {
+    okta_metadata_description = var.okta-metadata-description
+  }
+}
+
 data "template_cloudinit_config" "config" {
   gzip          = true
   base64_encode = true
@@ -48,6 +55,17 @@ resource "aws_instance" "dev-jenkins" {
   provisioner "file" {
     source      = "../jenkins-docker"
     destination = "/home/centos/jenkins"
+    connection {
+      type     = "ssh"
+      user     = "centos"
+      private_key = tls_private_key.provisioning-key.private_key_pem
+      host = self.private_ip
+    }
+  }
+
+  provisioner "file" {
+    content = data.template_file.jenkins-config-xml.rendered
+    destination = "/home/centos/jenkins/config.xml"
     connection {
       type     = "ssh"
       user     = "centos"

@@ -7,6 +7,11 @@ variable "git-commit" {
     type = string
 }
 
+variable "config-xml-filename" {
+    type = string
+    default = "config.xml"
+}
+
 variable "subnet-id" {
     type = string
 }
