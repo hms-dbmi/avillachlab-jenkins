@@ -12,6 +12,11 @@ variable "config-xml-filename" {
     default = "config.xml"
 }
 
+variable "okta-metadata-description" {
+    type = string
+    default = "none"
+}
+
 variable "subnet-id" {
     type = string
 }

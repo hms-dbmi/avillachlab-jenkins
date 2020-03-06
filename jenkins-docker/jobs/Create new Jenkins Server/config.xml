@@ -19,6 +19,12 @@
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
+          <name>config_xml_filename</name>
+          <description></description>
+          <defaultValue>config.xml</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
           <name>stack_jenkins_dockerfile</name>
           <description></description>
           <defaultValue>Dockerfile_nonFisma</defaultValue>
@@ -95,6 +101,7 @@ terraform apply -auto-approve \
 -var &quot;stack-s3-bucket=${stack_s3_bucket}&quot; \
 -var &quot;stack-jenkins-dockerfile=${stack_jenkins_dockerfile}&quot; \
 -var &quot;stack-id=${stack_id}&quot; \
+-var &quot;config-xml-filename=${config_xml_filename}&quot; \
 -var &quot;subnet-id=${subnet_id}&quot; \
 -var &quot;vpc-id=${vpc_id}&quot; \
 -var &quot;instance-profile-name=${instance_profile_name}&quot; \
