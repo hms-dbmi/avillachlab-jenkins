@@ -20,12 +20,6 @@ data "template_file" "jenkins-user_data" {
   }
 }
 
-data "template_file" "jenkins-config-xml" {
-  template = file("../jenkins-docker/${var.config-xml-filename}")
-  vars = {
-    okta_metadata_description = urlencode(file("okta-metadata-description.xml"))
-  }
-}
 
 data "template_cloudinit_config" "config" {
   gzip          = true
