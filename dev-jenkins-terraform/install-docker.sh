@@ -74,115 +74,115 @@ echo "
             {
                \"file_path\":\"/var/log/jenkins-docker-logs/*\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-app-logs \",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-app-logs\",
                \"timestamp_format\":\"UTC\"
             },
             {
                \"file_path\":\"/var/jenkins_home/jobs/Backup Jenkins Home/**/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Backup Jenkins Home\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Backup_Jenkins_Home\",
                \"timestamp_format\":\"UTC\"
             },
             {
                \"file_path\":\"/var/jenkins_home/jobs/Create new Jenkins Server/**/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Create new Jenkins Server\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Create_new_Jenkins_Server\",
                \"timestamp_format\":\"UTC\"
             },
             {
                \"file_path\":\"/var/jenkins_home/jobs/Create stack_variables.tf Files/**/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Create stack_variables.tf Files\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Create_stack_variables.tf_Files\",
                \"timestamp_format\":\"UTC\"
             },
             {
                \"file_path\":\"/var/jenkins_home/jobs/Destroy Old Jenkins Server/**/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Destroy Old Jenkins Server\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Destroy_Old_Jenkins_Server\",
                \"timestamp_format\":\"UTC\"
             },
             {
                \"file_path\":\"/var/jenkins_home/jobs/Docker-AWSCLI/**/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Docker-AWSCLI\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Docker_AWSCLI\",
                \"timestamp_format\":\"UTC\"
             },
             {
                \"file_path\":\"/var/jenkins_home/jobs/List Instance Profiles/**/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs List Instance Profiles\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs List_Instance_Profiles\",
                \"timestamp_format\":\"UTC\"
             },
             {
                \"file_path\":\"/var/jenkins_home/jobs/Update Bucket Policy/**/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Update Bucket Policy\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Update_Bucket_Policy\",
                \"timestamp_format\":\"UTC\"
             },
             {
                \"file_path\":\"/var/jenkins_home/jobs/Update Fence Client Credentials/**/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Update Fence Client Credentials\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Update_Fence_Client_Credentials\",
                \"timestamp_format\":\"UTC\"
             },
             {
                \"file_path\":\"/var/jenkins_home/jobs/Update HTTPD Certs and Key/**/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Update HTTPD Certs and Key\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Update_HTTPD_Certs_and_Key\",
                \"timestamp_format\":\"UTC\"
             },
             {
                \"file_path\":\"/var/jenkins_home/jobs/Update PIC-SURE Token Introspection Token/**/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Update PIC-SURE Token Introspection Token\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Update_PIC_SURE_Token_Introspection_Token\",
                \"timestamp_format\":\"UTC\"
             },
             {
                \"file_path\":\"/var/jenkins_home/jobs/Update VPC Settings/**/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Update VPC Settings\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Update_VPC_Settings\",
                \"timestamp_format\":\"UTC\"
             },
             {
                \"file_path\":\"/var/jenkins_home/jobs/Deployment Pipeline/**/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Deployment Pipeline\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Deployment_Pipeline\",
                \"timestamp_format\":\"UTC\"
             },
             {
                \"file_path\":\"/var/jenkins_home/jobs/Move Prod DNS Pointer/**/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Move Prod DNS Pointer\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Move_Prod_DNS_Pointer\",
                \"timestamp_format\":\"UTC\"
             },
             {
                \"file_path\":\"/var/jenkins_home/jobs/Retrieve Build Spec/**/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Retrieve Build Spec\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Retrieve_Build_Spec\",
                \"timestamp_format\":\"UTC\"
             },
             {
                \"file_path\":\"/var/jenkins_home/jobs/Retrieve Deployment State/**/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Retrieve Deployment State\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Retrieve_Deployment_State\",
                \"timestamp_format\":\"UTC\"
             },
             {
                \"file_path\":\"/var/jenkins_home/jobs/Swap Stacks/**/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Swap Stacks\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Swap_Stacks\",
                \"timestamp_format\":\"UTC\"
             },
             {
                \"file_path\":\"/var/jenkins_home/jobs/Teardown and Rebuild Stage Environment/**/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Teardown and Rebuild Stage Environment\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Teardown_and_Rebuild_Stage_Environment\",
                \"timestamp_format\":\"UTC\"
             },
             {
                \"file_path\":\"/var/jenkins_home/jobs/Write Stack State/**/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Write Stack State\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Write_Stack_State\",
                \"timestamp_format\":\"UTC\"
             },
             {
@@ -194,67 +194,61 @@ echo "
             {
                \"file_path\":\"/var/jenkins_home/jobs/PIC-SURE Auth Micro-App Build/**/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs PIC-SURE Auth Micro-App Build\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs PIC_SURE_Auth_Micro_App_Build\",
                \"timestamp_format\":\"UTC\"
             },
             {
                \"file_path\":\"/var/jenkins_home/jobs/PIC-SURE Pipeline/**/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs PIC-SURE Pipeline\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs PIC_SURE_Pipeline\",
                \"timestamp_format\":\"UTC\"
             },
             {
                \"file_path\":\"/var/jenkins_home/jobs/PIC-SURE Wildfly Image Build/**/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs PIC-SURE Wildfly Image Build\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs PIC_SURE_Wildfly_Image_Build\",
                \"timestamp_format\":\"UTC\"
             },
             {
                \"file_path\":\"/var/jenkins_home/jobs/PIC-SURE-API Build/**/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs PIC-SURE-API Build\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs PIC_SURE_API_Build\",
                \"timestamp_format\":\"UTC\"
             },
             {
                \"file_path\":\"/var/jenkins_home/jobs/PIC-SURE-HPDS Build/**/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs PIC-SURE-HPDS Build\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs PIC_SURE_HPDS_Build\",
                \"timestamp_format\":\"UTC\"
             },
             {
                \"file_path\":\"/var/jenkins_home/jobs/PIC-SURE-HPDS-UI Docker Build/**/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs PIC-SURE-HPDS-UI Docker Build\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs PIC_SURE_HPDS_UI_Docker_Build\",
                \"timestamp_format\":\"UTC\"
             },
             {
                \"file_path\":\"/var/jenkins_home/jobs/PIC-SURE-HPDS-UI-copdgene/**/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs PIC-SURE-HPDS-UI-copdgene\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs PIC_SURE_HPDS_UI_copdgene\",
                \"timestamp_format\":\"UTC\"
             },
             {
                \"file_path\":\"/var/jenkins_home/jobs/biodatacatalyst-ui/**/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs biodatacatalyst-ui\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs biodatacatalyst_ui\",
                \"timestamp_format\":\"UTC\"
             },
             {
                \"file_path\":\"/var/jenkins_home/jobs/Await Initialization/**/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs biodatacatalyst-ui\",
-               \"timestamp_format\":\"UTC\"
-            },
-            {
-               \"file_path\":\"/var/jenkins_home/jobs/Backup Jenkins Home/**/log\",
-               \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs biodatacatalyst-ui\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Await_Initialization\",
                \"timestamp_format\":\"UTC\"
             },
             {
                \"file_path\":\"/var/jenkins_home/jobs/Check For Updates/**/log\",
                \"log_group_name\":\"jenkins-logs\",
-               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs biodatacatalyst-ui\",
+               \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs Check_For_Updates\",
                \"timestamp_format\":\"UTC\"
             }
          ]
