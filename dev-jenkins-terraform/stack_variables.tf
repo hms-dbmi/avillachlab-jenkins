@@ -9,7 +9,7 @@ variable "git-commit" {
 
 variable "config-xml-filename" {
     type = string
-    default = "config.xml"
+    default = "config.xml_fisma"
 }
 
 variable "okta-metadata-description" {
