@@ -23,7 +23,7 @@ data "template_file" "jenkins-user_data" {
 data "template_file" "jenkins-config-xml" {
   template = file("../jenkins-docker/${config-xml-filename}")
   vars = {
-    okta_metadata_description = var.okta-metadata-description
+    okta_metadata_description = urlencode(var.okta-metadata-description)
   }
 }
 

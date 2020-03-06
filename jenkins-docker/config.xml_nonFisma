@@ -80,32 +80,15 @@
       <spEntityId>Jenkins-users</spEntityId>
     </advancedConfiguration>
     <idpMetadataConfiguration>
-      <xml>&lt;md:EntityDescriptor xmlns:md=&quot;urn:oasis:names:tc:SAML:2.0:metadata&quot; entityID=&quot;http://www.okta.com/exk2xgspnoPvsgr8w357&quot;&gt;
-&lt;md:IDPSSODescriptor WantAuthnRequestsSigned=&quot;false&quot; protocolSupportEnumeration=&quot;urn:oasis:names:tc:SAML:2.0:protocol&quot;&gt;
-&lt;md:KeyDescriptor use=&quot;signing&quot;&gt;
-&lt;ds:KeyInfo xmlns:ds=&quot;http://www.w3.org/2000/09/xmldsig#&quot;&gt;
-&lt;ds:X509Data&gt;
-&lt;ds:X509Certificate&gt;
-MIIDvjCCAqagAwIBAgIGAW92SnAWMA0GCSqGSIb3DQEBCwUAMIGfMQswCQYDVQQGEwJVUzETMBEG A1UECAwKQ2FsaWZvcm5pYTEWMBQGA1UEBwwNU2FuIEZyYW5jaXNjbzENMAsGA1UECgwET2t0YTEU MBIGA1UECwwLU1NPUHJvdmlkZXIxIDAeBgNVBAMMF2htcy1oYXJ2YXJkLWF2aWxsYWNobGFiMRww GgYJKoZIhvcNAQkBFg1pbmZvQG9rdGEuY29tMB4XDTIwMDEwNTE1MTg0N1oXDTMwMDEwNTE1MTk0 N1owgZ8xCzAJBgNVBAYTAlVTMRMwEQYDVQQIDApDYWxpZm9ybmlhMRYwFAYDVQQHDA1TYW4gRnJh bmNpc2NvMQ0wCwYDVQQKDARPa3RhMRQwEgYDVQQLDAtTU09Qcm92aWRlcjEgMB4GA1UEAwwXaG1z LWhhcnZhcmQtYXZpbGxhY2hsYWIxHDAaBgkqhkiG9w0BCQEWDWluZm9Ab2t0YS5jb20wggEiMA0G CSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCbzOPBjXGkqzdTFJFRK/Jdcgk6/lcuuVq1h9xWHUxj YCNV5y94YSjZXyJyg138llMZYMsBot4lyWlLG1wClAKEDi2lZzTIGugdk6z6o7yvD7HbslMU/xL3 LuGj6dc3JCnGgO/Mo/aOs5k+0JKytvAYLQTu79DWc0s4Zk+WCFxRHl/VMU3q4lxlEx9AG9jdurh/ QulcO7VeiBbn95omIHgdpfJxpycof84NBpPKf+qP5m0io6NPXqdNxxO0FcYHybkNoHKBU5BiTe/X L68cw/LoIZqseSuWzB9gQn+g1tTDdQm2Xt3kHwkt7r/2w9GPMZprT3Axz0JHYGFq7pdFXALBAgMB AAEwDQYJKoZIhvcNAQELBQADggEBAFms70uI66YxwSWGJgH2GtVCtRbD7MAZRydrK4DgMq9NDmyR CfDIZCQmit/UrTwpR4BdgTZYwj5s9laU/YOw+L0cF3/bUo2I4AL2tjAGzEZtZ45ChltoolHpX+8t WREmvM0Vv977ra/CvSKNMA6IGrmSCYu3ud/rbnJAjcaDGV7G529rp537/V4WEBU6m9f8LOsSd4uy HbWOB5M78zPPTRJDWJ5sQnPAXSrAwv80E/gSntpwxm5hdRS5dDvcLP1StHG0DpYLC9J4/IBdveBy quON7beCOqj+AfIt9zwboqbZusYnelynyPdkgpOZ+JQX9fI7uL8U4aVeCpGyT1EXeYc=
-&lt;/ds:X509Certificate&gt;
-&lt;/ds:X509Data&gt;
-&lt;/ds:KeyInfo&gt;
-&lt;/md:KeyDescriptor&gt;
-&lt;md:NameIDFormat&gt;
-urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress
-&lt;/md:NameIDFormat&gt;
-&lt;md:SingleSignOnService Binding=&quot;urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST&quot; Location=&quot;https://hms-harvard-avillachlab.okta.com/app/avillachlab_jenkinsbdcdev_1/exk2xgspnoPvsgr8w357/sso/saml&quot;/&gt;
-&lt;md:SingleSignOnService Binding=&quot;urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect&quot; Location=&quot;https://hms-harvard-avillachlab.okta.com/app/avillachlab_jenkinsbdcdev_1/exk2xgspnoPvsgr8w357/sso/saml&quot;/&gt;
-&lt;/md:IDPSSODescriptor&gt;
-&lt;/md:EntityDescriptor&gt;</xml>
+      <xml>${okta_metadata_description}</xml>
       <url>https://hms-harvard-avillachlab.okta.com/app/exk2xgspnoPvsgr8w357/sso/saml/metadata</url>
       <period>0</period>
     </idpMetadataConfiguration>
   </securityRealm>
   <disableRememberMe>false</disableRememberMe>
   <projectNamingStrategy class="jenkins.model.ProjectNamingStrategy$DefaultProjectNamingStrategy"/>
-  <workspaceDir>${JENKINS_HOME}/workspace/${ITEM_FULL_NAME}</workspaceDir>
-  <buildsDir>${ITEM_ROOTDIR}/builds</buildsDir>
+  <workspaceDir>$${JENKINS_HOME}/workspace/$${ITEM_FULL_NAME}</workspaceDir>
+  <buildsDir>$${ITEM_ROOTDIR}/builds</buildsDir>
   <markupFormatter class="hudson.markup.EscapedMarkupFormatter"/>
   <jdks>
     <jdk>
