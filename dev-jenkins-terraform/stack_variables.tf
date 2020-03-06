@@ -12,11 +12,6 @@ variable "config-xml-filename" {
     default = "config.xml_fisma"
 }
 
-variable "okta-metadata-description" {
-    type = string
-    default = "none"
-}
-
 variable "subnet-id" {
     type = string
 }
