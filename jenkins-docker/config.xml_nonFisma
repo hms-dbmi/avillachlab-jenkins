@@ -80,7 +80,7 @@
       <spEntityId>Jenkins-users</spEntityId>
     </advancedConfiguration>
     <idpMetadataConfiguration>
-      <xml>&lt;md:EntityDescriptor xmlns:md=&quot;urn:oasis:names:tc:SAML:2.0:metadata&quot; entityID=&quot;http://www.okta.com/$okta_saml_app_id&quot;&gt;
+      <xml>&lt;md:EntityDescriptor xmlns:md=&quot;urn:oasis:names:tc:SAML:2.0:metadata&quot; entityID=&quot;http://www.okta.com/${okta_saml_app_id}&quot;&gt;
 &lt;md:IDPSSODescriptor WantAuthnRequestsSigned=&quot;false&quot; protocolSupportEnumeration=&quot;urn:oasis:names:tc:SAML:2.0:protocol&quot;&gt;
 &lt;md:KeyDescriptor use=&quot;signing&quot;&gt;
 &lt;ds:KeyInfo xmlns:ds=&quot;http://www.w3.org/2000/09/xmldsig#&quot;&gt;
@@ -94,11 +94,11 @@ MIIDvjCCAqagAwIBAgIGAW92SnAWMA0GCSqGSIb3DQEBCwUAMIGfMQswCQYDVQQGEwJVUzETMBEG A1U
 &lt;md:NameIDFormat&gt;
 urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress
 &lt;/md:NameIDFormat&gt;
-&lt;md:SingleSignOnService Binding=&quot;urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST&quot; Location=&quot;https://hms-harvard-avillachlab.okta.com/app/avillachlab_jenkinsbdcdev_1/$okta_saml_app_id/sso/saml&quot;/&gt;
-&lt;md:SingleSignOnService Binding=&quot;urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect&quot; Location=&quot;https://hms-harvard-avillachlab.okta.com/app/avillachlab_jenkinsbdcdev_1/$okta_saml_app_id/sso/saml&quot;/&gt;
+&lt;md:SingleSignOnService Binding=&quot;urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST&quot; Location=&quot;https://hms-harvard-avillachlab.okta.com/app/avillachlab_jenkinsbdcdev_1/${okta_saml_app_id}/sso/saml&quot;/&gt;
+&lt;md:SingleSignOnService Binding=&quot;urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect&quot; Location=&quot;https://hms-harvard-avillachlab.okta.com/app/avillachlab_jenkinsbdcdev_1/${okta_saml_app_id}/sso/saml&quot;/&gt;
 &lt;/md:IDPSSODescriptor&gt;
 &lt;/md:EntityDescriptor&gt;</xml>
-      <url>https://hms-harvard-avillachlab.okta.com/app/$okta_saml_app_id/sso/saml/metadata</url>
+      <url>https://hms-harvard-avillachlab.okta.com/app/${okta_saml_app_id}/sso/saml/metadata</url>
       <period>0</period>
         </idpMetadataConfiguration>
       </securityRealm>
@@ -270,7 +270,7 @@ urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress
           <string>git_branch_avillachlab_jenkins_dev_release_control</string>
           <string>paul-non-FISMA</string>
           <string>aws_account_app</string>
-          <string>$aws_account_app</string>
+          <string>${aws_account_app}</string>
 
         </tree-map>
       </envVars>

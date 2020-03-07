@@ -4,7 +4,7 @@ ARG S3_BUCKET
 
 COPY plugins.txt_nonFisma /usr/share/jenkins/ref/plugins.txt
 
-COPY config.xml_nonFisma /var/jenkins_home/config.xml
+COPY config.xml /var/jenkins_home/config.xml
 
 COPY scriptApproval.xml_nonFisma /var/jenkins_home/scriptApproval.xml
 
