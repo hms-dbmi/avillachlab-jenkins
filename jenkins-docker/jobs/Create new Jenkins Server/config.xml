@@ -150,7 +150,7 @@ terraform apply -auto-approve \
 -var &quot;instance-profile-name=${instance_profile_name}&quot; \
 -var &quot;access-cidr=${access_cidr}&quot; \
 -var &quot;provisioning-cidr=${provisioning_cidr}&quot; \
--var &quot;cis-centos-linux-ami-id=${cis_centos_linux_ami_id}&quot;
+-var &quot;cis-centos-linux-ami-id=${cis_centos_linux_ami_id}&quot; \
 -var &quot;okta-saml-app-id=${okta_saml_app_id}&quot; \
 -var &quot;aws-account-app=${aws_account_app}&quot; \
 -var &quot;arn-role-app=${arn_role_app}&quot; \
