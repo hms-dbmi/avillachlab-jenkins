@@ -30,6 +30,7 @@ data "template_file" "jenkins-config-xml" {
     arn_role_data = var.arn-role-data
     git_branch_avillachlab_secure_infrastructure = var.git-branch-avillachlab-secure-infrastructure
     git_branch_avillachlab_jenkins_dev_release_control = var.git-branch-avillachlab-jenkins-dev-release-control
+    stack_s3_bucket = var.stack-s3-bucket
   }
 }
 
