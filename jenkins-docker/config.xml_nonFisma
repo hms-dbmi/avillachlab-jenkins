@@ -97,7 +97,7 @@ CfDIZCQmit/UrTwpR4BdgTZYwj5s9laU/YOw+L0cF3/bUo2I4AL2tjAGzEZtZ45ChltoolHpX+8t
 WREmvM0Vv977ra/CvSKNMA6IGrmSCYu3ud/rbnJAjcaDGV7G529rp537/V4WEBU6m9f8LOsSd4uy
 HbWOB5M78zPPTRJDWJ5sQnPAXSrAwv80E/gSntpwxm5hdRS5dDvcLP1StHG0DpYLC9J4/IBdveBy
 quON7beCOqj+AfIt9zwboqbZusYnelynyPdkgpOZ+JQX9fI7uL8U4aVeCpGyT1EXeYc=</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor><md:NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress</md:NameIDFormat><md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="https://hms-harvard-avillachlab.okta.com/app/avillachlab_jenkinsbdcdevonaws58_1/exk3272aaweNgPLMQ357/sso/saml"/><md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://hms-harvard-avillachlab.okta.com/app/avillachlab_jenkinsbdcdevonaws58_1/exk3272aaweNgPLMQ357/sso/saml"/></md:IDPSSODescriptor></md:EntityDescriptor></xml>
-      <url>https://hms-harvard-avillachlab.okta.com/app/exk2xgspnoPvsgr8w357/sso/saml/metadata</url>
+      <url>https://hms-harvard-avillachlab.okta.com/app/exk3272aaweNgPLMQ357/sso/saml/metadata</url>
       <period>0</period>
     </idpMetadataConfiguration>
   </securityRealm>
