@@ -51,3 +51,23 @@ variable "okta-saml-app-id" {
 variable "aws-account-app" {
 	type = string
 }
+
+variable "arn-role-app" {
+	type = string
+}
+
+variable "arn-role-cnc" {
+	type = string
+}
+
+variable "git-branch-avillachlab-jenkins-dev-release-control" {
+	type = string
+}
+
+variable "arn-role-data" {
+	type = string
+}
+
+variable "git-branch-avillachlab-secure-infrastructure" {
+	type = string
+}
