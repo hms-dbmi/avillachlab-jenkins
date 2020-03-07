@@ -43,3 +43,11 @@ variable "stack-jenkins-dockerfile" {
 variable "cis-centos-linux-ami-id" {
 	type = string
 }
+
+variable "okta-saml-app-id" {
+	type = string
+}
+
+variable "aws-account-app" {
+	type = string
+}

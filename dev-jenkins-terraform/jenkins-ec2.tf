@@ -23,7 +23,8 @@ data "template_file" "jenkins-user_data" {
 data "template_file" "jenkins-config-xml" {
   template = file("../jenkins-docker/${var.config-xml-filename}")
   vars = {
-    okta_metadata_description = urlencode(file("okta-metadata-description.xml"))
+    okta_saml_app_id = var.okta-saml-app-id
+    aws_account_app = var.aws-account-app
   }
 }
 
