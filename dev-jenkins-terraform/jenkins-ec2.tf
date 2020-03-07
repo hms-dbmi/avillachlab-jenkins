@@ -20,6 +20,12 @@ data "template_file" "jenkins-user_data" {
   }
 }
 
+data "template_file" "jenkins-config-xml" {
+  template = file("../jenkins-docker/${var.config-xml-filename}")
+  vars = {
+    okta_metadata_description = urlencode(file("okta-metadata-description.xml"))
+  }
+}
 
 data "template_cloudinit_config" "config" {
   gzip          = true
@@ -57,6 +63,16 @@ resource "aws_instance" "dev-jenkins" {
     }
   }
 
+  provisioner "file" {
+    content = data.template_file.jenkins-config-xml.rendered
+    destination = "/home/centos/jenkins/config.xml"
+    connection {
+      type     = "ssh"
+      user     = "centos"
+      private_key = tls_private_key.provisioning-key.private_key_pem
+      host = self.private_ip
+    }
+  }
 
   vpc_security_group_ids = [
     aws_security_group.inbound-jenkins-from-lma.id,
