@@ -9,19 +9,19 @@
         <hudson.model.StringParameterDefinition>
           <name>stack_s3_bucket</name>
           <description></description>
-          <defaultValue>avillach-biodatacatalyst-deployments-3drb48r</defaultValue>
+          <defaultValue>avillach-biodatacatalyst-deployments-4fr56g2</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>stack_id</name>
           <description></description>
-          <defaultValue>3drb48r</defaultValue>
+          <defaultValue>4fr56g2</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>config_xml_filename</name>
           <description></description>
-          <defaultValue>config.xml</defaultValue>
+          <defaultValue>config.xml_nonFisma</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
@@ -33,7 +33,7 @@
         <hudson.model.StringParameterDefinition>
           <name>subnet_id</name>
           <description></description>
-          <defaultValue>subnet-00a35d901a151ab01</defaultValue>
+          <defaultValue>subnet-0045aebf3198976e3</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
@@ -51,7 +51,7 @@
         <hudson.model.StringParameterDefinition>
           <name>vpc_id</name>
           <description></description>
-          <defaultValue>vpc-06d289a45c9021bdc</defaultValue>
+          <defaultValue>vpc-00c682aaac2a11fc9</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
@@ -66,6 +66,49 @@
           <defaultValue>ami-0f644567956fefe71</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>okta_saml_app_id</name>
+          <description></description>
+          <defaultValue>exk3272aaweNgPLMQ357</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>aws_account_app</name>
+          <description></description>
+          <defaultValue>900561893673</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>arn_role_app</name>
+          <description></description>
+          <defaultValue>arn:aws:iam::900561893673:role/hms-dbmi-cnc-role</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>arn_role_cnc</name>
+          <description></description>
+          <defaultValue>arn:aws:iam::900561893673:role/system/jenkins-s3-role</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>arn_role_data</name>
+          <description></description>
+          <defaultValue>arn:aws:iam::736265540791:role/curated-datasets-s3-role</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>git_branch_avillachlab_secure_infrastructure</name>
+          <description></description>
+          <defaultValue>paul-non-FISMA</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>git_branch_avillachlab_jenkins_dev_release_control</name>
+          <description></description>
+          <defaultValue>paul-non-FISMA</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -108,6 +151,14 @@ terraform apply -auto-approve \
 -var &quot;access-cidr=${access_cidr}&quot; \
 -var &quot;provisioning-cidr=${provisioning_cidr}&quot; \
 -var &quot;cis-centos-linux-ami-id=${cis_centos_linux_ami_id}&quot;
+-var &quot;okta-saml-app-id=${okta_saml_app_id}&quot; \
+-var &quot;aws-account-app=${aws_account_app}&quot; \
+-var &quot;arn-role-app=${arn_role_app}&quot; \
+-var &quot;arn-role-cnc=${arn_role_cnc}&quot; \
+-var &quot;arn-role-data=${arn_role_data}&quot; \
+-var &quot;git-branch-avillachlab-secure-infrastructure=${git_branch_avillachlab_secure_infrastructure}&quot; \
+-var &quot;git-branch-avillachlab-jenkins-dev-release-control=${git_branch_avillachlab_jenkins_dev_release_control}&quot;
+
 
 aws s3 --sse=AES256 cp terraform.tfstate s3://${stack_s3_bucket}/jenkins_state_${GIT_COMMIT}/terraform.tfstate 
 aws s3 --sse=AES256 cp env.txt s3://${stack_s3_bucket}/jenkins_state_${GIT_COMMIT}/last_env.txt
