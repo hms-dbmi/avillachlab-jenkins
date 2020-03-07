@@ -258,17 +258,17 @@ urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress
           </default>
           <int>7</int>
           <string>arn_role_app</string>
-          <string>arn:aws:iam::900561893673:role/hms-dbmi-cnc-role</string>
+          <string>${arn_role_app}</string>
           <string>arn_role_cnc</string>
-          <string>arn:aws:iam::900561893673:role/system/jenkins-s3-role</string>
+          <string>${arn_role_cnc}</string>
           <string>arn_role_data</string>
-          <string>arn:aws:iam::736265540791:role/curated-datasets-s3-role</string>
+          <string>${arn_role_data}</string>
           <string>stack_s3_bucket</string>
-          <string>avillach-biodatacatalyst-deployments-3drb48r</string>
+          <string>${stack_s3_bucket}</string>
           <string>git_branch_avillachlab_secure_infrastructure</string>
-          <string>paul-non-FISMA</string>
+          <string>${git_branch_avillachlab_secure_infrastructure}</string>
           <string>git_branch_avillachlab_jenkins_dev_release_control</string>
-          <string>paul-non-FISMA</string>
+          <string>${git_branch_avillachlab_jenkins_dev_release_control}</string>
           <string>aws_account_app</string>
           <string>${aws_account_app}</string>
 

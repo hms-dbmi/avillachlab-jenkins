@@ -25,6 +25,11 @@ data "template_file" "jenkins-config-xml" {
   vars = {
     okta_saml_app_id = var.okta-saml-app-id
     aws_account_app = var.aws-account-app
+    arn_role_app = var.arn-role-app
+    arn_role_cnc = var.arn-role-cnc
+    arn_role_data = var.arn-role-data
+    git_branch_avillachlab_secure_infrastructure = var.git-branch-avillachlab-secure-infrastructure
+    git_branch_avillachlab_jenkins_dev_release_control = var.git-branch-avillachlab-jenkins-dev-release-control
   }
 }
 
