@@ -111,9 +111,7 @@ resource "aws_instance" "dev-jenkins" {
     volume_size = 500
   }
 
-output "jenkins_public_dns" {
-  value = aws_instance.dev-jenkins.public_dns
-}
+
 
   provisioner "file" {
     source      = "../jenkins-docker"
@@ -152,4 +150,9 @@ output "jenkins_public_dns" {
 
   user_data = data.template_cloudinit_config.config.rendered
 
+}
+
+
+output "jenkins_public_dns" {
+  value = aws_instance.dev-jenkins.public_dns
 }
