@@ -27,7 +27,7 @@ resource "okta_group" "jenkins-group" {
 }
 
 resource "okta_app_saml" "jenkins-saml" {
-  label                    = "jenkins_saml_${var.project}-${var.env}_${var.stack-id}_${var.git-commit}"
+  label                    = "Jenkins_${var.project}-${var.env}_${var.stack-id}_${var.git-commit}"
   sso_url                  = "http://${aws_instance.dev-jenkins.public_dns}/securityRealm/finishLogin"
   recipient                = "http://${aws_instance.dev-jenkins.public_dns}/securityRealm/finishLogin"
   destination              = "http://${aws_instance.dev-jenkins.public_dns}/securityRealm/finishLogin"
@@ -53,8 +53,13 @@ resource "okta_app_saml" "jenkins-saml" {
 }
 }
 
+resource "okta_app_group_assignment" "jenkins-group-app-saml" {
+  app_id   = okta_app_saml.jenkins-saml.id
+  group_id = okta_group.jenkins-group.id
+}
+
 data "okta_app_saml" "jenkins-saml" {
-  label = "jenkins_saml_${var.project}-${var.env}_${var.stack-id}_${var.git-commit}"
+  label = "Jenkins_${var.project}-${var.env}_${var.stack-id}_${var.git-commit}"
   depends_on = [okta_app_saml.jenkins-saml]
 }
 
@@ -151,9 +156,4 @@ resource "aws_instance" "dev-jenkins" {
 
   user_data = data.template_cloudinit_config.config.rendered
 
-}
-
-
-output "jenkins_public_dns" {
-  value = aws_instance.dev-jenkins.public_dns
 }
