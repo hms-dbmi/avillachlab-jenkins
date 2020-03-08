@@ -33,6 +33,7 @@ data "template_file" "jenkins-config-xml" {
     stack_s3_bucket = var.stack-s3-bucket
     jenkins_role_admin_name = var.jenkins-role-admin-name
   }
+  depends_on = [okta_app_metadata_saml.jenkins-saml]
 }
 
 data "template_cloudinit_config" "config" {
