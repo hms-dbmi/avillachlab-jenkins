@@ -20,15 +20,11 @@ data "template_file" "jenkins-user_data" {
   }
 }
 
-data "entity_id" {
-  value = regex("[[:alnum:]]+$", "${data.okta_app_metadata_saml.jenkins-saml.entity_id}")
-
-}
 
 data "template_file" "jenkins-config-xml" {
   template = file("../jenkins-docker/${var.config-xml-filename}")
   vars = {
-   // okta_saml_app_id = regex("[[:alnum:]]+$", "${data.okta_app_metadata_saml.jenkins-saml.entity_id}")
+    okta_saml_app_id = regex("[[:alnum:]]+$", "${data.okta_app_metadata_saml.jenkins-saml.entity_id}")
     okta_saml_app_id = data.entity_id
     aws_account_app = var.aws-account-app
     arn_role_app = var.arn-role-app
@@ -39,7 +35,7 @@ data "template_file" "jenkins-config-xml" {
     stack_s3_bucket = var.stack-s3-bucket
     jenkins_role_admin_name = var.jenkins-role-admin-name
   }
-  //depends_on = [okta_app_metadata_saml.jenkins-saml]
+  depends_on = [okta_app_metadata_saml.jenkins-saml]
 }
 
 data "template_cloudinit_config" "config" {
