@@ -79,3 +79,11 @@ variable "jenkins-role-admin-name" {
 variable "OKTA_API_TOKEN" {
 	type = string
 }
+
+variable "project" {
+	type = string
+}
+
+variable "env" {
+	type = string
+}
