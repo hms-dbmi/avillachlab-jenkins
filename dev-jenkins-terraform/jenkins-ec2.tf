@@ -69,11 +69,11 @@ data "okta_app_metadata_saml" "jenkins-saml" {
   key_id = "${data.okta_app_saml.jenkins-saml.key_id}"
 }
 
-export TF_VAR_entity_id = egex("[[:alnum:]]+$", "${data.okta_app_metadata_saml.jenkins-saml.entity_id}")
+
 
 output "entity_id" {
   value = regex("[[:alnum:]]+$", "${data.okta_app_metadata_saml.jenkins-saml.entity_id}")
-
+  export TF_VAR_entity_id = egex("[[:alnum:]]+$", "${data.okta_app_metadata_saml.jenkins-saml.entity_id}")
 }
 //////////////   END OF SAML OKTA ///////////////////
 
