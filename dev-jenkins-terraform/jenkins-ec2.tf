@@ -74,7 +74,6 @@ output "entity_id" {
 data "template_file" "jenkins-config-xml" {
   template = file("../jenkins-docker/${var.config-xml-filename}")
   vars = {
-    // okta_saml_app_id = var.okta-saml-app-id
     aws_account_app = var.aws-account-app
     arn_role_app = var.arn-role-app
     arn_role_cnc = var.arn-role-cnc
@@ -85,6 +84,7 @@ data "template_file" "jenkins-config-xml" {
     jenkins_role_admin_name = var.jenkins-role-admin-name
   }
 }
+    // removed from above: okta_saml_app_id = var.okta-saml-app-id
 
 data "template_cloudinit_config" "config" {
   gzip          = true
