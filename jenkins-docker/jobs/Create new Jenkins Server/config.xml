@@ -163,7 +163,7 @@ terraform apply -auto-approve \
 -var &quot;arn-role-data=${arn_role_data}&quot; \
 -var &quot;git-branch-avillachlab-secure-infrastructure=${git_branch_avillachlab_secure_infrastructure}&quot; \
 -var &quot;git-branch-avillachlab-jenkins-dev-release-control=${git_branch_avillachlab_jenkins_dev_release_control}&quot; \
--var &quot;jenkins-role-admin-name=${jenkins_role_admin_name}&quot; \
+-var &quot;jenkins-role-admin-name=${jenkins_role_admin_name}&quot; 
 
 
 
