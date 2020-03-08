@@ -31,6 +31,7 @@ data "template_file" "jenkins-config-xml" {
     git_branch_avillachlab_secure_infrastructure = var.git-branch-avillachlab-secure-infrastructure
     git_branch_avillachlab_jenkins_dev_release_control = var.git-branch-avillachlab-jenkins-dev-release-control
     stack_s3_bucket = var.stack-s3-bucket
+    jenkins_role_admin_name = var.jenkins-role-admin-name
   }
 }
 

@@ -108,7 +108,12 @@
           <defaultValue>paul-non-FISMA</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
-
+        <hudson.model.StringParameterDefinition>
+          <name>jenkins_role_admin_name</name>
+          <description></description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -157,7 +162,10 @@ terraform apply -auto-approve \
 -var &quot;arn-role-cnc=${arn_role_cnc}&quot; \
 -var &quot;arn-role-data=${arn_role_data}&quot; \
 -var &quot;git-branch-avillachlab-secure-infrastructure=${git_branch_avillachlab_secure_infrastructure}&quot; \
--var &quot;git-branch-avillachlab-jenkins-dev-release-control=${git_branch_avillachlab_jenkins_dev_release_control}&quot;
+-var &quot;git-branch-avillachlab-jenkins-dev-release-control=${git_branch_avillachlab_jenkins_dev_release_control}&quot; \
+-var &quot;jenkins-role-admin-name=${jenkins_role_admin_name}&quot; \
+
+
 
 
 aws s3 --sse=AES256 cp terraform.tfstate s3://${stack_s3_bucket}/jenkins_state_${GIT_COMMIT}/terraform.tfstate 

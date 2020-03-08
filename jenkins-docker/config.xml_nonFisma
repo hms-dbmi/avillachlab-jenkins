@@ -49,8 +49,7 @@
           <permission>hudson.model.Run.Update</permission>
         </permissions>
         <assignedSIDs>
-          <sid>jenkins_role_BDC_dev_admin</sid>
-          <sid>paul_avillach@hms.harvard.edu</sid>
+          <sid>${jenkins_role_admin_name}</sid>
         </assignedSIDs>
       </role>
       <role name="readonly" pattern=".*">

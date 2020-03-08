@@ -71,3 +71,7 @@ variable "arn-role-data" {
 variable "git-branch-avillachlab-secure-infrastructure" {
 	type = string
 }
+
+variable "jenkins-role-admin-name" {
+	type = string
+}
