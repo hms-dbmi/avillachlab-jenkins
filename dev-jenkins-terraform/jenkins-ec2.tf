@@ -55,7 +55,7 @@ resource "okta_app_saml" "jenkins-saml" {
 
 data "okta_app_saml" "jenkins-saml" {
   label = "jenkins_saml_${var.project}-${var.env}_${var.stack-id}_${var.git-commit}"
- // depends_on = [okta_app_saml.jenkins-saml]
+  depends_on = [okta_app_saml.jenkins-saml]
 }
 
 
