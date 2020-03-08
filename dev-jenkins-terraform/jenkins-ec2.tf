@@ -69,6 +69,8 @@ data "okta_app_metadata_saml" "jenkins-saml" {
   key_id = "${data.okta_app_saml.jenkins-saml.key_id}"
 }
 
+export TF_VAR_entity_id = egex("[[:alnum:]]+$", "${data.okta_app_metadata_saml.jenkins-saml.entity_id}")
+
 output "entity_id" {
   value = regex("[[:alnum:]]+$", "${data.okta_app_metadata_saml.jenkins-saml.entity_id}")
 
@@ -79,7 +81,7 @@ output "entity_id" {
 data "template_file" "jenkins-config-xml" {
   template = file("../jenkins-docker/${var.config-xml-filename}")
   vars = {
-    okta_saml_app_id = data.okta_app_metadata_saml.jenkins-saml.entity_id
+    okta_saml_app_id = TF_VAR_entity_id
     aws_account_app = var.aws-account-app
     arn_role_app = var.arn-role-app
     arn_role_cnc = var.arn-role-cnc
@@ -89,7 +91,6 @@ data "template_file" "jenkins-config-xml" {
     stack_s3_bucket = var.stack-s3-bucket
     jenkins_role_admin_name = var.jenkins-role-admin-name
   }
-  depends_on = [okta_app_saml.jenkins-saml]
 }
    
 
