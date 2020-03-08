@@ -75,3 +75,7 @@ variable "git-branch-avillachlab-secure-infrastructure" {
 variable "jenkins-role-admin-name" {
 	type = string
 }
+
+variable "OKTA_API_TOKEN" {
+	type = string
+}
