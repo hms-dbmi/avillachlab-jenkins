@@ -20,6 +20,23 @@ data "template_file" "jenkins-user_data" {
   }
 }
 
+data "okta_app_saml" "jenkins-saml" {
+  label = "jenkins_saml_${var.project}-${var.env}_${var.stack-id}_${var.git-commit}"
+  depends_on = [okta_app_saml.jenkins-saml]
+}
+
+
+data "okta_app_metadata_saml" "jenkins-saml" {
+  app_id = "${data.okta_app_saml.jenkins-saml.id}"
+  key_id = "${data.okta_app_saml.jenkins-saml.key_id}"
+}
+
+output "entity_id" {
+  value = regex("[[:alnum:]]+$", "${data.okta_app_metadata_saml.jenkins-saml.entity_id}")
+
+}
+
+
 
 data "template_file" "jenkins-config-xml" {
   template = file("../jenkins-docker/${var.config-xml-filename}")

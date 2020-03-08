@@ -43,9 +43,6 @@ data "okta_app_saml" "jenkins-saml" {
   depends_on = [okta_app_saml.jenkins-saml]
 }
 
-//output "output-saml" {
-//  value = "${data.okta_app_saml.jenkins-saml}"
-//}
 
 data "okta_app_metadata_saml" "jenkins-saml" {
   app_id = "${data.okta_app_saml.jenkins-saml.id}"
