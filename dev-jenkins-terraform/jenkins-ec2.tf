@@ -60,6 +60,10 @@ resource "aws_instance" "dev-jenkins" {
     volume_size = 500
   }
 
+output "jenkins_public_dns" {
+  value = aws_instance.dev-jenkins.public_dns
+}
+
   provisioner "file" {
     source      = "../jenkins-docker"
     destination = "/home/centos/jenkins"
