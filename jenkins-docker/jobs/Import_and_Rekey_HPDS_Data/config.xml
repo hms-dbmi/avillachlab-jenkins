@@ -40,7 +40,10 @@ unset AWS_SECRET_ACCESS_KEY
 unset AWS_SESSION_TOKEN
 aws s3 --sse=AES256 cp s3://${stack_s3_bucket}/releases/jenkins_pipeline_build_${GIT_COMMIT}/pic-sure-hpds-etl.tar.gz pic-sure-hpds-etl.tar.gz 
 HPDS_ETL_IMAGE=`docker load &lt; ./pic-sure-hpds-etl.tar.gz  | cut -d &apos; &apos; -f 3`
+echo $HPDS_ETL_IMAGE
 ls -alh `pwd`
+docker stop dumper || echo 
+docker rm dumper || echo
 docker run --name dumper -d --entrypoint sleep ${HPDS_ETL_IMAGE}  10000000
 docker exec dumper mkdir -p /opt/local/hpds
 docker cp columnMeta.javabin dumper:/opt/local/hpds/columnMeta.javabin

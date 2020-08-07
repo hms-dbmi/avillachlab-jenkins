@@ -31,7 +31,19 @@
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
+          <name>genomic_dataset_s3_object_key</name>
+          <description></description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
           <name>ami_id</name>
+          <description></description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>infrastructure_git_hash</name>
           <description></description>
           <defaultValue></defaultValue>
           <trim>false</trim>
@@ -91,15 +103,14 @@ export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apo
 
 cd ../s3-deployment-roles
 terraform init
-terraform destroy -auto-approve -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot;  -var=&quot;target-stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
-terraform apply -auto-approve -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot;  -var=&quot;target-stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
+terraform destroy -auto-approve -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot; -var=&quot;genomic-dataset-s3-object-key=${genomic_dataset_s3_object_key}&quot;  -var=&quot;target-stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
+terraform apply -auto-approve -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot;  -var=&quot;genomic-dataset-s3-object-key=${genomic_dataset_s3_object_key}&quot; -var=&quot;target-stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
 
 cd ../app-infrastructure
 terraform init
-terraform destroy -auto-approve -var=&quot;ami-id=${ami_id}&quot; -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot;  -var=&quot;target-stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
-terraform apply -auto-approve -var=&quot;ami-id=${ami_id}&quot; -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot;  -var=&quot;target-stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
+terraform destroy -auto-approve -var=&quot;ami-id=${ami_id}&quot; -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot;   -var=&quot;genomic-dataset-s3-object-key=${genomic_dataset_s3_object_key}&quot; -var=&quot;target-stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
+terraform apply -auto-approve -var=&quot;ami-id=${ami_id}&quot; -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot;   -var=&quot;genomic-dataset-s3-object-key=${genomic_dataset_s3_object_key}&quot; -var=&quot;target-stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
 
- 
 echo &quot;
 {
   \&quot;Changes\&quot;: [
@@ -154,7 +165,8 @@ echo &quot;
     }
   ]
 }
- 
+
+
 &quot; &gt; route-53-records.json
 aws route53 change-resource-record-sets --hosted-zone-id $(grep -A4 &apos;variable &quot;internal-dns-zone-id&apos; subnet_variables.tf  |  grep default | cut -d &quot;\&quot;&quot; -f 2) --change-batch file://route-53-records.json || true
 
