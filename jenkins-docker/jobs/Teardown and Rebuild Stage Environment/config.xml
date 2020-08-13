@@ -99,6 +99,67 @@ terraform init
 terraform destroy -auto-approve -var=&quot;ami-id=${ami_id}&quot; -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot;  -var=&quot;target-stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
 terraform apply -auto-approve -var=&quot;ami-id=${ami_id}&quot; -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot;  -var=&quot;target-stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
 
+
+echo &quot;
+{
+  \&quot;Changes\&quot;: [
+    {
+      \&quot;Action\&quot;: \&quot;UPSERT\&quot;,
+      \&quot;ResourceRecordSet\&quot;: {
+        \&quot;Name\&quot;: \&quot;httpd.${target_stack}.datastage.hms.harvard.edu\&quot;,
+        \&quot;Type\&quot;: \&quot;A\&quot;,
+        \&quot;TTL\&quot;: 60,
+        \&quot;ResourceRecords\&quot;: [
+          {
+            \&quot;Value\&quot;: \&quot;$(grep httpd-ec2-private_ip ip-vars.properties | cut -d &quot;=&quot; -f 2)\&quot;
+          }
+        ]
+      }
+    },{
+      \&quot;Action\&quot;: \&quot;UPSERT\&quot;,
+      \&quot;ResourceRecordSet\&quot;: {
+        \&quot;Name\&quot;: \&quot;wildfly.${target_stack}.datastage.hms.harvard.edu\&quot;,
+        \&quot;Type\&quot;: \&quot;A\&quot;,
+        \&quot;TTL\&quot;: 60,
+        \&quot;ResourceRecords\&quot;: [
+          {
+            \&quot;Value\&quot;: \&quot;$(grep wildfly-ec2-private_ip ip-vars.properties | cut -d &quot;=&quot; -f 2)\&quot;
+          }
+        ]
+      }
+    },{
+      \&quot;Action\&quot;: \&quot;UPSERT\&quot;,
+      \&quot;ResourceRecordSet\&quot;: {
+        \&quot;Name\&quot;: \&quot;hpds.${target_stack}.datastage.hms.harvard.edu\&quot;,
+        \&quot;Type\&quot;: \&quot;A\&quot;,
+        \&quot;TTL\&quot;: 60,
+        \&quot;ResourceRecords\&quot;: [
+          {
+            \&quot;Value\&quot;: \&quot;$(grep hpds-ec2-private_ip ip-vars.properties | cut -d &quot;=&quot; -f 2)\&quot;
+          }
+        ]
+      }
+    },{
+      \&quot;Action\&quot;: \&quot;UPSERT\&quot;,
+      \&quot;ResourceRecordSet\&quot;: {
+        \&quot;Name\&quot;: \&quot;picsure-db.${target_stack}.datastage.hms.harvard.edu\&quot;,
+        \&quot;Type\&quot;: \&quot;CNAME\&quot;,
+        \&quot;TTL\&quot;: 60,
+        \&quot;ResourceRecords\&quot;: [
+          {
+            \&quot;Value\&quot;: \&quot;$(grep pic-sure-mysql-address ip-vars.properties | cut -d &quot;=&quot; -f 2)\&quot;
+          }
+        ]
+      }
+    }
+  ]
+}
+
+
+&quot; &gt; route-53-records.json
+aws route53 change-resource-record-sets --hosted-zone-id $(grep -A4 &apos;variable &quot;internal-dns-zone-id&apos; subnet_variables.tf  |  grep default | cut -d &quot;\&quot;&quot; -f 2) --change-batch file://route-53-records.json || true
+
+
 unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY
 unset AWS_SESSION_TOKEN
