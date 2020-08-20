@@ -20,7 +20,7 @@ RUN apt-get -y install python3-pip
 
 RUN pip3 install --no-input awscli --upgrade
 
-RUN aws cp s3://${S3_BUCKET}/jenkins_config/config.xml /var/jenkins_home/config.xml 
+RUN aws cp s3://$S3_BUCKET/jenkins_config/config.xml /var/jenkins_home/config.xml 
 
 RUN curl -fsSL https://get.docker.com | sh
 
