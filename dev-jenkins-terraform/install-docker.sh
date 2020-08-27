@@ -283,7 +283,7 @@ sudo docker run -d -v /var/jenkins_home/jobs:/var/jenkins_home/jobs -v /var/run/
 
 for i in 1 2 3 4 5; do sudo /usr/local/bin/aws --region us-east-1 s3 cp s3://${stack_s3_bucket}/domain-join.sh /root/domain-join.sh && break || sleep 45; done
 cd /root
-bash domain-join.sh
+sudo bash domain-join.sh
 
 echo "setup script finished"
 
