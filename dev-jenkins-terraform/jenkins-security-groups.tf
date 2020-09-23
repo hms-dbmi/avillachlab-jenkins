@@ -39,6 +39,15 @@ resource "aws_security_group" "inbound-jenkins-from-lma" {
     ]
   }
 
+  ingress {
+    from_port = 22
+    to_port = 22
+    protocol = "tcp"
+    cidr_blocks = [
+      "172.25.255.73/32"
+    ]
+  }
+
   tags = {
     Owner       = "Avillach_Lab"
     Environment = "development"
