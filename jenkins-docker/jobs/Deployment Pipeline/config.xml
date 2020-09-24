@@ -26,6 +26,12 @@
           <defaultValue>/data/biocatalyst_javabins_11_26_2019_rekeyed.tar.gz</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>genomic_dataset_s3_object_key</name>
+          <description></description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -77,7 +83,7 @@ pipeline {
             steps {
                 script {
                     target_stack = new JsonSlurper().parseText(stacksJson).environments.next_prod
-                    def result = build job: &apos;Teardown and Rebuild Stage Environment&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;ami_id&apos;, value: ami_id],[$class: &apos;StringParameterValue&apos;, name: &apos;dataset_s3_object_key&apos;, value: dataset_s3_object_key],[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack],[$class: &apos;StringParameterValue&apos;, name: &apos;dataset_s3_object_key&apos;, value: env.dataset_s3_object_key],[$class: &apos;StringParameterValue&apos;, name: &apos;deployment_git_hash&apos;, value: env.deployment_git_hash]]
+                    def result = build job: &apos;Teardown and Rebuild Stage Environment&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;ami_id&apos;, value: ami_id],[$class: &apos;StringParameterValue&apos;, name: &apos;dataset_s3_object_key&apos;, value: dataset_s3_object_key],[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack],[$class: &apos;StringParameterValue&apos;, name: &apos;dataset_s3_object_key&apos;, value: env.dataset_s3_object_key],[$class: &apos;StringParameterValue&apos;, name: &apos;genomic_dataset_s3_object_key&apos;, value: env.genomic_dataset_s3_object_key],[$class: &apos;StringParameterValue&apos;, name: &apos;deployment_git_hash&apos;, value: env.deployment_git_hash]]
                 }
             }
         }

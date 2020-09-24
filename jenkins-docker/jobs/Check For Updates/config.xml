@@ -24,12 +24,7 @@
   <disabled>false</disabled>
   <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
   <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
-  <triggers>
-    <hudson.triggers.SCMTrigger>
-      <spec>H/5 * * * *</spec>
-      <ignorePostCommitHooks>false</ignorePostCommitHooks>
-    </hudson.triggers.SCMTrigger>
-  </triggers>
+  <triggers/>
   <concurrentBuild>false</concurrentBuild>
   <builders>
     <hudson.plugins.groovy.SystemGroovy plugin="groovy@2.2">
@@ -61,6 +56,8 @@ else
   echo $LAST_DATASET_MODIFICATION_COMMIT &gt; alreadyRekeyed.txt
   echo &quot;Skipping rekey new dataset.&quot;
 fi
+LAST_GENOMIC_DATASET_MODIFICATION_COMMIT=`git blame --abbrev=39 build-spec.json | grep source_genomic_dataset_s3_url | cut -f 1 -d &apos; &apos;`
+echo $LAST_GENOMIC_DATASET_MODIFICATION_COMMIT &gt; genomicDatasetKey.txt
 </command>
     </hudson.tasks.Shell>
     <hudson.plugins.groovy.SystemGroovy plugin="groovy@2.2">
@@ -85,11 +82,13 @@ if(new File(&quot;/var/jenkins_home/workspace/Check For Updates/toBeRekeyed.txt&
 
 def envVars= Hudson.instance.getItem(&quot;Check For Updates&quot;).lastBuild.properties.get(&quot;envVars&quot;); 
 
+genomic_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/genomicDatasetKey.txt&quot;).text
 
 Jenkins.instance.getItemByFullName(&quot;Deployment Pipeline&quot;)
     .scheduleBuild2(0, new ParametersAction([
         new StringParameterValue(&quot;deployment_git_hash&quot;, envVars[&quot;GIT_COMMIT&quot;].trim()),
         new StringParameterValue(&quot;dataset_s3_object_key&quot;, s3_object_key.trim()),
+        new StringParameterValue(&quot;genomic_dataset_s3_object_key&quot;, genomic_s3_object_key.trim()),
 ])).get()
 </script>
           <sandbox>false</sandbox>
