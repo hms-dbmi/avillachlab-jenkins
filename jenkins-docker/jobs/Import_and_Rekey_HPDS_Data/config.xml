@@ -59,11 +59,14 @@ docker exec dumper java -Xmx8192m -jar CSVLoader-jar-with-dependencies.jar
 docker cp dumper:/opt/local/hpds/allObservationsStore.javabin .
 docker cp dumper:/opt/local/hpds/encryption_key .
 docker cp dumper:/opt/local/hpds/columnMeta.javabin .
-tar -cvzf javabins_rekeyed.tar.gz *.javabin encryption_key
-aws s3 --sse=AES256 cp javabins_rekeyed.tar.gz s3://${stack_s3_bucket}/data/`git blame --abbrev=39 build-spec.json | grep source_dataset_s3_url | cut -f 1 -d &apos; &apos;
-`/javabins_rekeyed.tar.gz
 docker stop dumper
 docker rm dumper
+
+tar -cvzf javabins_rekeyed.tar.gz *.javabin encryption_key
+
+DATA_GIT_HASH=`git blame --abbrev=39 build-spec.json | grep source_dataset_s3_url | cut -f 1 -d &apos; &apos;`
+aws s3 --sse=AES256 cp javabins_rekeyed.tar.gz s3://${stack_s3_bucket}/data/${DATA_GIT_HASH}/javabins_rekeyed.tar.gz
+aws s3 --sse=AES256 cp fence_mapping.json s3://${stack_s3_bucket}/data/`${DATA_GIT_HASH}/fence_mapping.json
 </command>
     </hudson.tasks.Shell>
   </builders>
