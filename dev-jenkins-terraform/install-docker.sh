@@ -319,7 +319,7 @@ fi
 echo Install the agent package successfully
 sleep 15
 /opt/ds_agent/dsa_control -r
-/opt/ds_agent/dsa_control -a $ACTIVATIONURL "policyid:11"
+/opt/ds_agent/dsa_control -a $ACTIVATIONURL "policyid:14"
 
 
 echo "user-data progress starting update"
