@@ -339,7 +339,24 @@ sudo mkdir -p /var/jenkins_home/jobs/
 sudo mkdir -p /var/log/jenkins-docker-logs
 cp -r jobs/* /var/jenkins_home/jobs/
 sudo docker build --build-arg S3_BUCKET=${stack_s3_bucket} -t avillach-lab-dev-jenkins .
-sudo docker run -d -v /var/jenkins_home/jobs:/var/jenkins_home/jobs -v /var/run/docker.sock:/var/run/docker.sock -p 80:8080 --name jenkins --restart always avillach-lab-dev-jenkins
+# copy ssl cert & key from s3
+for i in 1 2 3 4 5; do sudo /usr/local/bin/aws --region us-east-1 s3 cp s3://${stack_s3_bucket}/certs/jenkins/jenkins.cer /root/jenkins.cer && break || sleep 45; done
+for i in 1 2 3 4 5; do sudo /usr/local/bin/aws --region us-east-1 s3 cp s3://${stack_s3_bucket}/certs/jenkins/jenkins.key /root/jenkins.key && break || sleep 45; done
+# convert key to jenkins recognizable format
+sudo openssl rsa -in /root/jenkins.key -out /root/jenkins.pk1.key
+
+#run jenkins docker container
+sudo docker run -d -v /var/jenkins_home/jobs:/var/jenkins_home/jobs \
+                    -v /var/run/docker.sock:/var/run/docker.sock \
+                    -v /root/jenkins.cer:/root/jenkins.cer \
+                    -v /root/jenkins.pk1.key:/root/jenkins.pk1.key \
+                    -p 443:8443 \
+                    --httpsPort=8443 \
+                    --httpsCertificate=/root/jenkins.cer \
+                    --httpsPrivateKey=/root/jenkins.pk1.key \
+                    --name jenkins \
+                    --restart always \
+                    avillach-lab-dev-jenkins
 
 for i in 1 2 3 4 5; do sudo /usr/local/bin/aws --region us-east-1 s3 cp s3://${stack_s3_bucket}/domain-join.sh /root/domain-join.sh && break || sleep 45; done
 cd /root
