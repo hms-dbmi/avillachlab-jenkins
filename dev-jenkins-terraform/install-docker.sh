@@ -351,12 +351,12 @@ sudo docker run -d -v /var/jenkins_home/jobs:/var/jenkins_home/jobs \
                     -v /root/jenkins.cer:/root/jenkins.cer \
                     -v /root/jenkins.pk1.key:/root/jenkins.pk1.key \
                     -p 443:8443 \
+                    --restart always \
+                    --name jenkins
+                    avillach-lab-dev-jenkins \
                     --httpsPort=8443 \
                     --httpsCertificate=/root/jenkins.cer \
                     --httpsPrivateKey=/root/jenkins.pk1.key \
-                    --name jenkins \
-                    --restart always \
-                    avillach-lab-dev-jenkins
 
 for i in 1 2 3 4 5; do sudo /usr/local/bin/aws --region us-east-1 s3 cp s3://${stack_s3_bucket}/domain-join.sh /root/domain-join.sh && break || sleep 45; done
 cd /root
