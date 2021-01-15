@@ -60,7 +60,7 @@
     </userRemoteConfigs>
     <branches>
       <hudson.plugins.git.BranchSpec>
-        <name>$git_branch_avillachlab_secure_infrastructure</name>
+        <name>${infrastructure_git_hash}</name>
       </hudson.plugins.git.BranchSpec>
     </branches>
     <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
@@ -141,12 +141,24 @@ echo &quot;
     },{
       \&quot;Action\&quot;: \&quot;UPSERT\&quot;,
       \&quot;ResourceRecordSet\&quot;: {
-        \&quot;Name\&quot;: \&quot;hpds.${target_stack}.datastage.hms.harvard.edu\&quot;,
+        \&quot;Name\&quot;: \&quot;open-hpds.${target_stack}.datastage.hms.harvard.edu\&quot;,
         \&quot;Type\&quot;: \&quot;A\&quot;,
         \&quot;TTL\&quot;: 60,
         \&quot;ResourceRecords\&quot;: [
           {
-            \&quot;Value\&quot;: \&quot;$(grep hpds-ec2-private_ip ip-vars.properties | cut -d &quot;=&quot; -f 2)\&quot;
+            \&quot;Value\&quot;: \&quot;$(grep open-hpds-ec2-private_ip ip-vars.properties | cut -d &quot;=&quot; -f 2)\&quot;
+          }
+        ]
+      }
+    },{
+      \&quot;Action\&quot;: \&quot;UPSERT\&quot;,
+      \&quot;ResourceRecordSet\&quot;: {
+        \&quot;Name\&quot;: \&quot;auth-hpds.${target_stack}.datastage.hms.harvard.edu\&quot;,
+        \&quot;Type\&quot;: \&quot;A\&quot;,
+        \&quot;TTL\&quot;: 60,
+        \&quot;ResourceRecords\&quot;: [
+          {
+            \&quot;Value\&quot;: \&quot;$(grep auth-hpds-ec2-private_ip ip-vars.properties | cut -d &quot;=&quot; -f 2)\&quot;
           }
         ]
       }
@@ -188,6 +200,9 @@ aws s3 --sse=AES256 cp psamaui-settings.json s3://$stack_s3_bucket/configs/jenki
 aws s3 --sse=AES256 cp standalone.xml s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/standalone.xml
 aws s3 --sse=AES256 cp pic-sure-schema.sql s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/pic-sure-schema.sql
 aws s3 --sse=AES256 cp httpd-vhosts.conf s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/httpd-vhosts.conf
+aws s3 --sse=AES256 cp aggregate-resource.properties s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/aggregate-resource.properties
+
+
 
 unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY

@@ -3,7 +3,19 @@
   <actions/>
   <description></description>
   <keepDependencies>false</keepDependencies>
-  <properties/>
+   <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+      	<hudson.model.StringParameterDefinition>
+          <name>infrastructure_git_hash</name>
+          <description></description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+      
   <scm class="hudson.plugins.git.GitSCM" plugin="git@4.1.1">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
@@ -13,7 +25,7 @@
     </userRemoteConfigs>
     <branches>
       <hudson.plugins.git.BranchSpec>
-        <name>$git_branch_avillachlab_jenkins_dev_release_control</name>
+        <name>${infrastructure_git_hash}</name>
       </hudson.plugins.git.BranchSpec>
     </branches>
     <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
@@ -66,7 +78,7 @@ tar -cvzf javabins_rekeyed.tar.gz *.javabin encryption_key
 
 DATA_GIT_HASH=`git blame --abbrev=39 build-spec.json | grep source_dataset_s3_url | cut -f 1 -d &apos; &apos;`
 aws s3 --sse=AES256 cp javabins_rekeyed.tar.gz s3://${stack_s3_bucket}/data/${DATA_GIT_HASH}/javabins_rekeyed.tar.gz
-aws s3 --sse=AES256 cp fence_mapping.json s3://${stack_s3_bucket}/data/`${DATA_GIT_HASH}/fence_mapping.json
+aws s3 --sse=AES256 cp fence_mapping.json s3://${stack_s3_bucket}/data/${DATA_GIT_HASH}/fence_mapping.json
 </command>
     </hudson.tasks.Shell>
   </builders>

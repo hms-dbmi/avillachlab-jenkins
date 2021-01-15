@@ -68,7 +68,7 @@ variable "arn-role-data" {
 	type = string
 }
 
-variable "git-branch-avillachlab-secure-infrastructure" {
+variable "git-hash-avillachlab-secure-infrastructure" {
 	type = string
 }
 

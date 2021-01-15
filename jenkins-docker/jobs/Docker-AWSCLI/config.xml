@@ -29,6 +29,22 @@
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
+   <scm class="hudson.plugins.git.GitSCM" plugin="git@4.1.1">
+    <configVersion>2</configVersion>
+    <userRemoteConfigs>
+      <hudson.plugins.git.UserRemoteConfig>
+        <url>https://github.com/hms-dbmi/avillachlab-jenkins-dev-release-control</url>
+      </hudson.plugins.git.UserRemoteConfig>
+    </userRemoteConfigs>
+    <branches>
+      <hudson.plugins.git.BranchSpec>
+        <name>$git_branch_avillachlab_jenkins_dev_release_control</name>
+      </hudson.plugins.git.BranchSpec>
+    </branches>
+    <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+    <submoduleCfg class="list"/>
+    <extensions/>
+  </scm>
   <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.78">
     <script>import groovy.json.JsonSlurper;
 def target_stack
@@ -39,7 +55,11 @@ pipeline {
    stages {
       stage(&apos;Build&apos;) {
          steps {
-            git branch: &apos;$git_branch_avillachlab_secure_infrastructure&apos;, url: &apos;https://github.com/hms-dbmi/avillachlab-secure-infrastructure.git&apos;
+         	def secure_infrastructure_hash = sh (script: &quot;git blame --abbrev=39 build-spec.json | grep  infrastructure_git_hash | cut -f 1 -d &apos; &apos;&quot;, returnStdout: true).trim()
+         	
+        	checkout([$class: &apos;GitSCM&apos;, branches: [[name: ${secure_infrastructure_hash} ]],
+     			userRemoteConfigs: [[url: &apos;https://github.com/hms-dbmi/avillachlab-secure-infrastructure.git&apos;]]])   
+		
             sh &quot;&quot;&quot;
                 aws sts assume-role --duration-seconds 900 --role-arn $arn_role_app --role-session-name &quot;ami-builder&quot; &gt; assume-role-output.txt
                 export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\\\&quot;]//g&quot;`
