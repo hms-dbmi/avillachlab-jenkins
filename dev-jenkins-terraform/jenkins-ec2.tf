@@ -80,7 +80,7 @@ output "entity_id" {
 data "template_file" "jenkins-config-xml" {
   template = file("../jenkins-docker/${var.config-xml-filename}")
   vars = {
-    okta_saml_app_id = "TO-BE-REPLACED-entity_id"
+    okta_saml_app_id = var.okta-app-id
     aws_account_app = var.aws-account-app
     arn_role_app = var.arn-role-app
     arn_role_cnc = var.arn-role-cnc

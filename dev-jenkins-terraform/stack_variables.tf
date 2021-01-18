@@ -44,7 +44,7 @@ variable "cis-centos-linux-ami-id" {
 	type = string
 }
 
-variable "okta-saml-app-id" {
+variable "okta-app-id" {
 	type = string
 }
 
