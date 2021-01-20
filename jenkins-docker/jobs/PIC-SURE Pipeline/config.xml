@@ -84,7 +84,7 @@ pipeline {
                         script {
                             def result = build job: &apos;PIC-SURE Wildfly Image Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId]]
                         }
-                    },
+                    }
                     
                )
             }
