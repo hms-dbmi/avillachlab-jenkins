@@ -60,10 +60,16 @@
           <defaultValue>ami-0f644567956fefe71</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
-  	<hudson.model.StringParameterDefinition>
+  		<hudson.model.StringParameterDefinition>
           <name>okta_app_id</name>
           <description>The identifier to use for OKTA access</description>
           <defaultValue></defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>config_xml_filename</name>
+          <description>The which jenkins init file should this use?</description>
+          <defaultValue>config.xml_nonFisma</defaultValue>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
@@ -107,6 +113,7 @@ terraform apply -auto-approve \
 -var &quot;access-cidr=${access_cidr}&quot; \
 -var &quot;provisioning-cidr=${provisioning_cidr}&quot; \
 -var &quot;okta-app-id=${okta_app_id}&quot; \
+-var &quot;config-xml-filename=${config_xml_filename}&quot; \
 -var &quot;cis-centos-linux-ami-id=${cis_centos_linux_ami_id}&quot;
 
 aws s3 --sse=AES256 cp terraform.tfstate s3://${stack_s3_bucket}/jenkins_state_${GIT_COMMIT}/terraform.tfstate 

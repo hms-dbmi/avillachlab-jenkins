@@ -69,9 +69,9 @@ pipeline {
                             def result = build job: &apos;PIC-SURE Auth Micro-App Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSAMA&apos;]]]
                         }
                     },
-                    datastageui:{
+                    biodatacatalystui:{
                         script {
-                            def result = build job: &apos;PIC-SURE-HPDS-UI-copdgene&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSHDU&apos;]]]
+                            def result = build job: &apos;biodatacatalyst-ui&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;BDCU&apos;]]]
                         }
                     }
                )
@@ -85,11 +85,7 @@ pipeline {
                             def result = build job: &apos;PIC-SURE Wildfly Image Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId]]
                         }
                     },
-                    biodatacatalystui:{
-                        script {
-                            def result = build job: &apos;biodatacatalyst-ui&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;BDCU&apos;]]]
-                        }
-                    }
+                    
                )
             }
         }
