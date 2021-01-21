@@ -135,6 +135,7 @@ urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress
       <jobNames>
         <comparator class="hudson.util.CaseInsensitiveComparator"/>
         <string>Import_and_Rekey_HPDS_Data</string>
+        <string>Import HPDS VCF Data</string>
         <string>PIC-SURE Pipeline</string>
       </jobNames>
       <jobFilters/>
@@ -254,7 +255,7 @@ urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress
           <default>
             <comparator class="hudson.util.CaseInsensitiveComparator"/>
           </default>
-          <int>6</int>
+          <int>7</int>
           <string>arn_role_app</string>
           <string>${arn_role_app}</string>
           <string>arn_role_cnc</string>
@@ -263,6 +264,8 @@ urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress
           <string>${arn_role_data}</string>
           <string>stack_s3_bucket</string>
           <string>${stack_s3_bucket}</string>
+          <string>avillachlab_release_control_repo</string>
+          <string>${avillachlab_release_control_repo}</string>
           <string>git_branch_avillachlab_jenkins_dev_release_control</string>
           <string>${git_branch_avillachlab_jenkins_dev_release_control}</string>
           <string>aws_account_app</string>

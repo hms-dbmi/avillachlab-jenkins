@@ -8,7 +8,7 @@
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
-        <url>https://github.com/hms-dbmi/avillachlab-jenkins-dev-release-control</url>
+        <url>$avillachlab_release_control_repo</url>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
@@ -24,12 +24,7 @@
   <disabled>false</disabled>
   <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
   <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
-  <triggers>
-    <hudson.triggers.SCMTrigger>
-      <spec>H/5 * * * *</spec>
-      <ignorePostCommitHooks>false</ignorePostCommitHooks>
-    </hudson.triggers.SCMTrigger>
-  </triggers>
+  <triggers/>
   <concurrentBuild>false</concurrentBuild>
   <builders>
     <hudson.plugins.groovy.SystemGroovy plugin="groovy@2.2">
@@ -90,14 +85,10 @@ import groovy.json.JsonSlurper;
   
 def buildSpec = new JsonSlurper().parse(new File(&quot;/var/jenkins_home/workspace/Check For Updates/build-spec.json&quot;));
 
-
-SOURCE_FILE_S3_LINK=`grep source_dataset_s3_url build-spec.json | cut -d &apos;:&apos; -f 2,3 | sed &apos;s/&quot;//g&apos;`
-
 String dataset_s3_object_key ;
 if(new File(&quot;/var/jenkins_home/workspace/Check For Updates/toBeRekeyed.txt&quot;).exists()){
     Jenkins.instance.getItemByFullName(&quot;Import_and_Rekey_HPDS_Data&quot;)
     .scheduleBuild2(0, new ParametersAction([
-    	new StringParameterValue(&quot;infrastructure_git_hash&quot;, envVars[&quot;GIT_COMMIT&quot;].trim()),
         new StringParameterValue(&quot;source_s3_url&quot;, buildSpec.source_dataset_s3_url.trim()),
         new StringParameterValue(&quot;output_file_name&quot;, &quot;javabins_rekeyed&quot;),
 	])).get()
@@ -110,7 +101,6 @@ String destigmatized_dataset_s3_object_key ;
 if(new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_toBeRekeyed.txt&quot;).exists()){
     Jenkins.instance.getItemByFullName(&quot;Import_and_Rekey_HPDS_Data&quot;)
     .scheduleBuild2(0, new ParametersAction([
-     	new StringParameterValue(&quot;infrastructure_git_hash&quot;, envVars[&quot;GIT_COMMIT&quot;].trim()),
         new StringParameterValue(&quot;source_s3_url&quot;, buildSpec.source_destigmatized_dataset_s3_url.trim()),
         new StringParameterValue(&quot;output_file_name&quot;, &quot;destigmatized_javabins_rekeyed&quot;),
 	])).get()

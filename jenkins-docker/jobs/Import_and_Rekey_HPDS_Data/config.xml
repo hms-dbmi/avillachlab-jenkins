@@ -6,12 +6,6 @@
    <properties>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
-      	<hudson.model.StringParameterDefinition>
-          <name>infrastructure_git_hash</name>
-          <description></description>
-          <defaultValue></defaultValue>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>source_s3_url</name>
           <description></description>
@@ -32,12 +26,12 @@
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
-        <url>https://github.com/hms-dbmi/avillachlab-jenkins-dev-release-control</url>
+        <url>$avillachlab_release_control_repo</url>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
       <hudson.plugins.git.BranchSpec>
-        <name>${infrastructure_git_hash}</name>
+        <name>$git_branch_avillachlab_jenkins_dev_release_control</name>
       </hudson.plugins.git.BranchSpec>
     </branches>
     <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
@@ -60,7 +54,7 @@ aws sts assume-role --duration-seconds 900 --role-arn $arn_role_data --role-sess
 export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-aws s3 cp ${infrastructure_git_hash} javabins.tar.gz
+aws s3 cp ${source_s3_url} javabins.tar.gz
 tar -xvzf javabins.tar.gz
 unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY

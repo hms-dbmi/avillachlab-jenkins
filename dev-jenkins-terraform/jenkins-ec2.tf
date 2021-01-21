@@ -30,6 +30,7 @@ data "template_file" "jenkins-config-xml" {
     arn_role_cnc = var.arn-role-cnc
     arn_role_data = var.arn-role-data
     git_branch_avillachlab_jenkins_dev_release_control = var.git-branch-avillachlab-jenkins-dev-release-control
+    avillachlab_release_control_repo = var.avillachlab-release-control-repo
     stack_s3_bucket = var.stack-s3-bucket
     jenkins_role_admin_name = var.jenkins-role-admin-name
   }

@@ -60,6 +60,10 @@ variable "arn-role-cnc" {
 	type = string
 }
 
+variable "avillachlab-release-control-repo" {
+	type = string
+}
+
 variable "git-branch-avillachlab-jenkins-dev-release-control" {
 	type = string
 }
