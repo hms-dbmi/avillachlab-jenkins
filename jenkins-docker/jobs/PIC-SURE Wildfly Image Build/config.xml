@@ -58,7 +58,7 @@ echo $PIC_SURE_API_VERSION
 echo $PIC_SURE_AUTH_VERSION
 echo $PIC_SURE_AGGREGATE_RESOURCE_VERSION
 
-docker build --build-arg PIC_SURE_API_VERSION=$PIC_SURE_API_VERSION --build-arg PIC_SURE_AUTH_VERSION=$PIC_SURE_AUTH_VERSION  --build-arg PIC_SURE_AGGREGATE_VERSION=$PIC_SURE_AGGREGATE_RESOURCE_VERSION -t hms-dbmi/pic-sure-wildfly:${pipeline_build_id} .
+docker build -f pic-sure-with-aggregate-resource.Dockerfile --build-arg PIC_SURE_API_VERSION=$PIC_SURE_API_VERSION --build-arg PIC_SURE_AUTH_VERSION=$PIC_SURE_AUTH_VERSION  --build-arg PIC_SURE_AGGREGATE_VERSION=$PIC_SURE_AGGREGATE_RESOURCE_VERSION -t hms-dbmi/pic-sure-wildfly:${pipeline_build_id} .
 docker save hms-dbmi/pic-sure-wildfly:${pipeline_build_id} &gt; pic-sure-wildfly.tar.gz
 aws s3 --sse=AES256 cp pic-sure-wildfly.tar.gz s3://$S3_BUCKET_NAME/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-wildfly.tar.gz 
 

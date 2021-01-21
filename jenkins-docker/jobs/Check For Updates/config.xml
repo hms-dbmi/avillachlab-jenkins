@@ -59,8 +59,21 @@ if [ $not_exist ]; then
   echo &quot;Will rekey new dataset.&quot;
 else
   echo $LAST_DATASET_MODIFICATION_COMMIT &gt; alreadyRekeyed.txt
-  echo &quot;Skipping rekey new dataset.&quot;
+  echo &quot;Using existing dataset (Skipping rekey).&quot;
 fi
+
+
+LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT=`git blame --abbrev=39 build-spec.json | grep source_destigmatized_dataset_s3_url | cut -f 1 -d &apos; &apos;`
+
+docker exec jenkins /usr/local/bin/aws s3api head-object --bucket $stack_s3_bucket --key &quot;data/${LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT}/destigmatized_javabins_rekeyed.tar.gz&quot; || not_exist=true
+if [ $not_exist ]; then
+  echo $LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT &gt; destigmatized_toBeRekeyed.txt
+  echo &quot;Will rekey new destigmatized dataset.&quot;
+else
+  echo $LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT &gt; destigmatized_alreadyRekeyed.txt
+  echo &quot;Using existing destigmatized dataset (Skipping rekey).&quot;
+fi
+
 
 LAST_GENOMIC_DATASET_MODIFICATION_COMMIT=`git blame --abbrev=39 build-spec.json | grep source_genomic_dataset_s3_url | cut -f 1 -d &apos; &apos;`
 echo $LAST_GENOMIC_DATASET_MODIFICATION_COMMIT &gt; genomicDatasetKey.txt
@@ -77,13 +90,33 @@ import groovy.json.JsonSlurper;
   
 def buildSpec = new JsonSlurper().parse(new File(&quot;/var/jenkins_home/workspace/Check For Updates/build-spec.json&quot;));
 
-String s3_object_key ;
+
+SOURCE_FILE_S3_LINK=`grep source_dataset_s3_url build-spec.json | cut -d &apos;:&apos; -f 2,3 | sed &apos;s/&quot;//g&apos;`
+
+String dataset_s3_object_key ;
 if(new File(&quot;/var/jenkins_home/workspace/Check For Updates/toBeRekeyed.txt&quot;).exists()){
     Jenkins.instance.getItemByFullName(&quot;Import_and_Rekey_HPDS_Data&quot;)
-    .scheduleBuild2(0).get()
-    s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/toBeRekeyed.txt&quot;).text
+    .scheduleBuild2(0, new ParametersAction([
+    	new StringParameterValue(&quot;infrastructure_git_hash&quot;, envVars[&quot;GIT_COMMIT&quot;].trim()),
+        new StringParameterValue(&quot;source_s3_url&quot;, buildSpec.source_dataset_s3_url.trim()),
+        new StringParameterValue(&quot;output_file_name&quot;, &quot;javabins_rekeyed&quot;),
+	])).get()
+    dataset_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/toBeRekeyed.txt&quot;).text
 } else {
-    s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/alreadyRekeyed.txt&quot;).text
+    dataset_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/alreadyRekeyed.txt&quot;).text
+}
+
+String destigmatized_dataset_s3_object_key ;
+if(new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_toBeRekeyed.txt&quot;).exists()){
+    Jenkins.instance.getItemByFullName(&quot;Import_and_Rekey_HPDS_Data&quot;)
+    .scheduleBuild2(0, new ParametersAction([
+     	new StringParameterValue(&quot;infrastructure_git_hash&quot;, envVars[&quot;GIT_COMMIT&quot;].trim()),
+        new StringParameterValue(&quot;source_s3_url&quot;, buildSpec.source_destigmatized_dataset_s3_url.trim()),
+        new StringParameterValue(&quot;output_file_name&quot;, &quot;destigmatized_javabins_rekeyed&quot;),
+	])).get()
+    destigmatized_dataset_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_toBeRekeyed.txt&quot;).text
+} else {
+    destigmatized_dataset_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_alreadyRekeyed.txt&quot;).text
 }
 
 def envVars= Hudson.instance.getItem(&quot;Check For Updates&quot;).lastBuild.properties.get(&quot;envVars&quot;); 
@@ -93,7 +126,8 @@ genomic_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Upd
 Jenkins.instance.getItemByFullName(&quot;Deployment Pipeline&quot;)
     .scheduleBuild2(0, new ParametersAction([
         new StringParameterValue(&quot;deployment_git_hash&quot;, envVars[&quot;GIT_COMMIT&quot;].trim()),
-        new StringParameterValue(&quot;dataset_s3_object_key&quot;, s3_object_key.trim()),
+        new StringParameterValue(&quot;dataset_s3_object_key&quot;, dataset_s3_object_key.trim()),
+        new StringParameterValue(&quot;destigmatized_dataset_s3_object_key&quot;, destigmatized_dataset_s3_object_key.trim()),
         new StringParameterValue(&quot;genomic_dataset_s3_object_key&quot;, genomic_s3_object_key.trim()),
 ])).get()
 </script>

@@ -31,6 +31,12 @@
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
+          <name>destigmatized_dataset_s3_object_key</name>
+          <description>points to the rekeyed javabins that have been stripped of stigmatizing variables</description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
           <name>genomic_dataset_s3_object_key</name>
           <description></description>
           <defaultValue></defaultValue>
@@ -103,8 +109,8 @@ export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apo
 
 cd ../s3-deployment-roles
 terraform init
-terraform destroy -auto-approve -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot; -var=&quot;genomic-dataset-s3-object-key=${genomic_dataset_s3_object_key}&quot;  -var=&quot;target-stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
-terraform apply -auto-approve -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot;  -var=&quot;genomic-dataset-s3-object-key=${genomic_dataset_s3_object_key}&quot; -var=&quot;target-stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
+terraform destroy -auto-approve -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot; -var=&quot;destigmatized-dataset-s3-object-key=${destigmatized_dataset_s3_object_key}&quot; -var=&quot;genomic-dataset-s3-object-key=${genomic_dataset_s3_object_key}&quot;  -var=&quot;target-stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
+terraform apply -auto-approve -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot;  -var=&quot;;destigmatized-dataset-s3-object-key=${destigmatized_dataset_s3_object_key}&quot; -var=&quot;genomic-dataset-s3-object-key=${genomic_dataset_s3_object_key}&quot; -var=&quot;target-stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
 
 cd ../app-infrastructure
 terraform init
@@ -195,6 +201,8 @@ export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apo
 aws s3 cp terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate 
 aws s3 cp ../s3-deployment-roles/terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate_roles
 
+
+aws s3 --sse=AES256 cp fence_mapping.json s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/configs/fence_mapping.json
 aws s3 --sse=AES256 cp picsureui-settings.json s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/picsureui_settings.json
 aws s3 --sse=AES256 cp psamaui-settings.json s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/psamaui_settings.json
 aws s3 --sse=AES256 cp standalone.xml s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/standalone.xml
