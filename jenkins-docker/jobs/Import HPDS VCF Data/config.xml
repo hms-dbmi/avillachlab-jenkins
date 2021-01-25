@@ -37,7 +37,10 @@ aws s3 cp $SOURCE_FILE_S3_LINK genomic_javabins.tar.gz
 unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY
 unset AWS_SESSION_TOKEN
+
+
 aws s3 --sse=AES256 cp genomic_javabins.tar.gz s3://${stack_s3_bucket}/data/`git blame --abbrev=39 build-spec.json | grep source_genomic_dataset_s3_url | cut -f 1 -d &apos; &apos;`/genomic_javabins.tar.gz
+
 </command>
     </hudson.tasks.Shell>
   </builders>
