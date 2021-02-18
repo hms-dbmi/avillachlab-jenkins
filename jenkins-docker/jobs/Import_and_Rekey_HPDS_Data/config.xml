@@ -70,13 +70,13 @@ docker exec dumper mkdir -p /opt/local/hpds
 docker cp columnMeta.javabin dumper:/opt/local/hpds/columnMeta.javabin
 docker cp allObservationsStore.javabin dumper:/opt/local/hpds/allObservationsStore.javabin
 docker cp encryption_key dumper:/opt/local/hpds/encryption_key
-docker exec dumper java -Xmx2048m -jar CSVDumper-jar-with-dependencies.jar
+docker exec dumper java -Xmx8G -jar CSVDumper-jar-with-dependencies.jar
 docker exec dumper ls -alh /opt/local/hpds/
 docker exec dumper rm /opt/local/hpds/allObservationsStore.javabin
 docker exec dumper rm /opt/local/hpds/columnMeta.javabin
 head /dev/urandom | tr -dc a-f0-9 | head -c 32 &gt; encryption_key
 docker cp encryption_key dumper:/opt/local/hpds/encryption_key
-docker exec dumper java -Xmx8192m -jar CSVLoader-jar-with-dependencies.jar
+docker exec dumper java -Xmx12G -jar CSVLoader-jar-with-dependencies.jar
 docker cp dumper:/opt/local/hpds/allObservationsStore.javabin .
 docker cp dumper:/opt/local/hpds/encryption_key .
 docker cp dumper:/opt/local/hpds/columnMeta.javabin .
