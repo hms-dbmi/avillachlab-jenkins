@@ -18,6 +18,8 @@ RUN sed -i "s/stack_s3_bucket_var/$S3_BUCKET/" /var/jenkins_home/config.xml
 
 RUN echo deb http://deb.debian.org/debian stretch-backports main >> /etc/apt/sources.list
 
+RUN echo deb http://deb.debian.org/debian stretch main >> /etc/apt/sources.list
+
 RUN apt-get update
 
 RUN apt-get -y install apt-transport-https
