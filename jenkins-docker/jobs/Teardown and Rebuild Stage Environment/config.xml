@@ -207,7 +207,7 @@ aws s3 --sse=AES256 cp psamaui-settings.json s3://$stack_s3_bucket/configs/jenki
 aws s3 --sse=AES256 cp standalone.xml s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/standalone.xml
 aws s3 --sse=AES256 cp pic-sure-schema.sql s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/pic-sure-schema.sql
 aws s3 --sse=AES256 cp httpd-vhosts.conf s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/httpd-vhosts.conf
-aws s3 --sse=AES256 cp aggregate-resource.properties s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/aggregate-resource.properties
+aws s3 --sse=AES256 cp configs/aggregate-resource.properties s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/aggregate-resource.properties
 
 
 
