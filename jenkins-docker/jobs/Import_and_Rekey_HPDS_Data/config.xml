@@ -18,6 +18,12 @@
           <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+	<hudson.model.StringParameterDefinition>
+          <name>destination_bucket_hash</name>
+          <description>the git hash of the commit that changed the data set</description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -48,8 +54,8 @@
     <hudson.tasks.Shell>
       <command>
       
-      
-      
+
+
 aws sts assume-role --duration-seconds 900 --role-arn $arn_role_data --role-session-name &quot;s3-test&quot; &gt; assume-role-output.txt
 export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
@@ -59,11 +65,11 @@ tar -xvzf javabins.tar.gz
 unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY
 unset AWS_SESSION_TOKEN
-aws s3 --sse=AES256 cp s3://${stack_s3_bucket}/releases/jenkins_pipeline_build_${GIT_COMMIT}/pic-sure-hpds-etl.tar.gz pic-sure-hpds-etl.tar.gz 
+aws s3 --sse=AES256 cp s3://${stack_s3_bucket}/releases/jenkins_pipeline_build_${GIT_COMMIT}/pic-sure-hpds-etl.tar.gz pic-sure-hpds-etl.tar.gz
 HPDS_ETL_IMAGE=`docker load &lt; ./pic-sure-hpds-etl.tar.gz  | cut -d &apos; &apos; -f 3`
 echo $HPDS_ETL_IMAGE
 ls -alh `pwd`
-docker stop dumper || echo 
+docker stop dumper || echo
 docker rm dumper || echo
 docker run --name dumper -d --entrypoint sleep ${HPDS_ETL_IMAGE}  10000000
 docker exec dumper mkdir -p /opt/local/hpds
@@ -85,12 +91,13 @@ docker rm dumper
 
 tar -cvzf ${output_file_name}.tar.gz *.javabin encryption_key
 
-DATA_GIT_HASH=`git blame --abbrev=39 build-spec.json | grep source_dataset_s3_url | cut -f 1 -d &apos; &apos;`
-aws s3 --sse=AES256 cp ${output_file_name}.tar.gz s3://${stack_s3_bucket}/data/${DATA_GIT_HASH}/${output_file_name}.tar.gz
 
-if [ -f fence_mapping.json ]; then
-	aws s3 --sse=AES256 cp fence_mapping.json s3://${stack_s3_bucket}/data/${DATA_GIT_HASH}/fence_mapping.json
+aws s3 --sse=AES256 cp ${output_file_name}.tar.gz s3://${stack_s3_bucket}/data/${destination_bucket_hash}/${output_file_name}.tar.gz
+
+if [ -f metadata.json ]; then
+        aws s3 --sse=AES256 cp metadata.json s3://${stack_s3_bucket}/data/${destination_bucket_hash}/fence_mapping.json
 fi
+
 </command>
     </hudson.tasks.Shell>
   </builders>
