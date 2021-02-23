@@ -82,7 +82,7 @@ import jenkins.model.*
 import hudson.*
 import hudson.model.*
 import groovy.json.JsonSlurper;
-  
+
 def buildSpec = new JsonSlurper().parse(new File(&quot;/var/jenkins_home/workspace/Check For Updates/build-spec.json&quot;));
 
 String dataset_s3_object_key ;
@@ -91,7 +91,8 @@ if(new File(&quot;/var/jenkins_home/workspace/Check For Updates/toBeRekeyed.txt&
     .scheduleBuild2(0, new ParametersAction([
         new StringParameterValue(&quot;source_s3_url&quot;, buildSpec.source_dataset_s3_url.trim()),
         new StringParameterValue(&quot;output_file_name&quot;, &quot;javabins_rekeyed&quot;),
-	])).get()
+        new StringParameterValue(&quot;destination_bucket_hash&quot;, envVars[&quot;LAST_DATASET_MODIFICATION_COMMIT&quot;].trim())
+        ])).get()
     dataset_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/toBeRekeyed.txt&quot;).text
 } else {
     dataset_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/alreadyRekeyed.txt&quot;).text
@@ -103,13 +104,14 @@ if(new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_to
     .scheduleBuild2(0, new ParametersAction([
         new StringParameterValue(&quot;source_s3_url&quot;, buildSpec.source_destigmatized_dataset_s3_url.trim()),
         new StringParameterValue(&quot;output_file_name&quot;, &quot;destigmatized_javabins_rekeyed&quot;),
-	])).get()
+        new StringParameterValue(&quot;destination_bucket_hash&quot;, envVars[&quot;LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT&quot;].trim())
+        ])).get()
     destigmatized_dataset_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_toBeRekeyed.txt&quot;).text
 } else {
     destigmatized_dataset_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_alreadyRekeyed.txt&quot;).text
 }
 
-def envVars= Hudson.instance.getItem(&quot;Check For Updates&quot;).lastBuild.properties.get(&quot;envVars&quot;); 
+def envVars= Hudson.instance.getItem(&quot;Check For Updates&quot;).lastBuild.properties.get(&quot;envVars&quot;);
 
 genomic_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/genomicDatasetKey.txt&quot;).text
 
@@ -120,6 +122,7 @@ Jenkins.instance.getItemByFullName(&quot;Deployment Pipeline&quot;)
         new StringParameterValue(&quot;destigmatized_dataset_s3_object_key&quot;, destigmatized_dataset_s3_object_key.trim()),
         new StringParameterValue(&quot;genomic_dataset_s3_object_key&quot;, genomic_s3_object_key.trim()),
 ])).get()
+
 </script>
           <sandbox>false</sandbox>
         </script>
