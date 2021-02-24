@@ -89,11 +89,12 @@ def envVars= Hudson.instance.getItem(&quot;Check For Updates&quot;).lastBuild.pr
             
 String dataset_s3_object_key ;
 if(new File(&quot;/var/jenkins_home/workspace/Check For Updates/toBeRekeyed.txt&quot;).exists()){
+    def bucket_hash = new File(&quot;/var/jenkins_home/workspace/Check For Updates/toBeRekeyed.txt&quot;).text
     Jenkins.instance.getItemByFullName(&quot;Import_and_Rekey_HPDS_Data&quot;)
     .scheduleBuild2(0, new ParametersAction([
         new StringParameterValue(&quot;source_s3_url&quot;, buildSpec.source_dataset_s3_url.trim()),
         new StringParameterValue(&quot;output_file_name&quot;, &quot;javabins_rekeyed&quot;),
-        new StringParameterValue(&quot;destination_bucket_hash&quot;, envVars[&quot;LAST_DATASET_MODIFICATION_COMMIT&quot;].trim())
+        new StringParameterValue(&quot;destination_bucket_hash&quot;, bucket_hash)
         ])).get()
     dataset_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/toBeRekeyed.txt&quot;).text
 } else {
@@ -102,11 +103,12 @@ if(new File(&quot;/var/jenkins_home/workspace/Check For Updates/toBeRekeyed.txt&
 
 String destigmatized_dataset_s3_object_key ;
 if(new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_toBeRekeyed.txt&quot;).exists()){
+    def bucket_hash = new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_toBeRekeyed.txt&quot;).text
     Jenkins.instance.getItemByFullName(&quot;Import_and_Rekey_HPDS_Data&quot;)
     .scheduleBuild2(0, new ParametersAction([
         new StringParameterValue(&quot;source_s3_url&quot;, buildSpec.source_destigmatized_dataset_s3_url.trim()),
         new StringParameterValue(&quot;output_file_name&quot;, &quot;destigmatized_javabins_rekeyed&quot;),
-        new StringParameterValue(&quot;destination_bucket_hash&quot;, envVars[&quot;LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT&quot;].trim())
+        new StringParameterValue(&quot;destination_bucket_hash&quot;, bucket_hash)
         ])).get()
     destigmatized_dataset_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_toBeRekeyed.txt&quot;).text
 } else {
