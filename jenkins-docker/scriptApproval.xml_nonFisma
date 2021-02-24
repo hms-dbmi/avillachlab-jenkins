@@ -26,7 +26,7 @@
     <string>c21d14044b16f41290e92dcf26e9fd31b278b442</string>
     <string>d2e279e72f439f7d7e6f65aeeddbf8d6b167b659</string>
     <string>e5ad22ea5934b94ba902974b1677e7d2250594d7</string>
-    <string>e5ad22ea5934b94ba902974b1677e7d2250594d7</string>
+    <string>fb10b1b30d59d5087570a5af06b603a62fde9408</string>
   </approvedScriptHashes>
   <approvedSignatures>
     <string>method groovy.json.JsonOutput toJson java.util.Map</string>
