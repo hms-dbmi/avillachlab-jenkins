@@ -23,7 +23,13 @@
         <hudson.model.StringParameterDefinition>
           <name>dataset_s3_object_key</name>
           <description></description>
-          <defaultValue>/data/biocatalyst_javabins_11_26_2019_rekeyed.tar.gz</defaultValue>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+         <hudson.model.StringParameterDefinition>
+          <name>destigmatized_dataset_s3_object_key</name>
+          <description></description>
+          <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
@@ -41,8 +47,9 @@
 def retrieveDepStateId
 def stacksJson
 def ami_id
-def dataset_s3_object_key
 def target_stack
+def infrastructure_git_hash
+
 pipeline {
     agent any 
     stages {
@@ -60,9 +67,8 @@ pipeline {
                     def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/Deployment Pipeline/build-spec.json&apos;))
                     println(buildSpec)
                     ami_id = buildSpec.terraform_vars[0].ami_id
-                    dataset_s3_object_key = buildSpec.terraform_vars[0].dataset_s3_object_key
+                    infrastructure_git_hash = buildSpec.infrastructure_git_hash
                     println(&quot;AMI : &quot; + ami_id)
-                    println(&quot;DATASET : &quot; + dataset_s3_object_key)
                 }
             }
         }
@@ -83,7 +89,7 @@ pipeline {
             steps {
                 script {
                     target_stack = new JsonSlurper().parseText(stacksJson).environments.next_prod
-                    def result = build job: &apos;Teardown and Rebuild Stage Environment&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;ami_id&apos;, value: ami_id],[$class: &apos;StringParameterValue&apos;, name: &apos;dataset_s3_object_key&apos;, value: dataset_s3_object_key],[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack],[$class: &apos;StringParameterValue&apos;, name: &apos;dataset_s3_object_key&apos;, value: env.dataset_s3_object_key],[$class: &apos;StringParameterValue&apos;, name: &apos;genomic_dataset_s3_object_key&apos;, value: env.genomic_dataset_s3_object_key],[$class: &apos;StringParameterValue&apos;, name: &apos;deployment_git_hash&apos;, value: env.deployment_git_hash]]
+                    def result = build job: &apos;Teardown and Rebuild Stage Environment&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;ami_id&apos;, value: ami_id], [$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack], [$class: &apos;StringParameterValue&apos;, name: &apos;dataset_s3_object_key&apos;, value: env.dataset_s3_object_key], [$class: &apos;StringParameterValue&apos;, name: &apos;destigmatized_dataset_s3_object_key&apos;, value: env.destigmatized_dataset_s3_object_key], [$class: &apos;StringParameterValue&apos;, name: &apos;genomic_dataset_s3_object_key&apos;, value: env.genomic_dataset_s3_object_key], [$class: &apos;StringParameterValue&apos;, name: &apos;deployment_git_hash&apos;, value: env.deployment_git_hash], [$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash]]
                 }
             }
         }
@@ -97,7 +103,7 @@ pipeline {
         stage(&apos;Await Initialization&apos;) {
             steps {
                 script {
-                    def result = build job: &apos;Await Initialization&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack]]
+                    def result = build job: &apos;Await Initialization&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack], [$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash]]
                 }
             }
         }
