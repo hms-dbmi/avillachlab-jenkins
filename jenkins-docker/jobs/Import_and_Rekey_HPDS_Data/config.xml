@@ -3,12 +3,36 @@
   <actions/>
   <description></description>
   <keepDependencies>false</keepDependencies>
-  <properties/>
+   <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>source_s3_url</name>
+          <description></description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>output_file_name</name>
+          <description></description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+	<hudson.model.StringParameterDefinition>
+          <name>destination_bucket_hash</name>
+          <description>the git hash of the commit that changed the data set</description>
+          <defaultValue></defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+      
   <scm class="hudson.plugins.git.GitSCM" plugin="git@4.1.1">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
-        <url>https://github.com/hms-dbmi/avillachlab-jenkins-dev-release-control</url>
+        <url>$avillachlab_release_control_repo</url>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
@@ -28,45 +52,63 @@
   <concurrentBuild>false</concurrentBuild>
   <builders>
     <hudson.tasks.Shell>
-      <command>SOURCE_FILE_S3_LINK=`grep source_dataset_s3_url build-spec.json | cut -d &apos;:&apos; -f 2,3 | sed &apos;s/&quot;//g&apos;`
+      <command>
+      
+
+
 aws sts assume-role --duration-seconds 900 --role-arn $arn_role_data --role-session-name &quot;s3-test&quot; &gt; assume-role-output.txt
 export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-aws s3 cp $SOURCE_FILE_S3_LINK javabins.tar.gz
+aws s3 cp ${source_s3_url} javabins.tar.gz
 tar -xvzf javabins.tar.gz
 unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY
 unset AWS_SESSION_TOKEN
-aws s3 --sse=AES256 cp s3://${stack_s3_bucket}/releases/jenkins_pipeline_build_${GIT_COMMIT}/pic-sure-hpds-etl.tar.gz pic-sure-hpds-etl.tar.gz 
+aws s3 --sse=AES256 cp s3://${stack_s3_bucket}/releases/jenkins_pipeline_build_${GIT_COMMIT}/pic-sure-hpds-etl.tar.gz pic-sure-hpds-etl.tar.gz
 HPDS_ETL_IMAGE=`docker load &lt; ./pic-sure-hpds-etl.tar.gz  | cut -d &apos; &apos; -f 3`
 echo $HPDS_ETL_IMAGE
 ls -alh `pwd`
-docker stop dumper || echo 
+docker stop dumper || echo
 docker rm dumper || echo
 docker run --name dumper -d --entrypoint sleep ${HPDS_ETL_IMAGE}  10000000
 docker exec dumper mkdir -p /opt/local/hpds
 docker cp columnMeta.javabin dumper:/opt/local/hpds/columnMeta.javabin
 docker cp allObservationsStore.javabin dumper:/opt/local/hpds/allObservationsStore.javabin
 docker cp encryption_key dumper:/opt/local/hpds/encryption_key
-docker exec dumper java -Xmx2048m -jar CSVDumper-jar-with-dependencies.jar
+docker exec dumper java -Xmx8G -jar CSVDumper-jar-with-dependencies.jar
 docker exec dumper ls -alh /opt/local/hpds/
 docker exec dumper rm /opt/local/hpds/allObservationsStore.javabin
 docker exec dumper rm /opt/local/hpds/columnMeta.javabin
 head /dev/urandom | tr -dc a-f0-9 | head -c 32 &gt; encryption_key
 docker cp encryption_key dumper:/opt/local/hpds/encryption_key
-docker exec dumper java -Xmx8192m -jar CSVLoader-jar-with-dependencies.jar
+docker exec dumper java -Xmx12G -jar CSVLoader-jar-with-dependencies.jar
 docker cp dumper:/opt/local/hpds/allObservationsStore.javabin .
 docker cp dumper:/opt/local/hpds/encryption_key .
 docker cp dumper:/opt/local/hpds/columnMeta.javabin .
-tar -cvzf javabins_rekeyed.tar.gz *.javabin encryption_key
-aws s3 --sse=AES256 cp javabins_rekeyed.tar.gz s3://${stack_s3_bucket}/data/`git blame --abbrev=39 build-spec.json | grep source_dataset_s3_url | cut -f 1 -d &apos; &apos;
-`/javabins_rekeyed.tar.gz
 docker stop dumper
 docker rm dumper
+
+tar -cvzf ${output_file_name}.tar.gz *.javabin encryption_key
+
+
+aws s3 --sse=AES256 cp ${output_file_name}.tar.gz s3://${stack_s3_bucket}/data/${destination_bucket_hash}/${output_file_name}.tar.gz
+
+if [ -f metadata.json ]; then
+        aws s3 --sse=AES256 cp metadata.json s3://${stack_s3_bucket}/data/${destination_bucket_hash}/fence_mapping.json
+fi
+
 </command>
     </hudson.tasks.Shell>
   </builders>
   <publishers/>
-  <buildWrappers/>
+ <buildWrappers>
+     <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.38">
+       <deleteDirs>false</deleteDirs>
+       <cleanupParameter></cleanupParameter>
+       <externalDelete></externalDelete>
+       <disableDeferredWipeout>false</disableDeferredWipeout>
+     </hudson.plugins.ws__cleanup.PreBuildCleanup>
+   </buildWrappers>
+
 </project>

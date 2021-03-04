@@ -14,11 +14,29 @@
   <properties/>
   <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.78">
     <script>import groovy.json.*;
-
 pipeline {
-    agent any 
+    agent any
     stages {
-        stage(&apos;Acquire and lock deployment state&apos;) { 
+                stage(&apos;Retrieve Build Spec&apos;) {
+            steps {
+                script {
+                    def result = build job: &apos;Retrieve Build Spec&apos;
+                    retrieveBuildSpecId = result.number
+                }
+                script {
+                    copyArtifacts filter: &apos;*&apos;, projectName: &apos;Retrieve Build Spec&apos;, selector: specific(&quot;&quot;+retrieveBuildSpecId)
+                    sh &apos;cat build-spec.json&apos;
+                    sh &apos;cat pipeline_git_commit.txt&apos;
+                    sh &apos;pwd&apos;
+                    def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/Swap Stacks/build-spec.json&apos;))
+                    println(buildSpec)
+                    ami_id = buildSpec.terraform_vars[0].ami_id
+                    infrastructure_git_hash = buildSpec.infrastructure_git_hash
+                    println(&quot;AMI : &quot; + ami_id)
+                }
+            }
+        }
+        stage(&apos;Acquire and lock deployment state&apos;) {
             steps {
                 script {
                     def stacksJson
@@ -39,7 +57,7 @@ pipeline {
                     println(target_next_prod_stack)
                     stacksJson = JsonOutput.toJson(stacks)
                     println(stacksJson)
-                    build job: &apos;Move Prod DNS Pointer&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_prod_stack&apos;, value: target_prod_stack],[$class: &apos;StringParameterValue&apos;, name: &apos;target_next_prod_stack&apos;, value: target_next_prod_stack]]
+                     build job: &apos;Move Prod DNS Pointer&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_prod_stack&apos;, value: target_prod_stack],[$class: &apos;StringParameterValue&apos;, name: &apos;target_next_prod_stack&apos;, value: target_next_prod_stack],[$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash]]
                     println(&quot;Moved pointer&quot;)
                     build job: &apos;Write Stack State&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;stacks_json&apos;, value: stacksJson]]
                 }

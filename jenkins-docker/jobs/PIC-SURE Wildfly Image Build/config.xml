@@ -47,13 +47,18 @@
     <hudson.tasks.Shell>
       <command>aws s3 --sse=AES256 cp s3://$S3_BUCKET_NAME/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-api.tar.gz pic-sure-api.tar.gz 
 aws s3 --sse=AES256 cp s3://$S3_BUCKET_NAME/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-auth-microapp.tar.gz pic-sure-auth-microapp.tar.gz 
-PIC_SURE_API_VERSION=`docker load -i pic-sure-api.tar.gz|cut -d &apos;:&apos; -f 3`
-PIC_SURE_AUTH_VERSION=`docker load -i pic-sure-auth-microapp.tar.gz|cut -d &apos;:&apos; -f 3`
+aws s3 --sse=AES256 cp s3://$S3_BUCKET_NAME/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-aggregate-resource.tar.gz pic-sure-aggregate-resource.tar.gz 
+
+PIC_SURE_API_VERSION=`docker load -i pic-sure-api.tar.gz |cut -d &apos;:&apos; -f 3`
+PIC_SURE_AUTH_VERSION=`docker load -i pic-sure-auth-microapp.tar.gz |cut -d &apos;:&apos; -f 3`
+PIC_SURE_AGGREGATE_RESOURCE_VERSION=`docker load -i pic-sure-aggregate-resource.tar.gz |cut -d &apos;:&apos; -f 3`
+
 
 echo $PIC_SURE_API_VERSION
 echo $PIC_SURE_AUTH_VERSION
+echo $PIC_SURE_AGGREGATE_RESOURCE_VERSION
 
-docker build --build-arg PIC_SURE_API_VERSION=$PIC_SURE_API_VERSION --build-arg PIC_SURE_AUTH_VERSION=$PIC_SURE_AUTH_VERSION -t hms-dbmi/pic-sure-wildfly:${pipeline_build_id} .
+docker build -f pic-sure-with-aggregate-resource.Dockerfile --build-arg PIC_SURE_API_VERSION=$PIC_SURE_API_VERSION --build-arg PIC_SURE_AUTH_VERSION=$PIC_SURE_AUTH_VERSION  --build-arg PIC_SURE_AGGREGATE_VERSION=$PIC_SURE_AGGREGATE_RESOURCE_VERSION -t hms-dbmi/pic-sure-wildfly:${pipeline_build_id} .
 docker save hms-dbmi/pic-sure-wildfly:${pipeline_build_id} &gt; pic-sure-wildfly.tar.gz
 aws s3 --sse=AES256 cp pic-sure-wildfly.tar.gz s3://$S3_BUCKET_NAME/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-wildfly.tar.gz 
 

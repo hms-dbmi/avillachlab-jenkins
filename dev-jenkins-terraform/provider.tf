@@ -3,7 +3,3 @@ provider "aws" {
   profile    = "avillachlab-secure-infrastructure"
 }
 
-provider "okta" {
-  org_name  = "hms-harvard-avillachlab"
-  base_url  = "okta.com"
-}

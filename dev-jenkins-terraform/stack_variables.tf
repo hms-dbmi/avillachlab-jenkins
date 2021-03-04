@@ -44,7 +44,7 @@ variable "cis-centos-linux-ami-id" {
 	type = string
 }
 
-variable "okta-saml-app-id" {
+variable "okta-app-id" {
 	type = string
 }
 
@@ -60,6 +60,10 @@ variable "arn-role-cnc" {
 	type = string
 }
 
+variable "avillachlab-release-control-repo" {
+	type = string
+}
+
 variable "git-branch-avillachlab-jenkins-dev-release-control" {
 	type = string
 }
@@ -68,7 +72,7 @@ variable "arn-role-data" {
 	type = string
 }
 
-variable "git-branch-avillachlab-secure-infrastructure" {
+variable "git-hash-avillachlab-secure-infrastructure" {
 	type = string
 }
 
