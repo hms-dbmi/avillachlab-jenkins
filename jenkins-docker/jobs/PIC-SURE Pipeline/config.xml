@@ -56,7 +56,7 @@ pipeline {
                 )
             }
         }
-        stage(&apos;PSAMA, DataSTAGE UI and PIC-SURE HPDS&apos;){
+        stage(&apos;PSAMA and PIC-SURE HPDS&apos;){
             steps {
                 parallel (
                     picsurehpds:{
@@ -68,16 +68,11 @@ pipeline {
                         script{
                             def result = build job: &apos;PIC-SURE Auth Micro-App Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSAMA&apos;]]]
                         }
-                    },
-                    datastageui:{
-                        script {
-                            def result = build job: &apos;PIC-SURE-HPDS-UI-copdgene&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSHDU&apos;]]]
-                        }
                     }
                )
             }
         }
-        stage(&apos;Wildfly Build&apos;){
+        stage(&apos;Wildfly Build and UI Customization&apos;){
             steps {
                 parallel (
                     wildfly:{

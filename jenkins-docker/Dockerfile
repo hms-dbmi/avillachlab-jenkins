@@ -12,6 +12,8 @@ USER root
 
 RUN echo deb http://deb.debian.org/debian stretch-backports main >> /etc/apt/sources.list
 
+RUN echo deb http://deb.debian.org/debian stretch main >> /etc/apt/sources.list
+
 RUN apt-get update
 
 RUN apt-get -y install apt-transport-https
