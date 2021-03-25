@@ -168,6 +168,8 @@
           <int>1</int>
           <string>stack_s3_bucket</string>
           <string>avillach-biodatacatalyst-deployments-b7rwpwv</string>
+          <string>git_base_url</string>
+          <string>github.com/hms-dbmi</string>
         </tree-map>
       </envVars>
     </hudson.slaves.EnvironmentVariablesNodeProperty>
