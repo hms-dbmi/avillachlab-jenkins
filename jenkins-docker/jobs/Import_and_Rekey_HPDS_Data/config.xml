@@ -3,7 +3,7 @@
   <actions/>
   <description></description>
   <keepDependencies>false</keepDependencies>
-   <properties>
+  <properties>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
@@ -18,17 +18,21 @@
           <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
-	<hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
           <name>destination_bucket_hash</name>
           <description>the git hash of the commit that changed the data set</description>
           <defaultValue></defaultValue>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>isStigmatized</name>
+          <description></description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-      
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.1.1">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.6.0">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
@@ -41,7 +45,7 @@
       </hudson.plugins.git.BranchSpec>
     </branches>
     <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
-    <submoduleCfg class="list"/>
+    <submoduleCfg class="empty-list"/>
     <extensions/>
   </scm>
   <canRoam>true</canRoam>
@@ -53,8 +57,10 @@
   <builders>
     <hudson.tasks.Shell>
       <command>
-      
-
+echo &apos;workspace&apos;      
+echo $WORKSPACE
+echo &apos;pwd&apos;
+echo &quot;$PWD&quot;
 
 aws sts assume-role --duration-seconds 900 --role-arn $arn_role_data --role-session-name &quot;s3-test&quot; &gt; assume-role-output.txt
 export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
@@ -66,49 +72,86 @@ unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY
 unset AWS_SESSION_TOKEN
 aws s3 --sse=AES256 cp s3://${stack_s3_bucket}/releases/jenkins_pipeline_build_${GIT_COMMIT}/pic-sure-hpds-etl.tar.gz pic-sure-hpds-etl.tar.gz
+
+#s3://avillach-biodatacatalyst-deployments-3drb48r/releases/jenkins_pipeline_build_bb8ba4634f86676926a7ee8252e578fa2dc45f1a/pic-sure-hpds-etl.tar.gz
 HPDS_ETL_IMAGE=`docker load &lt; ./pic-sure-hpds-etl.tar.gz  | cut -d &apos; &apos; -f 3`
 echo $HPDS_ETL_IMAGE
 ls -alh `pwd`
+
 docker stop dumper || echo
 docker rm dumper || echo
-docker run --name dumper -d --entrypoint sleep ${HPDS_ETL_IMAGE}  10000000
+
+mkdir &quot;$WORKSPACE&quot;/hpds/
+mkdir &quot;$WORKSPACE&quot;/source/
+
+docker run --name dumper -d -v &quot;$WORKSPACE&quot;/hpds:/opt/local/hpds/ -v &quot;$WORKSPACE&quot;/source:/opt/local/source/ --entrypoint sleep ${HPDS_ETL_IMAGE}  10000000
+
+###### new rekey process ######
 docker exec dumper mkdir -p /opt/local/hpds
-docker cp columnMeta.javabin dumper:/opt/local/hpds/columnMeta.javabin
-docker cp allObservationsStore.javabin dumper:/opt/local/hpds/allObservationsStore.javabin
-docker cp encryption_key dumper:/opt/local/hpds/encryption_key
-docker exec dumper java -Xmx8G -jar CSVDumper-jar-with-dependencies.jar
-docker exec dumper ls -alh /opt/local/hpds/
-docker exec dumper rm /opt/local/hpds/allObservationsStore.javabin
-docker exec dumper rm /opt/local/hpds/columnMeta.javabin
-head /dev/urandom | tr -dc a-f0-9 | head -c 32 &gt; encryption_key
-docker cp encryption_key dumper:/opt/local/hpds/encryption_key
-docker exec dumper java -Xmx12G -jar CSVLoader-jar-with-dependencies.jar
-docker cp dumper:/opt/local/hpds/allObservationsStore.javabin .
-docker cp dumper:/opt/local/hpds/encryption_key .
-docker cp dumper:/opt/local/hpds/columnMeta.javabin .
-docker stop dumper
-docker rm dumper
 
-tar -cvzf ${output_file_name}.tar.gz *.javabin encryption_key
+docker exec dumper mkdir -p /opt/local/source
+
+### cp original data set into /opt/local/source/ to prep for rekey
+docker cp columnMeta.javabin dumper:/opt/local/source/columnMeta.javabin
+docker cp allObservationsStore.javabin dumper:/opt/local/source/allObservationsStore.javabin
+docker cp encryption_key dumper:/opt/local/source/encryption_key
+
+### Move meta into /opt/local/hpds/ to include with new data set
+docker cp metadata.json dumper:/opt/local/hpds/metadata.json
+
+mkdir -p &quot;$WORKSPACE&quot;/hpds
+
+###### Generate rekey encryption key to container&apos;s as /opt/local/hpds/encryption_key
+head /dev/urandom | tr -dc a-f0-9 | head -c 32 &gt; &quot;$WORKSPACE&quot;/hpds/encryption_key
+
+docker cp &quot;$WORKSPACE&quot;/hpds/encryption_key dumper:/opt/local/hpds/encryption_key
 
 
-aws s3 --sse=AES256 cp ${output_file_name}.tar.gz s3://${stack_s3_bucket}/data/${destination_bucket_hash}/${output_file_name}.tar.gz
+#### Execute rekey
+# volume mount pwd that contains original data files as /opt/local/source/
+# 
+docker exec dumper java -Xmx8G -jar RekeyDataset-jar-with-dependencies.jar
 
-if [ -f metadata.json ]; then
-        aws s3 --sse=AES256 cp metadata.json s3://${stack_s3_bucket}/data/${destination_bucket_hash}/fence_mapping.json
+### If destigmatized data set remove concepts
+if [ ${isStigmatized} = &apos;true&apos; ]; then
+
+  # RemoveConceptFromMetadata reads the rekeyed data set in /opt/local/hpds generated by the rekey.
+  # add concepts to remove to /opt/local/hpds that contains the list of concepts to destigmatize
+  
+  docker cp conceptsToRemove.txt dumper:/opt/local/hpds/conceptsToRemove.txt
+  docker exec dumper java -Xmx8G -jar RemoveConceptFromMetadata-jar-with-dependencies.jar
+    
 fi
 
-</command>
+docker cp dumper:/opt/local/hpds/encryption_key &quot;$WORKSPACE&quot;/hpds/
+docker cp dumper:/opt/local/hpds/columnMeta.javabin &quot;$WORKSPACE&quot;/hpds/
+docker cp dumper:/opt/local/hpds/metadata.json &quot;$WORKSPACE&quot;/hpds/
+docker cp dumper:/opt/local/hpds/allObservationsStore.javabin &quot;$WORKSPACE&quot;/hpds/
+
+ls -la &quot;$WORKSPACE&quot;/hpds/
+
+cd &quot;$WORKSPACE&quot;/hpds/
+
+tar -cvzf ${output_file_name}.tar.gz *.javabin encryption_key metadata.json
+
+aws s3 --sse=AES256 cp ${output_file_name}.tar.gz s3://${stack_s3_bucket}/data/${destination_bucket_hash}/${output_file_name}.tar.gz --quiet
+
+if [ -f metadata.json ]; then
+        aws s3 --sse=AES256 cp metadata.json s3://${stack_s3_bucket}/data/${destination_bucket_hash}/fence_mapping.json --quiet
+fi
+
+docker stop dumper
+docker rm dumper</command>
+      <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
   <publishers/>
- <buildWrappers>
-     <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.38">
-       <deleteDirs>false</deleteDirs>
-       <cleanupParameter></cleanupParameter>
-       <externalDelete></externalDelete>
-       <disableDeferredWipeout>false</disableDeferredWipeout>
-     </hudson.plugins.ws__cleanup.PreBuildCleanup>
-   </buildWrappers>
-
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.39">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
 </project>
