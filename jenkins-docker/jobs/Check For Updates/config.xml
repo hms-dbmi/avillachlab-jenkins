@@ -4,7 +4,7 @@
   <description></description>
   <keepDependencies>false</keepDependencies>
   <properties/>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.1.1">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.6.0">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
@@ -17,7 +17,7 @@
       </hudson.plugins.git.BranchSpec>
     </branches>
     <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
-    <submoduleCfg class="list"/>
+    <submoduleCfg class="empty-list"/>
     <extensions/>
   </scm>
   <canRoam>true</canRoam>
@@ -27,9 +27,9 @@
   <triggers/>
   <concurrentBuild>false</concurrentBuild>
   <builders>
-    <hudson.plugins.groovy.SystemGroovy plugin="groovy@2.2">
+    <hudson.plugins.groovy.SystemGroovy plugin="groovy@2.3">
       <source class="hudson.plugins.groovy.StringSystemScriptSource">
-        <script plugin="script-security@1.70">
+        <script plugin="script-security@1.76">
           <script>import jenkins.*
 import jenkins.model.*
 import hudson.*
@@ -40,6 +40,7 @@ def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspa
 
 Jenkins.instance.getItemByFullName(&quot;PIC-SURE Pipeline&quot;)
     .scheduleBuild2(0).get()
+
 </script>
           <sandbox>false</sandbox>
         </script>
@@ -73,10 +74,11 @@ fi
 LAST_GENOMIC_DATASET_MODIFICATION_COMMIT=`git blame --abbrev=39 build-spec.json | grep source_genomic_dataset_s3_url | cut -f 1 -d &apos; &apos;`
 echo $LAST_GENOMIC_DATASET_MODIFICATION_COMMIT &gt; genomicDatasetKey.txt
 </command>
+      <configuredLocalRules/>
     </hudson.tasks.Shell>
-    <hudson.plugins.groovy.SystemGroovy plugin="groovy@2.2">
+    <hudson.plugins.groovy.SystemGroovy plugin="groovy@2.3">
       <source class="hudson.plugins.groovy.StringSystemScriptSource">
-        <script plugin="script-security@1.70">
+        <script plugin="script-security@1.76">
           <script>import jenkins.*
 import jenkins.model.*
 import hudson.*
@@ -94,7 +96,8 @@ if(new File(&quot;/var/jenkins_home/workspace/Check For Updates/toBeRekeyed.txt&
     .scheduleBuild2(0, new ParametersAction([
         new StringParameterValue(&quot;source_s3_url&quot;, buildSpec.source_dataset_s3_url.trim()),
         new StringParameterValue(&quot;output_file_name&quot;, &quot;javabins_rekeyed&quot;),
-        new StringParameterValue(&quot;destination_bucket_hash&quot;, bucket_hash.trim())
+        new StringParameterValue(&quot;destination_bucket_hash&quot;, bucket_hash.trim()),
+        new BooleanParameterValue(&quot;isStigmatized&quot;,false)
         ])).get()
     dataset_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/toBeRekeyed.txt&quot;).text
 } else {
@@ -108,7 +111,8 @@ if(new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_to
     .scheduleBuild2(0, new ParametersAction([
         new StringParameterValue(&quot;source_s3_url&quot;, buildSpec.source_destigmatized_dataset_s3_url.trim()),
         new StringParameterValue(&quot;output_file_name&quot;, &quot;destigmatized_javabins_rekeyed&quot;),
-        new StringParameterValue(&quot;destination_bucket_hash&quot;, bucket_hash.trim())
+        new StringParameterValue(&quot;destination_bucket_hash&quot;, bucket_hash.trim()),
+        new BooleanParameterValue(&quot;isStigmatized&quot;,true)
         ])).get()
     destigmatized_dataset_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_toBeRekeyed.txt&quot;).text
 } else {
@@ -126,6 +130,7 @@ Jenkins.instance.getItemByFullName(&quot;Deployment Pipeline&quot;)
         new StringParameterValue(&quot;genomic_dataset_s3_object_key&quot;, genomic_s3_object_key.trim()),
 ])).get()
 
+
 </script>
           <sandbox>false</sandbox>
         </script>
@@ -134,7 +139,7 @@ Jenkins.instance.getItemByFullName(&quot;Deployment Pipeline&quot;)
   </builders>
   <publishers/>
   <buildWrappers>
-    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.38">
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.39">
       <deleteDirs>false</deleteDirs>
       <cleanupParameter></cleanupParameter>
       <externalDelete></externalDelete>

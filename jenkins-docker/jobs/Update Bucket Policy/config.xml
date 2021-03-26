@@ -1,8 +1,8 @@
 <?xml version='1.1' encoding='UTF-8'?>
-<flow-definition plugin="workflow-job@2.36">
+<flow-definition plugin="workflow-job@2.40">
   <actions>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@1.5.0"/>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@1.5.0">
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@1.8.4"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@1.8.4">
       <jobProperties/>
       <triggers/>
       <parameters/>
@@ -29,7 +29,7 @@
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.78">
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.90">
     <script>import groovy.json.JsonSlurper;
 import groovy.json.JsonOutput;
 
@@ -53,9 +53,11 @@ pipeline {
                         }
                     }
                     bucket_policy.Statement.removeAll(statements_to_remove)
-                    bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-hpds\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::$aws_account_app:role/hpds-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
+                    bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-open-hpds\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::$aws_account_app:role/open-hpds-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
+                    bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-auth-hpds\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::$aws_account_app:role/auth-hpds-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
                     bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-wildfly\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::$aws_account_app:role/wildfly-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
                     bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-httpd\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::$aws_account_app:role/httpd-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
+                    
                     new_policy = new JsonOutput().toJson(bucket_policy)
                    
                 }
