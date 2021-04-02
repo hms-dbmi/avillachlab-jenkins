@@ -15,4 +15,5 @@ services:
         - /var/run/docker.sock:/var/run/docker.sock
         - /var/log/jenkins-docker-logs/:/var/log
         - /var/jenkins_home/jobs/:/var/jenkins_home/jobs/
+        - /var/jenkins_home/workspace/:/var/jenkins_home/workspace/
 
