@@ -273,7 +273,7 @@ sudo mkdir -p /var/jenkins_home/jobs/
 sudo mkdir -p /var/log/jenkins-docker-logs
 cp -r jobs/* /var/jenkins_home/jobs/
 sudo docker build --build-arg S3_BUCKET=${stack_s3_bucket} -t avillach-lab-dev-jenkins -f ${stack_jenkins_dockerfile} .
-sudo docker run -d -v /var/jenkins_home/jobs:/var/jenkins_home/jobs -v /var/run/docker.sock:/var/run/docker.sock -p 80:8080 --name jenkins --restart always avillach-lab-dev-jenkins
+sudo docker run -d -v /var/jenkins_home/workspace:/var/jenkins_home/workspace -v /var/jenkins_home/jobs:/var/jenkins_home/jobs -v /var/run/docker.sock:/var/run/docker.sock -p 80:8080 --name jenkins --restart always avillach-lab-dev-jenkins
 echo "setup script finished"
 
 sudo docker logs -f jenkins > /var/log/jenkins-docker-logs/jenkins.log &
