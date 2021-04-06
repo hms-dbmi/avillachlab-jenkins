@@ -49,7 +49,7 @@
           <permission>hudson.model.Run.Update</permission>
         </permissions>
         <assignedSIDs>
-          <sid>${jenkins_role_admin_name}</sid>
+          <sid>jenkins_role_BDC_dev_admin</sid>
         </assignedSIDs>
       </role>
       <role name="readonly" pattern=".*">
