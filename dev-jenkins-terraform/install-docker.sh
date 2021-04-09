@@ -341,6 +341,7 @@ sudo openssl rsa -in /root/jenkins.key -out /root/jenkins.pk1.key
 
 #run jenkins docker container
 sudo docker run -d -v /var/jenkins_home/jobs:/var/jenkins_home/jobs \
+                    -v /var/jenkins_home/workspace:/var/jenkins_home/workspace \
                     -v /var/run/docker.sock:/var/run/docker.sock \
                     -v /root/jenkins.cer:/root/jenkins.cer \
                     -v /root/jenkins.pk1.key:/root/jenkins.pk1.key \
