@@ -4,7 +4,7 @@
   <description></description>
   <keepDependencies>false</keepDependencies>
   <properties/>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.6.0">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.7.1">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
@@ -35,7 +35,7 @@ import jenkins.model.*
 import hudson.*
 import hudson.model.*
 import groovy.json.JsonSlurper;
-  
+
 def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/Check For Updates/build-spec.json&apos;));
 
 Jenkins.instance.getItemByFullName(&quot;PIC-SURE Pipeline&quot;)
@@ -61,8 +61,9 @@ fi
 
 LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT=`git blame --abbrev=39 build-spec.json | grep source_destigmatized_dataset_s3_url | cut -f 1 -d &apos; &apos;`
 
-docker exec jenkins /usr/local/bin/aws s3api head-object --bucket $stack_s3_bucket --key &quot;data/${LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT}/destigmatized_javabins_rekeyed.tar.gz&quot; || not_exist=true
-if [ $not_exist ]; then
+docker exec jenkins /usr/local/bin/aws s3api head-object --bucket $stack_s3_bucket --key &quot;data/${LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT}/destigmatized_javabins_rekeyed.tar.gz&quot; || not_exist_destig=false
+
+if [ $not_exist_destig ]; then
   echo $LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT &gt; destigmatized_toBeRekeyed.txt
   echo &quot;Will rekey new destigmatized dataset.&quot;
 else
@@ -88,7 +89,7 @@ import groovy.json.JsonSlurper;
 def buildSpec = new JsonSlurper().parse(new File(&quot;/var/jenkins_home/workspace/Check For Updates/build-spec.json&quot;));
 
 def envVars= Hudson.instance.getItem(&quot;Check For Updates&quot;).lastBuild.properties.get(&quot;envVars&quot;);
-            
+
 String dataset_s3_object_key ;
 if(new File(&quot;/var/jenkins_home/workspace/Check For Updates/toBeRekeyed.txt&quot;).exists()){
     def bucket_hash = new File(&quot;/var/jenkins_home/workspace/Check For Updates/toBeRekeyed.txt&quot;).text
