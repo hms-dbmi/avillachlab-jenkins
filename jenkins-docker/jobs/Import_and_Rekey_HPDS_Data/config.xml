@@ -7,7 +7,7 @@
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
-          <name>source_s3_url</name>
+          <name>sosurce_s3_url</name>
           <description></description>
           <defaultValue></defaultValue>
           <trim>false</trim>
@@ -25,7 +25,7 @@
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
-          <name>isStigmatized</name>
+          <name>isDestigmatized</name>
           <description></description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
@@ -110,7 +110,7 @@ tar -cvzf ${output_file_name}.tar.gz *.javabin encryption_key metadata.json
 aws s3 --sse=AES256 cp ${output_file_name}.tar.gz s3://${stack_s3_bucket}/data/${destination_bucket_hash}/${output_file_name}.tar.gz --quiet
 
 if [ -f metadata.json ]; then
-   if [ ${isStigmatized} = &apos;false&apos; ]; then
+   if [ ${isDestigmatized} = &apos;false&apos; ]; then
 
       aws s3 --sse=AES256 cp metadata.json s3://${stack_s3_bucket}/data/${destination_bucket_hash}/fence_mapping.json --quiet
 

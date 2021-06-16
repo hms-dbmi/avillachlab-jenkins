@@ -98,7 +98,7 @@ if(new File(&quot;/var/jenkins_home/workspace/Check For Updates/toBeRekeyed.txt&
         new StringParameterValue(&quot;source_s3_url&quot;, buildSpec.source_dataset_s3_url.trim()),
         new StringParameterValue(&quot;output_file_name&quot;, &quot;javabins_rekeyed&quot;),
         new StringParameterValue(&quot;destination_bucket_hash&quot;, bucket_hash.trim()),
-        new BooleanParameterValue(&quot;isStigmatized&quot;,false)
+        new BooleanParameterValue(&quot;isDestigmatized&quot;,false)
         ])).get()
     dataset_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/toBeRekeyed.txt&quot;).text
 } else {
@@ -113,7 +113,7 @@ if(new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_to
         new StringParameterValue(&quot;source_s3_url&quot;, buildSpec.source_destigmatized_dataset_s3_url.trim()),
         new StringParameterValue(&quot;output_file_name&quot;, &quot;destigmatized_javabins_rekeyed&quot;),
         new StringParameterValue(&quot;destination_bucket_hash&quot;, bucket_hash.trim()),
-        new BooleanParameterValue(&quot;isStigmatized&quot;,true)
+        new BooleanParameterValue(&quot;isDestigmatized&quot;,true)
         ])).get()
     destigmatized_dataset_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_toBeRekeyed.txt&quot;).text
 } else {
