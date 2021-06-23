@@ -7,7 +7,7 @@
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
-          <name>sosurce_s3_url</name>
+          <name>source_s3_url</name>
           <description></description>
           <defaultValue></defaultValue>
           <trim>false</trim>
