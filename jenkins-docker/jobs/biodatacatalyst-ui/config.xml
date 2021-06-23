@@ -58,7 +58,7 @@ docker tag hms-dbmi/pic-sure-hpds-ui:${PIC_SURE_HPDS_UI_VERSION} hms-dbmi/pic-su
 GIT_BRANCH_SHORT=`echo ${GIT_BRANCH} | cut -d &quot;/&quot; -f 2` 
 GIT_COMMIT_SHORT=`echo ${GIT_COMMIT} | cut -c1-7`
 cd biodatacatalyst-ui
-docker build -t hms-dbmi/pic-sure-biodatacatalyst-ui:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
+docker build --build-arg FILE_SUFFIX=${pipeline_build_id} -t hms-dbmi/pic-sure-biodatacatalyst-ui:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
 cd ../
 mkdir -p docker_image_output
 cd docker_image_output

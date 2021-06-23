@@ -18,21 +18,21 @@
           <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
-	<hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
           <name>destination_bucket_hash</name>
           <description>the git hash of the commit that changed the data set</description>
           <defaultValue></defaultValue>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
-          <name>isStigmatized</name>
+          <name>isDestigmatized</name>
           <description></description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.1.1">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.7.1">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
@@ -45,7 +45,7 @@
       </hudson.plugins.git.BranchSpec>
     </branches>
     <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
-    <submoduleCfg class="list"/>
+    <submoduleCfg class="empty-list"/>
     <extensions/>
   </scm>
   <canRoam>true</canRoam>
@@ -57,7 +57,6 @@
   <builders>
     <hudson.tasks.Shell>
       <command>
-      
 ### Build ETL Image
 aws s3 --sse=AES256 cp s3://${stack_s3_bucket}/releases/jenkins_pipeline_build_${GIT_COMMIT}/pic-sure-hpds-etl.tar.gz pic-sure-hpds-etl.tar.gz
 
@@ -111,19 +110,23 @@ tar -cvzf ${output_file_name}.tar.gz *.javabin encryption_key metadata.json
 aws s3 --sse=AES256 cp ${output_file_name}.tar.gz s3://${stack_s3_bucket}/data/${destination_bucket_hash}/${output_file_name}.tar.gz --quiet
 
 if [ -f metadata.json ]; then
-   aws s3 --sse=AES256 cp metadata.json s3://${stack_s3_bucket}/data/${destination_bucket_hash}/fence_mapping.json --quiet
-fi
+   if [ ${isDestigmatized} = &apos;false&apos; ]; then
 
-</command>
+      aws s3 --sse=AES256 cp metadata.json s3://${stack_s3_bucket}/data/${destination_bucket_hash}/fence_mapping.json --quiet
+
+   fi
+fi
+                </command>
+      <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
   <publishers/>
-   <buildWrappers>
-     <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.38">
-       <deleteDirs>false</deleteDirs>
-       <cleanupParameter></cleanupParameter>
-       <externalDelete></externalDelete>
-       <disableDeferredWipeout>false</disableDeferredWipeout>
-     </hudson.plugins.ws__cleanup.PreBuildCleanup>
-   </buildWrappers>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.39">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
 </project>
