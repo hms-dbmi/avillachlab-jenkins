@@ -31,7 +31,7 @@ data "template_cloudinit_config" "config" {
 }
 
 resource "aws_instance" "dev-jenkins" {
-  ami = "ami-07722e8166855372d"
+  ami = "ami-022c486f6dad2c9aa"
   instance_type = "m5.2xlarge"
   associate_public_ip_address = false
   key_name = aws_key_pair.generated_key.key_name
