@@ -28,7 +28,7 @@ RUN curl -fsSL https://get.docker.com | sh
 
 RUN docker --version 
 
-RUN wget https://www-us.apache.org/dist/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz -P /opt
+RUN wget https://www.apache.org/dist/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz -P /opt
 
 RUN apt-get -y -t stretch-backports install openjdk-11-jdk-headless
 
