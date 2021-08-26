@@ -20,6 +20,8 @@ RUN apt-get -y install apt-transport-https
 
 RUN apt-get -y install python3-pip
 
+RUN apt-get -y install wget
+
 RUN pip3 install --no-input awscli --upgrade
 
 RUN aws s3 cp s3://$S3_BUCKET/jenkins_config/config.xml /var/jenkins_home/config.xml 
