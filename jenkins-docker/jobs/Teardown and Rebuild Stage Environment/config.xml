@@ -82,7 +82,7 @@
   <builders>
     <hudson.tasks.Shell>
       <command>cd app-infrastructure
-wget https://releases.hashicorp.com/terraform/0.12.16/terraform_0.12.16_linux_amd64.zip &amp;&amp; unzip terraform_0.12.16_linux_amd64.zip &amp;&amp; mv terraform /usr/local/bin/
+wget https://releases.hashicorp.com/terraform/0.12.21/terraform_0.12.31_linux_amd64.zip &amp;&amp; unzip terraform_0.12.31_linux_amd64.zip &amp;&amp; mv terraform /usr/local/bin/
 
 aws sts assume-role --duration-seconds 900 --role-arn $arn_role_cnc --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
 
