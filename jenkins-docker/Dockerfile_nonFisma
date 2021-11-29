@@ -24,7 +24,7 @@ RUN apt-get update
 
 RUN apt-get -y install apt-transport-https
 
-RUN apt-get -y install python3-pip
+RUN apt-get -y install python3-pip wget
 
 RUN pip3 install --no-input awscli --upgrade
 
