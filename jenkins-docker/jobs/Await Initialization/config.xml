@@ -46,7 +46,7 @@
   <builders>
     <hudson.tasks.Shell>
       <command>cd app-infrastructure
-wget https://releases.hashicorp.com/terraform/0.12.16/terraform_0.12.16_linux_amd64.zip &amp;&amp; unzip terraform_0.12.16_linux_amd64.zip &amp;&amp; mv terraform /usr/local/bin/
+wget https://releases.hashicorp.com/terraform/0.12.31/terraform_0.12.31_linux_amd64.zip &amp;&amp; unzip terraform_0.12.31_linux_amd64.zip &amp;&amp; mv terraform /usr/local/bin/
 terraform init
 
 aws sts assume-role --duration-seconds 3600 --role-arn &quot;arn:aws:iam::752463128620:role/system/jenkins-s3-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
