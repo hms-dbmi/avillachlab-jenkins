@@ -1,8 +1,8 @@
 <?xml version='1.1' encoding='UTF-8'?>
-<flow-definition plugin="workflow-job@2.36">
+<flow-definition plugin="workflow-job@2.42">
   <actions>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@1.5.0"/>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@1.5.0">
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@1.9.3"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@1.9.3">
       <jobProperties/>
       <triggers/>
       <parameters/>
@@ -16,52 +16,37 @@
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
           <name>VPC_ID</name>
-          <description></description>
           <defaultValue>vpc-06d289a45c9021bdc</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>SUBNET_ID</name>
-          <description></description>
           <defaultValue>subnet-00a35d901a151ab01</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>git_branch_avillachlab_secure_infrastructure</name>
+          <defaultValue>paul-non-FISMA</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-   <scm class="hudson.plugins.git.GitSCM" plugin="git@4.1.1">
-    <configVersion>2</configVersion>
-    <userRemoteConfigs>
-      <hudson.plugins.git.UserRemoteConfig>
-        <url>$avillachlab_release_control_repo-control</url>
-      </hudson.plugins.git.UserRemoteConfig>
-    </userRemoteConfigs>
-    <branches>
-      <hudson.plugins.git.BranchSpec>
-        <name>$git_branch_avillachlab_jenkins_dev_release_control</name>
-      </hudson.plugins.git.BranchSpec>
-    </branches>
-    <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
-    <submoduleCfg class="list"/>
-    <extensions/>
-  </scm>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.78">
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2633.v6baeedc13805">
     <script>import groovy.json.JsonSlurper;
 def target_stack
 def instance_state
 def instance_id
 pipeline {
-   agent any
-   stages {
+    agent any
+    stages {
       stage(&apos;Build&apos;) {
-         steps {
-         	def secure_infrastructure_hash = sh (script: &quot;git blame --abbrev=39 build-spec.json | grep  infrastructure_git_hash | cut -f 1 -d &apos; &apos;&quot;, returnStdout: true).trim()
-         	
-        	checkout([$class: &apos;GitSCM&apos;, branches: [[name: ${secure_infrastructure_hash} ]],
-     			userRemoteConfigs: [[url: &apos;https://github.com/hms-dbmi/avillachlab-secure-infrastructure.git&apos;]]])   
-		
+        steps {
+
+            git branch: &apos;$git_branch_avillachlab_secure_infrastructure&apos;, url: &apos;https://github.com/hms-dbmi/avillachlab-secure-infrastructure.git&apos;
+
             sh &quot;&quot;&quot;
-                aws sts assume-role --duration-seconds 900 --role-arn $arn_role_app --role-session-name &quot;ami-builder&quot; &gt; assume-role-output.txt
+                aws sts assume-role --duration-seconds 3600 --role-arn $arn_role_app --role-session-name &quot;ami-builder&quot; &gt; assume-role-output.txt
                 export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\\\&quot;]//g&quot;`
                 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\\\&quot;]//g&quot;`
                 export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\\\&quot;]//g&quot;`
@@ -86,7 +71,7 @@ pipeline {
                 echo instance_id
             }
             sh &quot;&quot;&quot;
-                aws sts assume-role --duration-seconds 1800 --role-arn $arn_role_app --role-session-name &quot;ami-builder&quot; &gt; assume-role-output.txt
+                aws sts assume-role --duration-seconds 3600 --role-arn $arn_role_app --role-session-name &quot;ami-builder&quot; &gt; assume-role-output.txt
                 export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\\\&quot;]//g&quot;`
                 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\\\&quot;]//g&quot;`
                 export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\\\&quot;]//g&quot;`
@@ -96,6 +81,7 @@ pipeline {
                 aws --region us-east-1 ec2 create-image --instance-id ${instance_id} --name &quot;Docker-AWSCLI-CIS-`date +&quot;%Y%m%d-%H%M&quot;`&quot; --description &quot;Docker-AWSCLI AMI based off of CIS Benchmark Centos 7&quot; &gt; image_id.txt
                 aws --region us-east-1 ec2 create-tags --resources `grep ImageId image_id.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\\\&quot;]//g&quot;` --tags &apos;Key=&quot;approval-status&quot;,Value=untested&apos;
                 cd centos-ami
+                sleep 300s
                 terraform destroy -auto-approve -var=&quot;target-vpc=${VPC_ID}&quot; -var=&quot;target-subnet-id=${SUBNET_ID}&quot;
                 
             &quot;&quot;&quot;
