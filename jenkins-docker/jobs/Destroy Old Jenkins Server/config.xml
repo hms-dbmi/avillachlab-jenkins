@@ -82,7 +82,7 @@
   <builders>
     <hudson.tasks.Shell>
       <command>cd dev-jenkins-terraform
-aws s3 --sse=AES256 cp s3://${stack_s3_bucket}/jenkins_state_${jenkins_githash_to_destroy}/terraform.tfstate terraform.tfstate 
+aws s3 --sse=AES256 cp s3://${stack_s3_bucket}/jenkins_state/jenkins_${jenkins_githash_to_destroy}/terraform.tfstate terraform.tfstate
 env &gt; env.txt
 terraform init
 
@@ -101,8 +101,8 @@ terraform destroy  -auto-approve \
 -var &quot;access-cidr=${access_cidr}&quot; \
 -var &quot;provisioning-cidr=${provisioning_cidr}&quot;
 
-aws s3 --sse=AES256 cp terraform.tfstate s3://${stack_s3_bucket}/jenkins_state_${jenkins_githash_to_destroy}/terraform.tfstate 
-aws s3 --sse=AES256 cp env.txt s3://${stack_s3_bucket}/jenkins_state_${jenkins_githash_to_destroy}/last_env.txt
+aws s3 --sse=AES256 cp terraform.tfstate s3://${stack_s3_bucket}/jenkins_state/jenkins_${jenkins_githash_to_destroy}/terraform.tfstate
+aws s3 --sse=AES256 cp env.txt s3://${stack_s3_bucket}/jenkins_state/jenkins_${jenkins_githash_to_destroy}/last_env.txt
 
 
 

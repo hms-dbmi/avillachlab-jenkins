@@ -88,8 +88,8 @@ terraform apply -auto-approve \
 -var &quot;access-cidr=${access_cidr}&quot; \
 -var &quot;provisioning-cidr=${provisioning_cidr}&quot;
 
-aws s3 --sse=AES256 cp terraform.tfstate s3://${stack_s3_bucket}/jenkins_state_${GIT_COMMIT}/terraform.tfstate 
-aws s3 --sse=AES256 cp env.txt s3://${stack_s3_bucket}/jenkins_state_${GIT_COMMIT}/last_env.txt
+aws s3 --sse=AES256 cp terraform.tfstate s3://${stack_s3_bucket}/jenkins_state/jenkins_${GIT_COMMIT}/terraform.tfstate
+aws s3 --sse=AES256 cp env.txt s3://${stack_s3_bucket}/jenkins_state/jenkins_${GIT_COMMIT}/last_env.txt
 
 INSTANCE_ID=`terraform state show aws_instance.dev-jenkins | grep &quot;\&quot;i-[a-f0-9]&quot; | cut -f 2 -d &quot;=&quot; | sed &apos;s/&quot;//g&apos;`
 

@@ -10,7 +10,7 @@ echo "
 
 {
 	\"metrics\": {
-		
+
 		\"metrics_collected\": {
 			\"cpu\": {
 				\"measurement\": [
@@ -37,7 +37,7 @@ echo "
                                         \"mem_available_percent\",
                                        \"mem_total\",
                                         \"mem_used\"
-                                        
+
 				],
 				\"metrics_collection_interval\": 600
 			}
@@ -317,9 +317,9 @@ sleep 15
 
 
 echo "user-data progress starting update"
-sudo yum -y update 
+sudo yum -y update
 echo "user-data progress finished update installing epel-release"
-sudo yum -y install epel-release 
+sudo yum -y install epel-release
 echo "user-data progress finished epel-release adding docker-ce repo"
 sudo yum-config-manager  --add-repo https://download.docker.com/linux/centos/docker-ce.repo
 echo "user-data progress added docker-ce repo starting docker install"
@@ -334,6 +334,9 @@ sudo mkdir -p /var/log/jenkins-docker-logs
 cp -r jobs/* /var/jenkins_home/jobs/
 sudo docker build --build-arg S3_BUCKET=${stack_s3_bucket} -t avillach-lab-dev-jenkins .
 
+# Download Jenkins config file from s3
+for i in {1..5}; do sudo /usr/local/bin/aws s3 cp s3://${stack_s3_bucket}/jenkins_config/config.xml /var/jenkins_home/config.xml && break || sleep 45; done
+
 # copy ssl cert & key from s3
 for i in 1 2 3 4 5; do sudo /usr/local/bin/aws --region us-east-1 s3 cp s3://${stack_s3_bucket}/certs/jenkins/jenkins.cer /root/jenkins.cer && break || sleep 45; done
 for i in 1 2 3 4 5; do sudo /usr/local/bin/aws --region us-east-1 s3 cp s3://${stack_s3_bucket}/certs/jenkins/jenkins.key /root/jenkins.key && break || sleep 45; done
@@ -342,6 +345,7 @@ sudo openssl rsa -in /root/jenkins.key -out /root/jenkins.pk1.key
 
 #run jenkins docker container
 sudo docker run -d -v /var/jenkins_home/jobs:/var/jenkins_home/jobs \
+                    -v /var/jenkins_home/config.xml:/var/jenkins_home/config.xml \
                     -v /var/jenkins_home/workspace:/var/jenkins_home/workspace \
                     -v /var/run/docker.sock:/var/run/docker.sock \
                     -v /root/jenkins.cer:/root/jenkins.cer \
