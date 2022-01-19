@@ -4,11 +4,13 @@ ARG S3_BUCKET
 
 COPY plugins.txt /usr/share/jenkins/ref/plugins.txt
 
+COPY config.xml /var/jenkins_home/config.xml
+
 COPY scriptApproval.xml /var/jenkins_home/scriptApproval.xml
 
 COPY hudson.tasks.Maven.xml /var/jenkins_home/hudson.tasks.Maven.xml
 
-USER root 
+USER root
 
 RUN echo deb http://deb.debian.org/debian stretch-backports main >> /etc/apt/sources.list
 
@@ -24,11 +26,9 @@ RUN apt-get -y install wget
 
 RUN pip3 install --no-input awscli --upgrade
 
-RUN aws s3 cp s3://$S3_BUCKET/jenkins_config/config.xml /var/jenkins_home/config.xml 
-
 RUN curl -fsSL https://get.docker.com | sh
 
-RUN docker --version 
+RUN docker --version
 
 RUN wget https://www.apache.org/dist/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz -P /opt
 
