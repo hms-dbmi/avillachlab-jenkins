@@ -165,11 +165,15 @@
           <default>
             <comparator class="hudson.util.CaseInsensitiveComparator"/>
           </default>
-          <int>1</int>
+          <int>4</int>
           <string>stack_s3_bucket</string>
           <string>avillach-biodatacatalyst-deployments-b7rwpwv</string>
           <string>git_base_url</string>
           <string>github.com/hms-dbmi</string>
+          <string>cnc_acct_id</string>
+          <string></string>
+          <string>app_acct_id</string>
+          <string></string>
         </tree-map>
       </envVars>
     </hudson.slaves.EnvironmentVariablesNodeProperty>

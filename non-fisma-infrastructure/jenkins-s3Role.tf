@@ -11,11 +11,21 @@ resource "aws_iam_role_policy" "jenkins-s3-policy" {
         "s3:PutObject"
       ],
       "Effect": "Allow",
-      "Resource": "arn:aws:s3:::${var.deployment-s3-bucket}/*"
+      "Resource": "arn:aws:s3:::${var.stack-s3-bucket}/*"
     }
   ]
 }
 EOF
+}
+
+resource "aws_iam_role_policy_attachment" "CloudWatchAgentServer" {
+  role       = aws_iam_role.jenkins-s3-role.id
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+}
+
+resource "aws_iam_role_policy_attachment" "AdministrativeAccess" {
+  role       = aws_iam_role.jenkins-s3-role.id
+  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
 }
 
 resource "aws_iam_role" "jenkins-s3-role" {
