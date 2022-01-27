@@ -21,7 +21,7 @@
         <hudson.model.StringParameterDefinition>
           <name>ROLE_ARN</name>
           <description></description>
-          <defaultValue>arn:aws:iam::191687121306:role/hms-dbmi-cnc-role</defaultValue>
+          <defaultValue>arn:aws:iam::${app_acct_id}:role/hms-dbmi-cnc-role</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
@@ -84,7 +84,7 @@
       <command>cd app-infrastructure
 wget https://releases.hashicorp.com/terraform/0.12.31/terraform_0.12.31_linux_amd64.zip &amp;&amp; unzip terraform_0.12.31_linux_amd64.zip &amp;&amp; mv terraform /usr/local/bin/
 
-aws sts assume-role --duration-seconds 900 --role-arn &quot;arn:aws:iam::752463128620:role/system/jenkins-s3-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
+aws sts assume-role --duration-seconds 900 --role-arn &quot;arn:aws:iam::${cnc_acct_id}:role/system/jenkins-s3-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
 
 export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
@@ -101,7 +101,7 @@ unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY
 unset AWS_SESSION_TOKEN
 
-aws sts assume-role --duration-seconds 900 --role-arn &quot;arn:aws:iam::191687121306:role/hms-dbmi-cnc-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
+aws sts assume-role --duration-seconds 900 --role-arn &quot;arn:aws:iam::${app_acct_id}:role/hms-dbmi-cnc-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
 
 export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
@@ -194,7 +194,7 @@ unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY
 unset AWS_SESSION_TOKEN
 
-aws sts assume-role --duration-seconds 900 --role-arn &quot;arn:aws:iam::752463128620:role/system/jenkins-s3-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
+aws sts assume-role --duration-seconds 900 --role-arn &quot;arn:aws:iam::${cnc_acct_id}:role/system/jenkins-s3-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
 
 export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
