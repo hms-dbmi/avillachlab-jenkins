@@ -21,15 +21,20 @@
           <defaultValue>${stack_s3_bucket}</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>destination_bucket_hash</name>
+          <defaultValue>MANUAL_RUN</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.10.1">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.10.3">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
         <url>https://github.com/hms-dbmi/pic-sure-search-prototype</url>
-        <credentialsId>temp-creds</credentialsId>
+        <credentialsId>8d05504e-c08a-428b-890e-9b03e755f436</credentialsId>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
@@ -63,8 +68,11 @@ GIT_COMMIT_SHORT=`echo ${GIT_COMMIT} | cut -c1-7`
 
 cd tagging
 
+aws s3 --sse=AES256 cp s3://${stack_s3_bucket}/data/${destination_bucket_hash}/dictionary.javabin.tar.gz . 
+
 echo &quot;FROM tomcat:jre11-openjdk-slim&quot; &gt; Dockerfile
-echo &quot;ADD  ./target/tagging-1.0.0-SNAPSHOT.war /usr/local/tomcat/webapps/&quot; &gt;&gt; Dockerfile
+echo &quot;ADD ./target/tagging-1.0.0-SNAPSHOT.war /usr/local/tomcat/webapps/&quot; &gt;&gt; Dockerfile
+echo &quot;ADD dictionary.javabin.tar.gz /tmp/&quot; &gt;&gt; Dockerfile
 
 docker build -t hms-dbmi/pic-sure-hpds-search-resource:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
 
