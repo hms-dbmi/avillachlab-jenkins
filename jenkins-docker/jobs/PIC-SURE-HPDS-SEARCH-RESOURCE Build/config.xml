@@ -1,7 +1,9 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
   <actions/>
-  <description></description>
+  <description>Builds Image for Search Resource.&#xd;
+&#xd;
+adds current dictionary javabin to /tmp/ directory to be used by TagSearchResource</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
@@ -70,7 +72,7 @@ cd tagging
 
 aws s3 --sse=AES256 cp s3://${stack_s3_bucket}/data/${destination_bucket_hash}/dictionary.javabin.tar.gz . 
 
-echo &quot;FROM tomcat:jre11-openjdk-slim&quot; &gt; Dockerfile
+echo &quot;FROM tomcat:9-jre11-openjdk-slim&quot; &gt; Dockerfile
 echo &quot;ADD ./target/tagging-1.0.0-SNAPSHOT.war /usr/local/tomcat/webapps/&quot; &gt;&gt; Dockerfile
 echo &quot;ADD dictionary.javabin.tar.gz /tmp/&quot; &gt;&gt; Dockerfile
 

@@ -1,7 +1,7 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
   <actions/>
-  <description></description>
+  <description>Imports data dictionaries into HPDS format.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
@@ -21,10 +21,15 @@
           <defaultValue>s3://avillach-73-bdcatalyst-etl/general/resources/Managed_Inputs.csv</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>arn-elt-role</name>
+          <defaultValue>arn:aws:iam::736265540791:role/dbgap-etl</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.10.1">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.10.3">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
@@ -60,7 +65,7 @@ mkdir -p tmp/
 mkdir -p local/source/
 
 ### Pull dictionaries from s3
-aws sts assume-role --duration-seconds 3600 --role-arn arn:aws:iam::736265540791:role/dbgap-etl --role-session-name &quot;s3-test&quot; &gt; assume-role-output.txt
+aws sts assume-role --duration-seconds 3600 --role-arn ${arn-elt-role} --role-session-name &quot;s3-test&quot; &gt; assume-role-output.txt
 
 export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
@@ -85,7 +90,7 @@ do
   if [[ &quot;${data_ready,,}&quot; == &quot;yes&quot; ]]; then
 
 	  if [[ ${stdy_type,,} == &quot;topmed&quot; ]] || [[ ${stdy_type,,} == &quot;parent&quot; ]]; then
-        aws sts assume-role --duration-seconds 900 --role-arn arn:aws:iam::736265540791:role/dbgap-etl --role-session-name &quot;s3-test&quot; &gt; assume-role-output.txt
+        aws sts assume-role --duration-seconds 900 --role-arn ${arn-elt-role} --role-session-name &quot;s3-test&quot; &gt; assume-role-output.txt
         
         export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
         export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`

@@ -8,55 +8,46 @@
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
           <name>stack_s3_bucket</name>
-          <description></description>
           <defaultValue>avillach-biodatacatalyst-deployments-3drb48r</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>stack_id</name>
-          <description></description>
           <defaultValue>3drb48r</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>stack_jenkins_dockerfile</name>
-          <description></description>
           <defaultValue>Dockerfile_nonFisma</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>subnet_id</name>
-          <description></description>
           <defaultValue>subnet-00a35d901a151ab01</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>instance_profile_name</name>
-          <description></description>
           <defaultValue>jenkins-s3-profile</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>access_cidr</name>
-          <description></description>
           <defaultValue>134.174.0.0/16</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>vpc_id</name>
-          <description></description>
           <defaultValue>vpc-06d289a45c9021bdc</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>provisioning_cidr</name>
-          <description></description>
           <defaultValue>0.0.0.0/0</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>cis_centos_linux_ami_id</name>
-          <description></description>
           <defaultValue>ami-0f644567956fefe71</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
@@ -69,13 +60,12 @@
         <hudson.model.StringParameterDefinition>
           <name>okta_app_id</name>
           <description>The identifier to use for OKTA access</description>
-          <defaultValue></defaultValue>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.1.1">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.10.3">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
@@ -84,11 +74,11 @@
     </userRemoteConfigs>
     <branches>
       <hudson.plugins.git.BranchSpec>
-        <name>*/master</name>
+        <name>*/als-2886</name>
       </hudson.plugins.git.BranchSpec>
     </branches>
     <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
-    <submoduleCfg class="list"/>
+    <submoduleCfg class="empty-list"/>
     <extensions/>
   </scm>
   <canRoam>true</canRoam>
@@ -126,6 +116,7 @@ INSTANCE_ID=`terraform state show aws_instance.dev-jenkins | grep &quot;\&quot;i
 while [ -z $(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do echo &quot;still initializing&quot;;sleep 10;done
 
 echo &quot;http://`terraform state show aws_instance.dev-jenkins | grep private_ip | cut -f 2 -d &quot;=&quot; | sed &apos;s/\&quot;//g&apos; | sed &apos;s/ //g&apos;`&quot;</command>
+      <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
   <publishers/>
