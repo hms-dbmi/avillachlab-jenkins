@@ -12,7 +12,7 @@
   <description></description>
   <keepDependencies>false</keepDependencies>
   <properties/>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2648.va9433432b33c">
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2656.vf7a_e7b_75a_457">
     <script>import groovy.json.JsonSlurper;
 
 def retrieveBuildSpecId;
@@ -72,12 +72,12 @@ pipeline {
                )
             }
         }
-        stage(&apos;PIC-SURE SEARCH&apos;){
+        stage(&apos;PIC-SURE Dictionary image builds and data import&apos;){
             steps {
                 script {
-                    build job: &apos;PIC-SURE-HPDS-SEARCH Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSS&apos;]]]
+                    build job: &apos;PIC-SURE-HPDS-DICTIONARY Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSS&apos;]]]
                     build job: &apos;IMPORT_HPDS_DICTIONARY_DATA&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;destination_bucket_hash&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId]]
-                    build job: &apos;PIC-SURE-HPDS-SEARCH-RESOURCE Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;destination_bucket_hash&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSS&apos;]]]
+                    build job: &apos;PIC-SURE-HPDS-DICTIONARY-RESOURCE Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;destination_bucket_hash&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSS&apos;]]]
                 }
             }
         }

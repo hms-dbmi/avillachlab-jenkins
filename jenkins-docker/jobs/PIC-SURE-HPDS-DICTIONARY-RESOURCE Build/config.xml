@@ -36,7 +36,7 @@ adds current dictionary javabin to /tmp/ directory to be used by TagSearchResour
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
         <url>https://github.com/hms-dbmi/pic-sure-search-prototype</url>
-        <credentialsId>8d05504e-c08a-428b-890e-9b03e755f436</credentialsId>
+        <credentialsId>ae99aaad-e5b0-4f64-b1b3-3af57e64fccc</credentialsId>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
@@ -72,11 +72,11 @@ cd tagging
 
 aws s3 --sse=AES256 cp s3://${stack_s3_bucket}/data/${destination_bucket_hash}/dictionary.javabin.tar.gz . 
 
-docker build -t hms-dbmi/pic-sure-hpds-search-resource:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} -f Dockerfile_hpds_search_resource .
+docker build -t hms-dbmi/pic-sure-hpds-dictionary-resource:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} -f Dockerfile_hpds_dictionary_resource .
 
-docker save hms-dbmi/pic-sure-hpds-search-resource:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-hpds-search-resource.tar.gz
+docker save hms-dbmi/pic-sure-hpds-dictionary-resource:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-hpds-dictionary-resource.tar.gz
 
-aws s3 --sse=AES256 cp pic-sure-hpds-search-resource.tar.gz s3://$S3_BUCKET_NAME/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds-search-resource.tar.gz
+aws s3 --sse=AES256 cp pic-sure-hpds-dictionary-resource.tar.gz s3://$S3_BUCKET_NAME/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds-dictionary-resource.tar.gz
 
 </command>
       <configuredLocalRules/>
