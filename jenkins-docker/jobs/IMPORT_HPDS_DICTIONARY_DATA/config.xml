@@ -55,7 +55,7 @@
     <hudson.tasks.Shell>
       <command>#!/bin/bash
 ### Load Dictionary ETL Image
-aws s3 --sse=AES256 cp s3://${stack_s3_bucket}/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds-search.tar.gz pic-sure-hpds-search.tar.gz
+aws s3 --sse=AES256 cp s3://${stack_s3_bucket}/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds-dictionary.tar.gz pic-sure-hpds-dictionary.tar.gz
 
 HPDS_ETL_IMAGE=`docker load &lt; ./pic-sure-hpds-search.tar.gz  | cut -d &apos; &apos; -f 3`
 echo $HPDS_ETL_IMAGE
@@ -65,12 +65,6 @@ mkdir -p tmp/
 mkdir -p local/source/
 
 ### Pull dictionaries from s3
-aws sts assume-role --duration-seconds 3600 --role-arn ${arn-elt-role} --role-session-name &quot;s3-test&quot; &gt; assume-role-output.txt
-
-export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-
 aws s3 cp ${managed_inputs} .
 
 awk -F, &apos;{print $1&quot;,&quot;$2&quot;,&quot;$3&quot;,&quot;$8&quot;,&quot;$9}&apos; Managed_Inputs.csv &gt; inputs.csv
@@ -90,26 +84,15 @@ do
   if [[ &quot;${data_ready,,}&quot; == &quot;yes&quot; ]]; then
 
 	  if [[ ${stdy_type,,} == &quot;topmed&quot; ]] || [[ ${stdy_type,,} == &quot;parent&quot; ]]; then
-        aws sts assume-role --duration-seconds 900 --role-arn ${arn-elt-role} --role-session-name &quot;s3-test&quot; &gt; assume-role-output.txt
         
-        export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-        export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-        export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-         
-        aws s3 cp s3://avillach-73-bdcatalyst-etl/${abv_name,,}/rawData/ local/source/${stdy_id}/rawData/ --recursive --exclude &quot;*&quot; --include &quot;${stdy_id}*.xml&quot;
+        aws s3 cp s3://avillach-73-bdcatalyst-etl/general/hpds/javabin/${stdy_id}/metadata/ local/source/${stdy_id}/rawData/ --recursive --exclude &quot;*&quot; --include &quot;${stdy_id}*.xml&quot;
         
-        unset AWS_ACCESS_KEY_ID
-        unset AWS_SECRET_ACCESS_KEY
-        unset AWS_SESSION_TOKEN
       fi
    else 
       echo &quot;$abv_name not ready for processing&quot;
    fi
 done &lt; inputs.csv
 
-unset AWS_ACCESS_KEY_ID
-unset AWS_SECRET_ACCESS_KEY
-unset AWS_SESSION_TOKEN
 
 #### Execute dictionary import
 # volume mount pwd that contains original data files as /opt/local/source/
