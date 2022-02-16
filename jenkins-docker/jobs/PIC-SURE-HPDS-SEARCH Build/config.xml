@@ -63,13 +63,7 @@ GIT_COMMIT_SHORT=`echo ${GIT_COMMIT} | cut -c1-7`
 
 cd tagging
 
-echo &quot;FROM openjdk:11-jre-slim as loader&quot; &gt; Dockerfile
-echo &quot;ADD  ./target/RawDataImporter-jar-with-dependencies.jar .&quot; &gt;&gt; Dockerfile
-
-echo &quot;ENTRYPOINT [\&quot;java\&quot;, \&quot;-Xmx8192m\&quot;, \&quot;-jar\&quot;, \&quot;RawDataImporter-jar-with-dependencies.jar\&quot;]&quot; &gt;&gt; Dockerfile
-echo &quot;CMD [ \&quot;/local/source/\&quot; ]&quot; &gt;&gt; Dockerfile
-
-docker build -t hms-dbmi/pic-sure-hpds-search:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
+docker build -t hms-dbmi/pic-sure-hpds-search:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} -f Dockerfile_hpds_search .
 
 docker save hms-dbmi/pic-sure-hpds-search:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-hpds-search.tar.gz
 

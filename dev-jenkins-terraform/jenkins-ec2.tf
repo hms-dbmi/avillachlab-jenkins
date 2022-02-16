@@ -97,6 +97,7 @@ resource "aws_instance" "dev-jenkins" {
     Owner       = "Avillach_Lab"
     Environment = "development"
     Name        = "FISMA Terraform Playground - Dev Jenkins - ${var.stack-id} - ${var.git-commit}"
+    automaticPatches = "1"
   }
 
   user_data = data.template_cloudinit_config.config.rendered

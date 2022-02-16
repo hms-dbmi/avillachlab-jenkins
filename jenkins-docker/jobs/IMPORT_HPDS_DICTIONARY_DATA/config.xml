@@ -114,9 +114,11 @@ unset AWS_SESSION_TOKEN
 #### Execute dictionary import
 # volume mount pwd that contains original data files as /opt/local/source/
 #
-docker run -i -v &quot;${WORKSPACE}&quot;/local/source:/local/source -v &quot;${WORKSPACE}&quot;/tmp:/tmp -eLOADER_NAME=RawDataImporter $HPDS_ETL_IMAGE
+mkdir -p &quot;${WORKSPACE}&quot;/output
 
-cd &quot;$WORKSPACE&quot;/tmp
+docker run -i -v &quot;${WORKSPACE}&quot;/local/source:/local/source -v &quot;${WORKSPACE}&quot;/output:/usr/local/docker-config/search/ -eLOADER_NAME=RawDataImporter $HPDS_ETL_IMAGE
+
+cd &quot;$WORKSPACE&quot;/output
 
 tar -cvzf dictionary.javabin.tar.gz *.javabin 
 
