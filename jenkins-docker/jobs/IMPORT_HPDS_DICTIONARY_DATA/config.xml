@@ -57,7 +57,7 @@
 ### Load Dictionary ETL Image
 aws s3 --sse=AES256 cp s3://${stack_s3_bucket}/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds-dictionary.tar.gz pic-sure-hpds-dictionary.tar.gz
 
-HPDS_ETL_IMAGE=`docker load &lt; ./pic-sure-hpds-search.tar.gz  | cut -d &apos; &apos; -f 3`
+HPDS_ETL_IMAGE=`docker load &lt; ./pic-sure-hpds-dictionary.tar.gz  | cut -d &apos; &apos; -f 3`
 echo $HPDS_ETL_IMAGE
 ls -alh `pwd`
 

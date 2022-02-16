@@ -3,7 +3,7 @@
   <actions/>
   <description>Builds Image for Search Resource.&#xd;
 &#xd;
-adds current dictionary javabin to /tmp/ directory to be used by TagSearchResource</description>
+</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
