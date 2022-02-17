@@ -171,6 +171,18 @@ echo &quot;
     },{
       \&quot;Action\&quot;: \&quot;UPSERT\&quot;,
       \&quot;ResourceRecordSet\&quot;: {
+        \&quot;Name\&quot;: \&quot;dictionary.${target_stack}.datastage.hms.harvard.edu\&quot;,
+        \&quot;Type\&quot;: \&quot;A\&quot;,
+        \&quot;TTL\&quot;: 60,
+        \&quot;ResourceRecords\&quot;: [
+          {
+            \&quot;Value\&quot;: \&quot;$(grep dictionary-ec2-private_ip ip-vars.properties | cut -d &quot;=&quot; -f 2)\&quot;
+          }
+        ]
+      }
+    },{
+      \&quot;Action\&quot;: \&quot;UPSERT\&quot;,
+      \&quot;ResourceRecordSet\&quot;: {
         \&quot;Name\&quot;: \&quot;picsure-db.${target_stack}.datastage.hms.harvard.edu\&quot;,
         \&quot;Type\&quot;: \&quot;CNAME\&quot;,
         \&quot;TTL\&quot;: 60,
@@ -198,7 +210,7 @@ export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos
 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 
-aws s3 cp terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate 
+aws s3 cp terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate
 aws s3 cp ../s3-deployment-roles/terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate_roles
 
 

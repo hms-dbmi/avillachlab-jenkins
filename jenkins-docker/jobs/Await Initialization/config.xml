@@ -86,6 +86,10 @@ INSTANCE_ID=`terraform state show aws_instance.auth-hpds-ec2 | grep &quot;\&quot
 while [ -z $(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do echo &quot;still initializing&quot;;sleep 10;done
 echo &quot;Auth HPDS EC2 Initialization Complete&quot;
 
+INSTANCE_ID=`terraform state show aws_instance.dictionary-ec2 | grep &quot;\&quot;i-[a-f0-9]&quot; | cut -f 2 -d &quot;=&quot; | sed &apos;s/&quot;//g&apos;`
+while [ -z $(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do echo &quot;still initializing&quot;;sleep 10;done
+echo &quot;Dictionary EC2 Initialization Complete&quot;
+
 unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY
 unset AWS_SESSION_TOKEN</command>
