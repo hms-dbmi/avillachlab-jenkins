@@ -41,15 +41,17 @@ aws iam list-instance-profiles
 #aws iam delete-instance-profile --instance-profile-name httpd-deployment-s3-profile-25db717
 #aws iam delete-instance-profile --instance-profile-name wildfly-deployment-s3-profile-25db717
 #aws iam delete-instance-profile --instance-profile-name hpds-deployment-s3-profile-25db717
+#aws iam delete-instance-profile --instance-profile-name dictionary-deployment-s3-profile-25db717
 
 aws iam delete-instance-profile --instance-profile-name hpds-deployment-s3-profile-a-c200e89
 aws iam delete-instance-profile --instance-profile-name httpd-deployment-s3-profile-a-c200e89
 aws iam delete-instance-profile --instance-profile-name wildfly-deployment-s3-profile-a-c200e89
+aws iam delete-instance-profile --instance-profile-name dictionary-deployment-s3-profile-a-c200e89
 
 echo
 echo
-echo 
-echo 
+echo
+echo
 
 aws iam list-instance-profiles
 

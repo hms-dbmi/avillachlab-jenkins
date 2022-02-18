@@ -35,9 +35,9 @@ import groovy.json.JsonOutput;
 
 def new_policy
 pipeline {
-    agent any 
+    agent any
     stages {
-        stage(&apos;Retrieve Build Spec&apos;) { 
+        stage(&apos;Retrieve Build Spec&apos;) {
             steps {
                 script {
                     sh &apos;aws s3api get-bucket-policy --bucket ${stack_s3_bucket} --query Policy --output text &gt; /tmp/policy.json&apos;
@@ -57,9 +57,10 @@ pipeline {
                     bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-auth-hpds\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::$aws_account_app:role/auth-hpds-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
                     bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-wildfly\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::$aws_account_app:role/wildfly-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
                     bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-httpd\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::$aws_account_app:role/httpd-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
+                    bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-dictionary\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::$aws_account_app:role/dictionary-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
                     
                     new_policy = new JsonOutput().toJson(bucket_policy)
-                   
+
                 }
                 script{
                     println(new_policy)
