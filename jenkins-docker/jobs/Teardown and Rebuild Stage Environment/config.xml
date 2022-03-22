@@ -183,6 +183,18 @@ echo &quot;
     },{
       \&quot;Action\&quot;: \&quot;UPSERT\&quot;,
       \&quot;ResourceRecordSet\&quot;: {
+        \&quot;Name\&quot;: \&quot;visualization.${target_stack}.datastage.hms.harvard.edu\&quot;,
+        \&quot;Type\&quot;: \&quot;A\&quot;,
+        \&quot;TTL\&quot;: 60,
+        \&quot;ResourceRecords\&quot;: [
+          {
+            \&quot;Value\&quot;: \&quot;$(grep visualization-ec2-private_ip ip-vars.properties | cut -d &quot;=&quot; -f 2)\&quot;
+          }
+        ]
+      }
+    },{
+      \&quot;Action\&quot;: \&quot;UPSERT\&quot;,
+      \&quot;ResourceRecordSet\&quot;: {
         \&quot;Name\&quot;: \&quot;picsure-db.${target_stack}.datastage.hms.harvard.edu\&quot;,
         \&quot;Type\&quot;: \&quot;CNAME\&quot;,
         \&quot;TTL\&quot;: 60,
