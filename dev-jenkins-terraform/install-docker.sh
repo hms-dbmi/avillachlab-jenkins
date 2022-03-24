@@ -334,6 +334,10 @@ sudo mkdir -p /var/log/jenkins-docker-logs
 cp -r jobs/* /var/jenkins_home/jobs/
 sudo docker build --build-arg S3_BUCKET=${stack_s3_bucket} -t avillach-lab-dev-jenkins .
 
+## Download and Install Nessus
+for i in {1..5}; do sudo /usr/local/bin/aws --region us-east-1 s3 cp s3://${stack_s3_bucket}/nessus_config/setup.sh /opt/nessus_setup.sh && break || sleep 45; done 
+sh /opt/nessus_setup.sh
+
 # Download Jenkins config file from s3
 for i in {1..5}; do sudo /usr/local/bin/aws --region us-east-1 s3 cp s3://${stack_s3_bucket}/jenkins_config/config.xml /var/jenkins_home/config.xml && break || sleep 45; done
 
