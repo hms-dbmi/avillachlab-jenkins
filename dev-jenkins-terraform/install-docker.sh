@@ -336,7 +336,7 @@ sudo docker build --build-arg S3_BUCKET=${stack_s3_bucket} -t avillach-lab-dev-j
 
 ## Download and Install Nessus
 for i in {1..5}; do sudo /usr/local/bin/aws --region us-east-1 s3 cp s3://${stack_s3_bucket}/nessus_config/setup.sh /opt/nessus_setup.sh && break || sleep 45; done 
-sh /opt/nessus_setup.sh ${stack_s3_bucket}
+sh /opt/nessus_setup.sh "${stack_s3_bucket}" "CNC_Prod"
 
 # Download Jenkins config file from s3
 for i in {1..5}; do sudo /usr/local/bin/aws --region us-east-1 s3 cp s3://${stack_s3_bucket}/jenkins_config/config.xml /var/jenkins_home/config.xml && break || sleep 45; done
