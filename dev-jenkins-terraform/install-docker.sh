@@ -8,9 +8,9 @@ INSTANCE_ID=$(curl -H "X-aws-ec2-metadata-token: $(curl -X PUT "http://169.254.1
 
 # Occasionally we see these instances reboot before this script completes.
 # Let's see if that was the case
-ISINIT=$(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters "Name=resource-id,Values=${INSTANCE_ID}" | grep InitComplete)
-if [ -z "${ISINIT}" ]; then
-        echo "${INSTANCE_ID} has already been initialized. Skipping user-script."
+ISINIT=$(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters "Name=resource-id,Values=$${INSTANCE_ID}" | grep InitComplete)
+if [ -z "$${ISINIT}" ]; then
+        echo "$${INSTANCE_ID} has already been initialized. Skipping user-script."
         exit
 fi
 
