@@ -7,7 +7,7 @@
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
-          <name>dictionary_s3_url</name>
+          <name>dictionary_s3_key</name>
           <description></description>
           <defaultValue></defaultValue>
           <trim>true</trim>
@@ -54,7 +54,7 @@ export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos
 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 
-aws s3 cp ${dictionary_s3_url} dictionary.javabin.tar.gz
+aws s3 cp ${dictionary_s3_key} dictionary.javabin.tar.gz
 
 unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY
