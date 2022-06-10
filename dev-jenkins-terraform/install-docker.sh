@@ -1,4 +1,22 @@
 #!/bin/bash
+
+
+# always run this script
+sudo sed -i 's/ - scripts-user/ - \[scripts-user, always\]/g' /etc/cloud/cloud.cfg
+
+
+INSTANCE_ID=$(curl -H "X-aws-ec2-metadata-token: $(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")" --silent http://169.254.169.254/latest/meta-data/instance-id)
+
+# Occasionally we see these instances reboot before this script completes.
+# Let's see if that was the case
+ISINIT=$(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters "Name=resource-id,Values=$${INSTANCE_ID}" | grep InitComplete)
+if [ ! -z "$${ISINIT}" ]; then
+        echo "$${INSTANCE_ID} has already been initialized. Skipping user-script."
+        exit
+fi
+
+
+
 sudo yum install wget -y
 sudo yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm
 sudo systemctl enable amazon-ssm-agent
@@ -370,6 +388,5 @@ echo "setup script finished"
 
 sudo docker logs -f jenkins > /var/log/jenkins-docker-logs/jenkins.log &
 
-INSTANCE_ID=$(curl -H "X-aws-ec2-metadata-token: $(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")" --silent http://169.254.169.254/latest/meta-data/instance-id)
 sudo docker exec jenkins /usr/local/bin/aws --region=us-east-1 ec2 create-tags --resources $${INSTANCE_ID} --tags Key=InitComplete,Value=true
 
