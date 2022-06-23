@@ -120,11 +120,6 @@ if(new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_to
     destigmatized_dataset_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_alreadyRekeyed.txt&quot;).text
 }
 
-Jenkins.instance.getItemByFullName(&quot;Import_HPDS_Dictionary_File&quot;)
-.scheduleBuild2(0, new ParametersAction([
-    new StringParameterValue(&quot;dictionary_s3_key&quot;, buildSpec.source_dictionary_s3_object_key.trim()),
-    new StringParameterValue(&quot;pipeline_build_id&quot;, &quot;deployment_git_hash&quot;)
-    ])).get()
 
 genomic_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/genomicDatasetKey.txt&quot;).text
 
