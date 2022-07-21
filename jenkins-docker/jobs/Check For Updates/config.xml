@@ -9,6 +9,7 @@
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
         <url>https://${git_base_url}/avillachlab-jenkins-dev-release-control</url>
+        <credentialsId>c1cbb1df-9da8-4f3f-85b9-8de0b9685008</credentialsId>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
@@ -38,6 +39,15 @@ import groovy.json.JsonSlurper;
 
 def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/Check For Updates/build-spec.json&apos;));
 
+def envVars= Hudson.instance.getItem(&quot;Check For Updates&quot;).lastBuild.properties.get(&quot;envVars&quot;);
+
+Jenkins.instance.getItemByFullName(&quot;Import_HPDS_Dictionary_File&quot;)
+.scheduleBuild2(0, new ParametersAction([
+    new StringParameterValue(&quot;dictionary_s3_key&quot;, buildSpec.source_dictionary_s3_object_key.trim()),
+    new StringParameterValue(&quot;pipeline_build_id&quot;,  envVars[&quot;GIT_COMMIT&quot;].trim())
+    ])).get()
+    
+    
 Jenkins.instance.getItemByFullName(&quot;PIC-SURE Pipeline&quot;)
     .scheduleBuild2(0).get()
 
@@ -119,12 +129,6 @@ if(new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_to
 } else {
     destigmatized_dataset_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_alreadyRekeyed.txt&quot;).text
 }
-
-Jenkins.instance.getItemByFullName(&quot;Import_HPDS_Dictionary_File&quot;)
-.scheduleBuild2(0, new ParametersAction([
-    new StringParameterValue(&quot;dictionary_s3_key&quot;, buildSpec.source_dictionary_s3_object_key.trim()),
-    new StringParameterValue(&quot;pipeline_build_id&quot;, &quot;deployment_git_hash&quot;)
-    ])).get()
 
 genomic_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/genomicDatasetKey.txt&quot;).text
 

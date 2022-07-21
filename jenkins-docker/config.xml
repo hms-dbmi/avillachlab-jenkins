@@ -131,6 +131,7 @@
         <string>PIC-SURE-API Build</string>
         <string>PIC-SURE-HPDS Build</string>
         <string>PIC-SURE-HPDS-UI Docker Build</string>
+        <string>PIC-SURE-VISUALIZATION Build</string>
         <string>Retrieve Build Spec</string>
         <string>Retrieve Deployment State</string>
         <string>Teardown and Rebuild Stage Environment</string>
