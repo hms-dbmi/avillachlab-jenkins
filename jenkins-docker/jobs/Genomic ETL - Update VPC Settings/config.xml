@@ -1,0 +1,139 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>R53_Zone_ID</name>
+          <description></description>
+          <defaultValue>Z08886171CDE1KG17OIX6</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>genomic-etl-vpc</name>
+          <description></description>
+          <defaultValue>vpc-04b9151257af31e0e</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.scm.NullSCM"/>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>echo $JENKINS_HOME
+
+# Describe subnets in specified VPCs in the prod account
+
+aws sts assume-role --duration-seconds 900 --role-arn $arn_role_app --role-session-name &quot;teardown-rebuild-genomic-etl&quot; &gt; assume-role-output.txt
+
+export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+
+aws ec2 --region us-east-1 describe-subnets
+
+aws ec2 --region us-east-1 describe-subnets --filters &quot;Name=vpc-id,Values=$genomic-etl-vpc&quot; &gt; subnets_genomic_etl.json
+cat subnets_genomic_etl.json
+
+unset AWS_ACCESS_KEY_ID
+unset AWS_SECRET_ACCESS_KEY
+unset AWS_SESSION_TOKEN
+</command>
+    </hudson.tasks.Shell>
+    <hudson.plugins.groovy.SystemGroovy plugin="groovy@2.2">
+      <source class="hudson.plugins.groovy.StringSystemScriptSource">
+        <script plugin="script-security@1.68">
+          <script>import groovy.json.*
+import java.io.*
+
+buildSubnetVariablesFileForEnv();
+
+void buildSubnetVariablesFileForEnv(){
+def JsonSlurper js = new JsonSlurper()
+
+def subnetsResponse = js.parse(new File(&quot;/var/jenkins_home/workspace/Genomic ETL - Update VPC Settings/subnets.json&quot;))
+ 
+def subnetNames = [
+  &quot;genomic-etl-subnet-us-east&quot;,
+]
+
+def subnetAWSNames = [
+  &quot;genomic-etl-subnet-us-east&quot;:&quot;Genomic-ETL-Subnet&quot;,
+]
+
+def subnetVars = [:]
+String subnetVariables = &quot;&quot;
+
+for(def subnetName : subnetNames){
+  def subnet = getSubnetForName(subnetAWSNames.get(subnetName), subnetsResponse);
+  subnetVariables+=&quot;variable \&quot;&quot; + subnetName + &quot;-id\&quot; {\n&quot;;
+  subnetVariables+=&quot;    type = string\n&quot;;
+  subnetVariables+=&quot;    default = \&quot;&quot;+ subnet.SubnetId +&quot;\&quot;\n&quot;;
+  subnetVariables+=&quot;}\n&quot;;
+  subnetVariables+=&quot;variable \&quot;&quot; + subnetName + &quot;-cidr\&quot; {\n&quot;;
+  subnetVariables+=&quot;    type = string\n&quot;;
+  subnetVariables+=&quot;    default = \&quot;&quot;+ subnet.CidrBlock +&quot;\&quot;\n&quot;;
+  subnetVariables+=&quot;}\n&quot;;
+}
+def zoneId = build.buildVariableResolver.resolve(&quot;R53_Zone_ID&quot;)
+subnetVariables+=&quot;&quot;&quot;
+variable &quot;internal-dns-zone-id&quot; {
+  type = string
+  default = &quot;$zoneId&quot;
+}
+&quot;&quot;&quot;
+def vpcId = build.buildVariableResolver.resolve(&quot;genomic-etl-vpc&quot;)
+subnetVariables+=&quot;&quot;&quot;
+variable &quot;target-vpc&quot; {
+  type = string
+  default = &quot;$vpcId&quot;
+}
+&quot;&quot;&quot;
+
+println(subnetVariables)
+
+new File(&quot;/var/jenkins_home/workspace/Genomic ETL - Update VPC Settings/subnet_variables_genomic_etl.tf&quot;).write(subnetVariables)
+}
+
+
+def getSubnetForName(String name, def subnetsResponse){
+  return subnetsResponse.Subnets.find(
+    {it-&gt;it.Tags.find(
+      {tag-&gt;return tag.Key.contentEquals(&quot;Name&quot;) &amp;&amp; tag.Value.contentEquals(name)}
+    )}
+  );
+}</script>
+          <sandbox>false</sandbox>
+        </script>
+      </source>
+    </hudson.plugins.groovy.SystemGroovy>
+    <hudson.tasks.Shell>
+      <command># Push new subnet variables files to bucket
+
+aws sts assume-role --duration-seconds 900 --role-arn $arn_role_cnc --role-session-name &quot;configure-genomic-etl-vpc-settings&quot; &gt; assume-role-output.txt
+
+export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+
+aws s3 cp subnet_variables_genomic_etl.tf s3://$deployment_s3_bucket/genomic-etl/deployment_state_metadata/subnet_variables.tf 
+
+unset AWS_ACCESS_KEY_ID
+unset AWS_SECRET_ACCESS_KEY
+unset AWS_SESSION_TOKEN
+</command>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers/>
+</project>
