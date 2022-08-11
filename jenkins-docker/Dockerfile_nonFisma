@@ -1,4 +1,4 @@
-FROM jenkins/jenkins:lts
+FROM jenkins/jenkins:2.332.4
 
 ARG S3_BUCKET
 
@@ -15,6 +15,10 @@ USER root
 RUN echo "s/stack_s3_bucket_var/$S3_BUCKET/"
 
 RUN sed -i "s/stack_s3_bucket_var/$S3_BUCKET/" /var/jenkins_home/config.xml
+
+RUN echo "s/deployment_s3_bucket_var/$S3_BUCKET/"
+
+RUN sed -i "s/deployment_s3_bucket_var/$S3_BUCKET/" /var/jenkins_home/config.xml
 
 RUN echo deb http://deb.debian.org/debian stretch-backports main >> /etc/apt/sources.list
 
