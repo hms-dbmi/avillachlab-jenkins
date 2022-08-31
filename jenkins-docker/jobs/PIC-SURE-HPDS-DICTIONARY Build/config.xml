@@ -64,9 +64,9 @@ cd tagging
 
 docker build -t hms-dbmi/pic-sure-hpds-dictionary:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} -f Dockerfile_hpds_dictionary .
 
-docker save hms-dbmi/pic-sure-hpds-dictionary:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-hpds-dictionary.tar.gz
+docker save hms-dbmi/pic-sure-hpds-dictionary:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-hpds-dictionary-resource.tar.gz
 
-aws s3 --sse=AES256 cp pic-sure-hpds-dictionary.tar.gz s3://$S3_BUCKET_NAME/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds-dictionary.tar.gz
+aws s3 --sse=AES256 cp pic-sure-hpds-dictionary-resource.tar.gz s3://$S3_BUCKET_NAME/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds-dictionary-resource.tar.gz
 
 </command>
       <configuredLocalRules/>
