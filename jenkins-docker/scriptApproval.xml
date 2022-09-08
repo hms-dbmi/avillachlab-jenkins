@@ -28,6 +28,8 @@
     <string>e5ad22ea5934b94ba902974b1677e7d2250594d7</string>
     <string>fb10b1b30d59d5087570a5af06b603a62fde9408</string>
     <string>df74e9004131c8ff7cdaea580a40816aeeaeb142</string>
+    <string>001e4903e2f6757845eabf6158f55b75bb3f5d7e</string>
+    <string>c542b6d9c470ba02878b35aa54dead50ad8a7fb3</string>
   </approvedScriptHashes>
   <approvedSignatures>
     <string>method groovy.json.JsonOutput toJson java.util.Map</string>
