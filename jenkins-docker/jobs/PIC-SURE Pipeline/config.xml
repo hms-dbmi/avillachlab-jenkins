@@ -72,6 +72,15 @@ pipeline {
                )
             }
         }
+        stage(&apos;PIC-SURE Dictionary and Visualization image builds&apos;){
+            steps {
+                script {
+                    build job: &apos;PIC-SURE-HPDS-DICTIONARY Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSS&apos;]]]
+                    build job: &apos;PIC-SURE-HPDS-DICTIONARY-RESOURCE Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;destination_bucket_hash&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSS&apos;]]]
+                    build job: &apos;PIC-SURE-VISUALIZATION Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSV&apos;]]]
+                }
+            }
+        }
         stage(&apos;Wildfly Build and UI Customization&apos;){
             steps {
                 parallel (
