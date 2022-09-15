@@ -360,8 +360,8 @@ sudo docker run -d -v /var/jenkins_home/jobs:/var/jenkins_home/jobs \
                     --name jenkins \
                     avillach-lab-dev-jenkins \
                     --httpsPort=8443 \
-  		    --httpsKeyStore=/root/jenkins.p12
-  		    --httpsKeyStorePassword="$keystore_pass"
+		    --httpsKeyStore=/root/jenkins.p12 \
+		    --httpsKeyStorePassword="$keystore_pass"
 
 for i in 1 2 3 4 5; do sudo /usr/local/bin/aws --region us-east-1 s3 cp s3://${stack_s3_bucket}/domain-join.sh /root/domain-join.sh && break || sleep 45; done
 cd /root
