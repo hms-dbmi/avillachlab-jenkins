@@ -344,23 +344,24 @@ for i in {1..5}; do sudo /usr/local/bin/aws --region us-east-1 s3 cp s3://${stac
 # copy ssl cert & key from s3
 for i in 1 2 3 4 5; do sudo /usr/local/bin/aws --region us-east-1 s3 cp s3://${stack_s3_bucket}/certs/jenkins/jenkins.cer /root/jenkins.cer && break || sleep 45; done
 for i in 1 2 3 4 5; do sudo /usr/local/bin/aws --region us-east-1 s3 cp s3://${stack_s3_bucket}/certs/jenkins/jenkins.key /root/jenkins.key && break || sleep 45; done
-# convert key to jenkins recognizable format
-sudo openssl rsa -in /root/jenkins.key -out /root/jenkins.pk1.key
+
+# generate keystore file for docker/jenkins use
+keystore_pass=`echo $RANDOM | md5sum | head -c 20`
+sudo openssl pkcs12 -export -in /root/jenkins.cer -inkey /root/jenkins.key -out /root/jenkins.p12 -password pass:$keystore_pass
 
 #run jenkins docker container
 sudo docker run -d -v /var/jenkins_home/jobs:/var/jenkins_home/jobs \
                     -v /var/jenkins_home/config.xml:/usr/share/jenkins/ref/config.xml.override \
                     -v /var/jenkins_home/workspace:/var/jenkins_home/workspace \
                     -v /var/run/docker.sock:/var/run/docker.sock \
-                    -v /root/jenkins.cer:/root/jenkins.cer \
-                    -v /root/jenkins.pk1.key:/root/jenkins.pk1.key \
+                    -v /root/jenkins.p12:/root/jenkins.p12 \
                     -p 443:8443 \
                     --restart always \
                     --name jenkins \
                     avillach-lab-dev-jenkins \
                     --httpsPort=8443 \
-                    --httpsCertificate=/root/jenkins.cer \
-                    --httpsPrivateKey=/root/jenkins.pk1.key
+  		    --httpsKeyStore=/root/jenkins.p12
+  		    --httpsKeyStorePassword="$keystore_pass"
 
 for i in 1 2 3 4 5; do sudo /usr/local/bin/aws --region us-east-1 s3 cp s3://${stack_s3_bucket}/domain-join.sh /root/domain-join.sh && break || sleep 45; done
 cd /root
