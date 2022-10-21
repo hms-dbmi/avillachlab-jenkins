@@ -12,6 +12,24 @@
           <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>phs_number</name>
+          <description></description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>consent_group_tag</name>
+          <description></description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>chrom_number</name>
+          <description></description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -49,7 +67,7 @@ export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apo
 cd genomic-etl-deployment-s3-bucket
 
 terraform init
-terraform apply  -auto-approve -var &quot;deployment_s3_bucket=${deployment_s3_bucket}&quot;
+terraform apply  -auto-approve -var &quot;output_s3_bucket=${stack_s3_bucket}&quot; -var &quot;phs_number=${phs_number}&quot; -var &quot;consent_group_tag=${consent_group_tag}&quot; -var &quot;chrom_number=${chrom_number}&quot;
 
 unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY

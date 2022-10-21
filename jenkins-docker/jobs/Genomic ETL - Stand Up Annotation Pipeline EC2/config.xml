@@ -30,6 +30,36 @@
           <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>input_s3_bucket</name>
+          <description></description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>output_s3_bucket</name>
+          <description></description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>phs_number</name>
+          <description></description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>consent_group_tag</name>
+          <description></description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>chrom_number</name>
+          <description></description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -66,18 +96,18 @@ export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d ':' -
 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d ':' -f 2 | sed "s/[ ,\"]//g"`
 export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d ':' -f 2 | sed "s/[ ,\"]//g"`
 
-aws s3 cp s3://$deployment_s3_bucket/genomic-etl/deployment_state_metadata/terraform.tfstate .
-aws s3 cp s3://$deployment_s3_bucket/genomic-etl/deployment_state_metadata/genomic_etl_variables.tf .
-aws s3 cp s3://$deployment_s3_bucket/genomic-etl/deployment_state_metadata/subnet_variables.tf .
+aws s3 cp s3://${stack_s3_bucket}/genomic-etl/deployment_state_metadata/genomic_etl_variables.tf .
+aws s3 cp s3://${stack_s3_bucket}/genomic-etl/deployment_state_metadata/subnet_variables.tf .
+aws s3 cp s3://{destination_s3_bucket_uri}/deployment_state_metadata/{phs_number}/{chrom_number}/ .
 cp genomic_etl_variables.tf ../genomic-etl-s3-deployment-roles/
 cp subnet_variables.tf ../genomic-etl-s3-deployment-roles/
-aws s3 cp s3://$deployment_s3_bucket/genomic-etl/deployment_state_metadata/terraform.tfstate_roles ../genomic-etl-s3-deployment-roles/terraform.tfstate || echo "role state doesnt exist, it will be created"
+aws s3 cp s3://${stack_s3_bucket}/genomic-etl/deployment_state_metadata/{phs_number}/{chrom_number}/terraform.tfstate_roles ../genomic-etl-s3-deployment-roles/terraform.tfstate || echo "role state doesnt exist, it will be created"
 
 unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY
 unset AWS_SESSION_TOKEN
 
-aws sts assume-role --duration-seconds 900 --role-arn $arn_role_app --role-session-name "teardown-rebuild-genomic-etl" > assume-role-output.txt
+aws sts assume-role --duration-seconds 900 --role-arn $arn_role_app --role-session-name "stand-up-genomic-etl" > assume-role-output.txt
 
 export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d ':' -f 2 | sed "s/[ ,\"]//g"`
 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d ':' -f 2 | sed "s/[ ,\"]//g"`
@@ -85,12 +115,10 @@ export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d ':' 
 
 cd ../genomic-etl-s3-deployment-roles
 terraform init
-terraform destroy -auto-approve  -var="deployment_githash=`echo ${deployment_git_hash} |cut -c1-7`" -var="deployment_githash_long=${deployment_git_hash}"  || true
 terraform apply -auto-approve  -var="deployment_githash=`echo ${deployment_git_hash} |cut -c1-7`" -var="deployment_githash_long=${deployment_git_hash}" || true
 
 cd ../genomic-etl-infrastructure
 terraform init
-terraform destroy -auto-approve -var="ami-id=${ami_id}"  -var="deployment_githash=`echo ${deployment_git_hash} |cut -c1-7`" -var="deployment_githash_long=${deployment_git_hash}" || true
 terraform apply -auto-approve -var="ami-id=${ami_id}"  -var="deployment_githash=`echo ${deployment_git_hash} |cut -c1-7`" -var="deployment_githash_long=${deployment_git_hash}" || true
 
 echo "
@@ -129,8 +157,8 @@ export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d ':' -
 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d ':' -f 2 | sed "s/[ ,\"]//g"`
 export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d ':' -f 2 | sed "s/[ ,\"]//g"`
 
-aws s3 cp terraform.tfstate s3://$deployment_s3_bucket/genomic-etl/deployment_state_metadata/terraform.tfstate
-aws s3 cp ../genomic-etl-s3-deployment-roles/terraform.tfstate s3://$deployment_s3_bucket/genomic-etl/deployment_state_metadata/terraform.tfstate_roles
+aws s3 cp terraform.tfstate s3://${stack_s3_bucket}/genomic-etl/deployment_state_metadata/terraform.tfstate
+aws s3 cp ../genomic-etl-s3-deployment-roles/terraform.tfstate s3://${stack_s3_bucket}/genomic-etl/deployment_state_metadata/terraform.tfstate_roles
 
 unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY

@@ -13,7 +13,7 @@
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>genomic-etl-vpc</name>
+          <name>genomic_etl_vpc</name>
           <description></description>
           <defaultValue>vpc-04b9151257af31e0e</defaultValue>
           <trim>false</trim>
@@ -42,7 +42,7 @@ export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apo
 
 aws ec2 --region us-east-1 describe-subnets
 
-aws ec2 --region us-east-1 describe-subnets --filters &quot;Name=vpc-id,Values=$genomic-etl-vpc&quot; &gt; subnets_genomic_etl.json
+aws ec2 --region us-east-1 describe-subnets --filters &quot;Name=vpc-id,Values=$genomic_etl_vpc&quot; &gt; subnets_genomic_etl.json
 cat subnets_genomic_etl.json
 
 unset AWS_ACCESS_KEY_ID
@@ -61,7 +61,7 @@ buildSubnetVariablesFileForEnv();
 void buildSubnetVariablesFileForEnv(){
 def JsonSlurper js = new JsonSlurper()
 
-def subnetsResponse = js.parse(new File(&quot;/var/jenkins_home/workspace/Genomic ETL - Update VPC Settings/subnets.json&quot;))
+def subnetsResponse = js.parse(new File(&quot;/var/jenkins_home/workspace/Genomic ETL - Update VPC Settings/subnets_genomic_etl.json&quot;))
  
 def subnetNames = [
   &quot;genomic-etl-subnet-us-east&quot;,
@@ -92,7 +92,7 @@ variable &quot;internal-dns-zone-id&quot; {
   default = &quot;$zoneId&quot;
 }
 &quot;&quot;&quot;
-def vpcId = build.buildVariableResolver.resolve(&quot;genomic-etl-vpc&quot;)
+def vpcId = build.buildVariableResolver.resolve(&quot;genomic_etl_vpc&quot;)
 subnetVariables+=&quot;&quot;&quot;
 variable &quot;target-vpc&quot; {
   type = string
@@ -126,7 +126,7 @@ export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos
 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 
-aws s3 cp subnet_variables_genomic_etl.tf s3://$deployment_s3_bucket/genomic-etl/deployment_state_metadata/subnet_variables.tf 
+aws s3 cp subnet_variables_genomic_etl.tf s3://${stack_s3_bucket}/genomic-etl/deployment_state_metadata/subnet_variables.tf 
 
 unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY

@@ -1,0 +1,154 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>ROLE_ARN</name>
+          <description></description>
+          <defaultValue>$arn_role_app</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>infrastructure_git_hash</name>
+          <description></description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>deployment_git_hash</name>
+          <description></description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>study_phs</name>
+          <description></description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>chrom_number</name>
+          <description></description>
+          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.1.1">
+    <configVersion>2</configVersion>
+    <userRemoteConfigs>
+      <hudson.plugins.git.UserRemoteConfig>
+        <url>https://github.com/hms-dbmi/avillachlab-secure-infrastructure</url>
+      </hudson.plugins.git.UserRemoteConfig>
+    </userRemoteConfigs>
+    <branches>
+      <hudson.plugins.git.BranchSpec>
+        <name>${infrastructure_git_hash}</name>
+      </hudson.plugins.git.BranchSpec>
+    </branches>
+    <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+    <submoduleCfg class="list"/>
+    <extensions/>
+  </scm>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>cd genomic-etl-infrastructure
+wget https://releases.hashicorp.com/terraform/0.12.31/terraform_0.12.31_linux_amd64.zip && unzip terraform_0.12.31_linux_amd64.zip && mv terraform /usr/local/bin/
+
+aws sts assume-role --duration-seconds 900 --role-arn $arn_role_cnc --role-session-name "teardown-rebuild-genomic-etl" > assume-role-output.txt
+
+export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d ':' -f 2 | sed "s/[ ,\"]//g"`
+export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d ':' -f 2 | sed "s/[ ,\"]//g"`
+export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d ':' -f 2 | sed "s/[ ,\"]//g"`
+
+aws s3 cp s3://${stack_s3_bucket}/genomic-etl/deployment_state_metadata/terraform.tfstate .
+aws s3 cp s3://${stack_s3_bucket}/genomic-etl/deployment_state_metadata/genomic_etl_variables.tf .
+aws s3 cp s3://${stack_s3_bucket}/genomic-etl/deployment_state_metadata/subnet_variables.tf .
+cp genomic_etl_variables.tf ../genomic-etl-s3-deployment-roles/
+cp subnet_variables.tf ../genomic-etl-s3-deployment-roles/
+aws s3 cp s3://${stack_s3_bucket}/genomic-etl/deployment_state_metadata/terraform.tfstate_roles ../genomic-etl-s3-deployment-roles/terraform.tfstate || echo "role state doesnt exist, it will be created"
+
+unset AWS_ACCESS_KEY_ID
+unset AWS_SECRET_ACCESS_KEY
+unset AWS_SESSION_TOKEN
+
+aws sts assume-role --duration-seconds 900 --role-arn $arn_role_app --role-session-name "teardown-rebuild-genomic-etl" > assume-role-output.txt
+
+export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d ':' -f 2 | sed "s/[ ,\"]//g"`
+export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d ':' -f 2 | sed "s/[ ,\"]//g"`
+export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d ':' -f 2 | sed "s/[ ,\"]//g"`
+
+cd ../genomic-etl-s3-deployment-roles
+terraform init
+terraform apply -auto-approve  -var="deployment_githash=`echo ${deployment_git_hash} |cut -c1-7`" -var="deployment_githash_long=${deployment_git_hash}" || true
+
+cd ../genomic-etl-infrastructure
+terraform init
+terraform apply -auto-approve -var="ami-id=${ami_id}"  -var="deployment_githash=`echo ${deployment_git_hash} |cut -c1-7`" -var="deployment_githash_long=${deployment_git_hash}" || true
+
+echo "
+{
+  \"Changes\": [
+    {
+      \"Action\": \"UPSERT\",
+      \"ResourceRecordSet\": {
+        \"Name\": \"genomic-etl.datastage.hms.harvard.edu\",
+        \"Type\": \"A\",
+        \"TTL\": 60,
+        \"ResourceRecords\": [
+          {
+            \"Value\": \"$(grep genomic-etl-ec2-private_ip ip-vars.properties | cut -d "=" -f 2)\"
+          }
+        ]
+      }
+    }
+  ]
+}
+" > route-53-records.json
+aws route53 change-resource-record-sets --hosted-zone-id $(grep -A4 'variable "internal-dns-zone-id' subnet_variables.tf  |  grep default | cut -d "\"" -f 2) --change-batch file://route-53-records.json || true
+
+
+unset AWS_ACCESS_KEY_ID
+unset AWS_SECRET_ACCESS_KEY
+unset AWS_SESSION_TOKEN
+
+unset AWS_ACCESS_KEY_ID
+unset AWS_SECRET_ACCESS_KEY
+unset AWS_SESSION_TOKEN
+
+aws sts assume-role --duration-seconds 900 --role-arn $arn_role_cnc --role-session-name "teardown-rebuild" > assume-role-output.txt
+
+export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d ':' -f 2 | sed "s/[ ,\"]//g"`
+export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d ':' -f 2 | sed "s/[ ,\"]//g"`
+export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d ':' -f 2 | sed "s/[ ,\"]//g"`
+
+aws s3 cp terraform.tfstate s3://${stack_s3_bucket}/genomic-etl/deployment_state_metadata/terraform.tfstate
+aws s3 cp ../genomic-etl-s3-deployment-roles/terraform.tfstate s3://${stack_s3_bucket}/genomic-etl/deployment_state_metadata/terraform.tfstate_roles
+
+unset AWS_ACCESS_KEY_ID
+unset AWS_SECRET_ACCESS_KEY
+unset AWS_SESSION_TOKEN
+</command>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.38">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
+</project>
