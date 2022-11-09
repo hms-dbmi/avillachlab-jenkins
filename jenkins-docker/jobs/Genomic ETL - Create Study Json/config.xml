@@ -1,0 +1,125 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>ROLE_ARN</name>
+          <defaultValue>$arn_role_app</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>output_s3_bucket</name>
+          <defaultValue>avillach-biodatacatalyst-deployments-3drb48r</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>study_id</name>
+          <defaultValue>phs0000</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>consent_group_tag</name>
+          <defaultValue>.c1</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>study_name</name>
+          <defaultValue>SAMPLE</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>infrastructure_git_hash</name>
+          <defaultValue>72b99aa047a326914fa2c10f5cdb7ece73f8ae5b</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.12.1">
+    <configVersion>2</configVersion>
+    <userRemoteConfigs>
+      <hudson.plugins.git.UserRemoteConfig>
+        <url>https://github.com/hms-dbmi/avillachlab-secure-infrastructure</url>
+      </hudson.plugins.git.UserRemoteConfig>
+    </userRemoteConfigs>
+    <branches>
+      <hudson.plugins.git.BranchSpec>
+        <name>${infrastructure_git_hash}</name>
+      </hudson.plugins.git.BranchSpec>
+    </branches>
+    <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+    <submoduleCfg class="empty-list"/>
+    <extensions/>
+  </scm>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <triggers/>
+  <concurrentBuild>true</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+cd genomic-etl-infrastructure
+
+aws sts assume-role --role-arn $arn_role_cnc --role-session-name &quot;update-genomic-json&quot; &gt; assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt
+
+export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+export totalFileSizeWithIndex=0
+export totalFileSizeWithoutIndex=0
+export chromJsons=()
+for chromosomeNumber in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 X
+do
+export annotatedFileName=&quot;s3://${output_s3_bucket}/genomic-etl/processed_vcfs/${study_id}${consent_group_tag}.chr${chromosomeNumber}.annotated.vcf.gz&quot;;
+export annotatedFileSize=`aws s3 ls ${annotatedFileName} --summarize | grep &apos;Total Size&apos; | cut -d &apos;:&apos; -f 2`
+echo &quot;Annotated file size is ${annotatedFileSize}&quot;
+export totalFileSizeWithoutIndex=$((totalFileSizeWithoutIndex+annotatedFileSize))
+echo &quot;Total size for just annotated files is now ${totalFileSizeWithoutIndex}&quot;
+export indexFileName=&quot;s3://${output_s3_bucket}/genomic-etl/processed_vcf_indexes/${study_id}${consent_group_tag}.chr${chromosomeNumber}.annotated.vcf.gz.gzi&quot;;
+export indexFileSize=`aws s3 ls ${indexFileName} --summarize | grep &apos;Total Size&apos; | cut -d &apos;:&apos; -f 2`
+echo &quot;Index file size is ${indexFileSize}&quot;
+export totalFileSizeWithIndex=$((totalFileSizeWithIndex+annotatedFileSize+indexFileSize))
+echo &quot;Total size for annotated files and index files is now ${totalFileSizeWithIndex}&quot;
+export chromJsons+=(&quot;{\&quot;chromosomeNumber\&quot;: \&quot;${chromosomeNumber}\&quot;, \&quot;annotatedFileLocation\&quot;: \&quot;${annotatedFileName}\&quot;, \&quot;indexFileLocation\&quot;: \&quot;${indexFileName}\&quot;, \&quot;annotatedFileSize\&quot;: ${annotatedFileSize},\&quot;indexFileSize\&quot;: ${indexFileSize}}&quot;)
+done
+
+for i in {0..21}
+do
+export chromJsonString=&quot;${chromJsonString}${chromJsons[i]}, &quot;
+done
+
+echo &quot;array complete&quot;
+
+export chromJsonString=&quot;$chromJsonString${chromJsons[22]}&quot;
+
+echo &quot;update complete&quot;
+
+export studyJson=&quot;{\&quot;group\&quot;: null,\
+    \&quot;studyId\&quot;: \&quot;${study_id}${consent_group_tag}\&quot;,\
+    \&quot;studyName\&quot;: \&quot;${study_name}\&quot;,\
+    \&quot;fileCount\&quot;: \&quot;${#chromJsons[@]}\&quot;,\
+    \&quot;totalSizeWithIndex\&quot;: \&quot;${totalFileSizeWithIndex}\&quot;,\
+    \&quot;totalSizeWithoutIndex\&quot;: \&quot;${totalFileSizeWithoutIndex}\&quot;,\
+    \&quot;annotatedFiles\&quot;:[\
+      ${chromJsonString}\
+       
+    ]\
+}&quot;
+echo ${studyJson} &gt; ${study_id}${consent_group_tag}.json
+
+cat ${study_id}${consent_group_tag}.json | jq 
+
+
+aws s3 cp ${study_id}${consent_group_tag}.json s3://${output_s3_bucket}/genomic-etl/study_jsons/</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers/>
+</project>

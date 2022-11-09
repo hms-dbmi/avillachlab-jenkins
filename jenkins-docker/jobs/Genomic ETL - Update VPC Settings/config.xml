@@ -8,13 +8,11 @@
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
           <name>R53_Zone_ID</name>
-          <description></description>
           <defaultValue>Z08886171CDE1KG17OIX6</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>genomic_etl_vpc</name>
-          <description></description>
           <defaultValue>vpc-04b9151257af31e0e</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
@@ -42,17 +40,18 @@ export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apo
 
 aws ec2 --region us-east-1 describe-subnets
 
-aws ec2 --region us-east-1 describe-subnets --filters &quot;Name=vpc-id,Values=$genomic_etl_vpc&quot; &gt; subnets_genomic_etl.json
+aws ec2 --region us-east-1 describe-subnets --filters &quot;Name=vpc-id,Values=$genomic_etl_vpc&quot; &quot;Name=availability-zone,Values=us-east-1b&quot; &gt; subnets_genomic_etl.json
 cat subnets_genomic_etl.json
 
 unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY
 unset AWS_SESSION_TOKEN
 </command>
+      <configuredLocalRules/>
     </hudson.tasks.Shell>
-    <hudson.plugins.groovy.SystemGroovy plugin="groovy@2.2">
+    <hudson.plugins.groovy.SystemGroovy plugin="groovy@453.vcdb_a_c5c99890">
       <source class="hudson.plugins.groovy.StringSystemScriptSource">
-        <script plugin="script-security@1.68">
+        <script plugin="script-security@1189.vb_a_b_7c8fd5fde">
           <script>import groovy.json.*
 import java.io.*
 
@@ -68,7 +67,7 @@ def subnetNames = [
 ]
 
 def subnetAWSNames = [
-  &quot;genomic-etl-subnet-us-east&quot;:&quot;Genomic-ETL-Subnet&quot;,
+  &quot;genomic-etl-subnet-us-east&quot;:&quot;Genomic-ETL-Subnet2&quot;,
 ]
 
 def subnetVars = [:]
@@ -132,6 +131,7 @@ unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY
 unset AWS_SESSION_TOKEN
 </command>
+      <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
   <publishers/>

@@ -8,62 +8,63 @@
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
           <name>ROLE_ARN</name>
-          <description></description>
           <defaultValue>$arn_role_app</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>ami_id</name>
-          <description></description>
-          <defaultValue>ami-0e5cc69b4f4534d4d</defaultValue>
+          <defaultValue>ami-07b0a3482c6da9206</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>infrastructure_git_hash</name>
-          <description></description>
-          <defaultValue></defaultValue>
+          <defaultValue>e24730550ecb8edfb792b6bc9459581514944dad</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>deployment_git_hash</name>
-          <description></description>
-          <defaultValue></defaultValue>
+          <defaultValue>8ca17ac9d341bc1eb197aa4de28b4472364e68ee</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>input_s3_bucket</name>
-          <description></description>
-          <defaultValue></defaultValue>
+          <defaultValue>avillach-biodatacatalyst-deployments-3drb48r/genomic-etl/test-files/small</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>output_s3_bucket</name>
-          <description></description>
-          <defaultValue></defaultValue>
+          <defaultValue>avillach-biodatacatalyst-deployments-3drb48r</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>phs_number</name>
-          <description></description>
-          <defaultValue></defaultValue>
+          <name>study_id</name>
+          <defaultValue>phs0000</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>consent_group_tag</name>
-          <description></description>
-          <defaultValue></defaultValue>
+          <defaultValue>.c1</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>chrom_number</name>
-          <description></description>
-          <defaultValue></defaultValue>
+          <defaultValue>X</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>study_consent_group</name>
+          <defaultValue>c1</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>study_name</name>
+          <defaultValue>SAMPLE</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.1.1">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.12.1">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
@@ -76,7 +77,7 @@
       </hudson.plugins.git.BranchSpec>
     </branches>
     <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
-    <submoduleCfg class="list"/>
+    <submoduleCfg class="empty-list"/>
     <extensions/>
   </scm>
   <canRoam>true</canRoam>
@@ -84,95 +85,57 @@
   <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
   <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
   <triggers/>
-  <concurrentBuild>false</concurrentBuild>
+  <concurrentBuild>true</concurrentBuild>
   <builders>
     <hudson.tasks.Shell>
       <command>cd genomic-etl-infrastructure
-wget https://releases.hashicorp.com/terraform/0.12.31/terraform_0.12.31_linux_amd64.zip && unzip terraform_0.12.31_linux_amd64.zip && mv terraform /usr/local/bin/
 
-aws sts assume-role --duration-seconds 900 --role-arn $arn_role_cnc --role-session-name "teardown-rebuild-genomic-etl" > assume-role-output.txt
+aws sts assume-role --role-arn $arn_role_cnc --role-session-name &quot;stand-up-genomic-etl&quot; &gt; assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt
 
-export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d ':' -f 2 | sed "s/[ ,\"]//g"`
-export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d ':' -f 2 | sed "s/[ ,\"]//g"`
-export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d ':' -f 2 | sed "s/[ ,\"]//g"`
+export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 
-aws s3 cp s3://${stack_s3_bucket}/genomic-etl/deployment_state_metadata/genomic_etl_variables.tf .
-aws s3 cp s3://${stack_s3_bucket}/genomic-etl/deployment_state_metadata/subnet_variables.tf .
-aws s3 cp s3://{destination_s3_bucket_uri}/deployment_state_metadata/{phs_number}/{chrom_number}/ .
-cp genomic_etl_variables.tf ../genomic-etl-s3-deployment-roles/
-cp subnet_variables.tf ../genomic-etl-s3-deployment-roles/
-aws s3 cp s3://${stack_s3_bucket}/genomic-etl/deployment_state_metadata/{phs_number}/{chrom_number}/terraform.tfstate_roles ../genomic-etl-s3-deployment-roles/terraform.tfstate || echo "role state doesnt exist, it will be created"
+aws s3 cp s3://${output_s3_bucket}/genomic-etl/deployment_state_metadata/${study_id}${consent_group_tag}/${chrom_number}/genomic_etl_variables.tf .
+aws s3 cp s3://${output_s3_bucket}/genomic-etl/deployment_state_metadata/subnet_variables.tf .
+aws s3 cp s3://${output_s3_bucket}/genomic-etl/deployment_state_metadata/${study_id}${consent_group_tag}/${chrom_number}/terraform.tfstate .
 
-unset AWS_ACCESS_KEY_ID
-unset AWS_SECRET_ACCESS_KEY
-unset AWS_SESSION_TOKEN
-
-aws sts assume-role --duration-seconds 900 --role-arn $arn_role_app --role-session-name "stand-up-genomic-etl" > assume-role-output.txt
-
-export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d ':' -f 2 | sed "s/[ ,\"]//g"`
-export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d ':' -f 2 | sed "s/[ ,\"]//g"`
-export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d ':' -f 2 | sed "s/[ ,\"]//g"`
-
-cd ../genomic-etl-s3-deployment-roles
-terraform init
-terraform apply -auto-approve  -var="deployment_githash=`echo ${deployment_git_hash} |cut -c1-7`" -var="deployment_githash_long=${deployment_git_hash}" || true
-
+export TF_LOG=&quot;INFO&quot;
 cd ../genomic-etl-infrastructure
 terraform init
-terraform apply -auto-approve -var="ami-id=${ami_id}"  -var="deployment_githash=`echo ${deployment_git_hash} |cut -c1-7`" -var="deployment_githash_long=${deployment_git_hash}" || true
+terraform workspace select ${study_id}${consent_group_tag}-${chrom_number} || terraform workspace new ${study_id}${consent_group_tag}-${chrom_number} 
+terraform apply -auto-approve  -var=&quot;s3_role=${arn_role_cnc}&quot; -var=&quot;study_name=${study_name}&quot; -var=&quot;output_s3_bucket=${output_s3_bucket}&quot; -var=&quot;input_s3_bucket=${input_s3_bucket}&quot; -var=&quot;study_id=${study_id}&quot; -var=&quot;chrom_number=${chrom_number}&quot; -var=&quot;study_consent_group=${study_consent_group}&quot; -var=&quot;consent_group_tag=${consent_group_tag}&quot; -var=&quot;ami-id=${ami_id}&quot;  -var=&quot;deployment_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;deployment_githash_long=${deployment_git_hash}&quot; || true
 
-echo "
-{
-  \"Changes\": [
-    {
-      \"Action\": \"UPSERT\",
-      \"ResourceRecordSet\": {
-        \"Name\": \"genomic-etl.datastage.hms.harvard.edu\",
-        \"Type\": \"A\",
-        \"TTL\": 60,
-        \"ResourceRecords\": [
-          {
-            \"Value\": \"$(grep genomic-etl-ec2-private_ip ip-vars.properties | cut -d "=" -f 2)\"
-          }
-        ]
-      }
-    }
-  ]
-}
-" > route-53-records.json
-aws route53 change-resource-record-sets --hosted-zone-id $(grep -A4 'variable "internal-dns-zone-id' subnet_variables.tf  |  grep default | cut -d "\"" -f 2) --change-batch file://route-53-records.json || true
-
+aws s3 cp terraform.tfstate s3://${stack_s3_bucket}/genomic-etl/deployment_state_metadata/${study_id}${consent_group_tag}/${chrom_number}/terraform.tfstate || echo &apos;tfstate for ec2 error&apos;
 
 unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY
 unset AWS_SESSION_TOKEN
 
+aws sts assume-role --role-arn $arn_role_cnc --role-session-name &quot;annotation-checks&quot; &gt; assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt
+
+export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+
+aws ec2 describe-instances --region us-east-1 --filters Name=tag-value,Values=&quot;Genomic ETL Annotation Pipeline - ${study_id}${consent_group_tag} Chromosome ${chrom_number}&quot; &gt;instance_description_${study_id}${consent_group_tag}_${chrom_number}.json
+while [ -z $(aws --region=us-east-1 ec2 describe-tags --filters Name=resource-id,Values=&quot;`jq -r &apos;.Reservations|.[0]|.Instances|.[0]|.InstanceId&apos; instance_description_${study_id}${consent_group_tag}_${chrom_number}.json`&quot; | grep AnnotationComplete)];\
+do \
+echo &quot;Annotation in process&quot;;\
+sleep 120;\
+aws sts assume-role --role-arn $arn_role_cnc --role-session-name &quot;annotation-checks&quot; &gt; assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt;\
+export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`;\
+export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`;\
+export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`;\
+done
+
+echo &apos;Annotation Complete&apos;
 unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY
-unset AWS_SESSION_TOKEN
-
-aws sts assume-role --duration-seconds 900 --role-arn $arn_role_cnc --role-session-name "teardown-rebuild" > assume-role-output.txt
-
-export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d ':' -f 2 | sed "s/[ ,\"]//g"`
-export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d ':' -f 2 | sed "s/[ ,\"]//g"`
-export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d ':' -f 2 | sed "s/[ ,\"]//g"`
-
-aws s3 cp terraform.tfstate s3://${stack_s3_bucket}/genomic-etl/deployment_state_metadata/terraform.tfstate
-aws s3 cp ../genomic-etl-s3-deployment-roles/terraform.tfstate s3://${stack_s3_bucket}/genomic-etl/deployment_state_metadata/terraform.tfstate_roles
-
-unset AWS_ACCESS_KEY_ID
-unset AWS_SECRET_ACCESS_KEY
-unset AWS_SESSION_TOKEN
-</command>
+unset AWS_SESSION_TOKEN</command>
+      <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
   <publishers/>
-  <buildWrappers>
-    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.38">
-      <deleteDirs>false</deleteDirs>
-      <cleanupParameter></cleanupParameter>
-      <externalDelete></externalDelete>
-      <disableDeferredWipeout>false</disableDeferredWipeout>
-    </hudson.plugins.ws__cleanup.PreBuildCleanup>
-  </buildWrappers>
+  <buildWrappers/>
 </project>

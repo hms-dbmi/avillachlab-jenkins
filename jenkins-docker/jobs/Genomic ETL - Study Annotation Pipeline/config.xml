@@ -1,0 +1,218 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job@1189.va_d37a_e9e4eda_">
+  <actions>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2064.v5eef7d0982b_e"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2064.v5eef7d0982b_e">
+      <jobProperties/>
+      <triggers/>
+      <parameters/>
+      <options/>
+    </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
+  </actions>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>ROLE_ARN</name>
+          <defaultValue>$arn_role_app</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>infrastructure_git_hash</name>
+          <defaultValue>72b99aa047a326914fa2c10f5cdb7ece73f8ae5b</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>deployment_git_hash</name>
+          <defaultValue>c3e875651d0f85a682780ee7c1472bbca3c72570</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>ami_id</name>
+          <description>AMI with pre-installed bcftools/vep</description>
+          <defaultValue>ami-07b0a3482c6da9206</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>study_id</name>
+          <defaultValue>phs0000</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>study_name</name>
+          <defaultValue>SAMPLE</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>has_consent_group</name>
+          <description>select only if there is an indicated consent group for the data</description>
+          <defaultValue>true</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>study_consent_group</name>
+          <description>leave blank if none indicated, consent group if otherwise i.e. c1</description>
+          <defaultValue>c1</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>input_s3_bucket</name>
+          <description>s3 bucket which holds the vcf files to be annotated</description>
+          <defaultValue>avillach-biodatacatalyst-deployments-3drb48r/genomic-etl/test-files/small</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>output_s3_bucket</name>
+          <description>s3 bucket where the output should reside</description>
+          <defaultValue>avillach-biodatacatalyst-deployments-3drb48r</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>terminate_on_completion</name>
+          <description>set to false to keep all ec2s and configuration files for debugging</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2660.2664.v4c114e93f4c1">
+    <script>pipeline {
+    agent any
+    stages {
+        stage(&apos;Generating Config Files&apos;) {
+            steps {
+                script{
+                def configRuns = [:]
+                for (int i = 1; i &lt; 24; i++) {
+                    def chrom_number = i
+                    if (i == 23) {
+                        chrom_number = &apos;X&apos;
+                    }
+                    def consent_group_tag = &apos;&apos;
+                    if (params.has_consent_group) {
+                        consent_group_tag = &apos;.&apos; + params.study_consent_group
+                    }
+                    configRuns[&quot;configRuns${i}&quot;] = {
+                        build job: &apos;Genomic ETL - Create Configuration Files for EC2&apos;,
+                parameters:
+                [
+                string(name: &apos;infrastructure_git_hash&apos;, value:params.infrastructure_git_hash),
+                string(name: &apos;study_id&apos;, value:params.study_id),
+                string(name: &apos;consent_group_tag&apos;, value:&quot;${consent_group_tag}&quot;),
+                string(name: &apos;chrom_number&apos;, value:&quot;${chrom_number}&quot;)
+                ]
+                    }
+                }
+                parallel configRuns
+            }}
+        }
+        stage(&apos;Standing Up EC2s and Generating Annotated Files&apos;) {
+            steps{
+                script{
+                def standupRuns = [:]
+                for (int i = 1; i &lt; 24; i++) {
+                    def chrom_number = i
+                    if (i == 23) {
+                        chrom_number = &apos;X&apos;
+                    }
+                    def consent_group_tag = &apos;&apos;
+                    if (params.has_consent_group) {
+                        consent_group_tag = &apos;.&apos; + params.study_consent_group
+                    }
+                    standupRuns[&quot;standupRuns${i}&quot;] = {
+                        build job: &apos;Genomic ETL - Stand Up Annotation Pipeline EC2&apos;,
+                parameters:
+                [
+                string(name: &apos;ROLE_ARN&apos;, value:params.ROLE_ARN),
+                string(name: &apos;ami_id&apos;, value:params.ami_id),
+                string(name: &apos;infrastructure_git_hash&apos;, value:params.infrastructure_git_hash),
+                string(name: &apos;deployment_git_hash&apos;, value:params.deployment_git_hash),
+                string(name: &apos;input_s3_bucket&apos;, value:params.input_s3_bucket),
+                string(name: &apos;output_s3_bucket&apos;, value:params.output_s3_bucket),
+                string(name: &apos;study_id&apos;, value:params.study_id),
+                string(name: &apos;study_name&apos;, value:params.study_name),
+                string(name: &apos;consent_group_tag&apos;, value:&quot;${consent_group_tag}&quot;),
+                string(name: &apos;chrom_number&apos;, value:&quot;${chrom_number}&quot;),
+                string(name: &apos;study_consent_group&apos;, value:params.study_consent_group)
+                ]
+                    }
+                }
+                parallel standupRuns
+            }}
+        }
+        stage(&apos;Create Study Json&apos;){
+            steps{
+                script{
+                    def consent_group_tag = &apos;&apos;
+                    if (params.has_consent_group) {
+                        consent_group_tag = &apos;.&apos; + params.study_consent_group
+                    }
+                     build job: &apos;Genomic ETL - Create Study Json&apos;,
+                        parameters:
+                         [
+                            string(name: &apos;ROLE_ARN&apos;, value:params.ROLE_ARN),
+                            string(name: &apos;output_s3_bucket&apos;, value:params.output_s3_bucket),
+                            string(name: &apos;study_id&apos;, value:params.study_id),
+                            string(name: &apos;study_name&apos;, value:params.study_name),
+                            string(name: &apos;consent_group_tag&apos;, value:&quot;${consent_group_tag}&quot;)
+                        ]
+                }
+            }
+        }
+    }
+    post {
+        always {
+                script {
+                    echo &apos;Start termination block&apos;
+                    if(params.terminate_on_completion){
+                        echo &apos;Terminating ec2s&apos;
+                        def termRuns = [:]
+                        for (int i = 1; i &lt; 24; i++) {
+                            def chrom_number = i
+                            if (i == 23) {
+                                chrom_number = &apos;X&apos;
+                            }
+                            def consent_group_tag = &apos;&apos;
+                            if (params.has_consent_group) {
+                                consent_group_tag = &apos;.&apos; + params.study_consent_group
+                            }
+                            termRuns[&quot;termRuns${i}&quot;] = {
+                                build job: &apos;Genomic ETL - Terminate and Clean Up Annotation Pipeline EC2&apos;,
+                                parameters:
+                                [
+                                string(name: &apos;ROLE_ARN&apos;, value:params.ROLE_ARN),
+                                string(name: &apos;infrastructure_git_hash&apos;, value:params.infrastructure_git_hash),
+                                string(name: &apos;deployment_git_hash&apos;, value:params.deployment_git_hash.substring(0, 7)),
+                                string(name: &apos;study_id&apos;, value:params.study_id),
+                                string(name: &apos;chrom_number&apos;, value:&quot;${chrom_number}&quot;),
+                                string(name: &apos;consent_group_tag&apos;, value:&quot;${consent_group_tag}&quot;),
+                                string(name: &apos;output_s3_bucket&apos;, value:params.output_s3_bucket)
+                                ]
+                            }
+                        }
+                        parallel termRuns
+                    }
+                    echo &apos;End termination block&apos;
+                    
+                }
+        }
+        
+        cleanup {
+            script {
+                def consent_group_tag = &apos;&apos;
+                if (params.has_consent_group) {
+                    consent_group_tag = &apos;.&apos; + params.study_consent_group
+                }
+                emailext body: &apos;Pipeline for &apos; + params.study_id + &quot;${consent_group_tag} has halted with a status of &quot; + currentBuild.currentResult + &apos;. View logs at &apos; + env.BUILD_URL,
+                subject: params.study_name + &apos; Study Pipeline&apos;,
+                to: &apos;sharra_neely@hms.harvard.edu&apos;
+            }
+        }
+    }
+}</script>
+    <sandbox>false</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>
