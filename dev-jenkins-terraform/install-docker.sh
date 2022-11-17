@@ -342,8 +342,8 @@ sh /opt/nessus_setup.sh "${stack_s3_bucket}" "CNC_Prod"
 for i in {1..5}; do sudo /usr/local/bin/aws --region us-east-1 s3 cp s3://${stack_s3_bucket}/jenkins_config/config.xml /var/jenkins_home/config.xml && break || sleep 45; done
 
 # copy ssl cert & key from s3
-for i in 1 2 3 4 5; do sudo /usr/local/bin/aws --region us-east-1 s3 cp s3://${stack_s3_bucket}/certs/jenkins/jenkins.cer /root/jenkins.cer && break || sleep 45; done
-for i in 1 2 3 4 5; do sudo /usr/local/bin/aws --region us-east-1 s3 cp s3://${stack_s3_bucket}/certs/jenkins/jenkins.key /root/jenkins.key && break || sleep 45; done
+for i in {1..5}; do sudo /usr/local/bin/aws --region us-east-1 s3 cp s3://${stack_s3_bucket}/certs/jenkins/jenkins.cer /root/jenkins.cer && break || sleep 45; done
+for i in {1..5}; do sudo /usr/local/bin/aws --region us-east-1 s3 cp s3://${stack_s3_bucket}/certs/jenkins/jenkins.key /root/jenkins.key && break || sleep 45; done
 
 # generate keystore file for docker/jenkins use
 keystore_pass=`echo $RANDOM | md5sum | head -c 20`
@@ -373,4 +373,3 @@ sudo docker logs -f jenkins > /var/log/jenkins-docker-logs/jenkins.log &
 
 INSTANCE_ID=$(curl -H "X-aws-ec2-metadata-token: $(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")" --silent http://169.254.169.254/latest/meta-data/instance-id)
 sudo docker exec jenkins /usr/local/bin/aws --region=us-east-1 ec2 create-tags --resources $${INSTANCE_ID} --tags Key=InitComplete,Value=true
-
