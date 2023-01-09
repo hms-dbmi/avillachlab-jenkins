@@ -1,4 +1,4 @@
-FROM jenkins/jenkins:2.319.3
+FROM jenkins/jenkins:2.385
 
 ARG S3_BUCKET
 
