@@ -21,12 +21,12 @@
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>infrastructure_git_hash</name>
-          <defaultValue>72b99aa047a326914fa2c10f5cdb7ece73f8ae5b</defaultValue>
+          <defaultValue>e45319bd46737756f49c71344b624bf03a30d756</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>deployment_git_hash</name>
-          <defaultValue>c3e875651d0f85a682780ee7c1472bbca3c72570</defaultValue>
+          <defaultValue>81454a34727a7429970a80d51bc78e34aa04454a</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
@@ -37,12 +37,12 @@
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>study_id</name>
-          <defaultValue>phs0000</defaultValue>
+          <defaultValue>phs000993</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>study_name</name>
-          <defaultValue>SAMPLE</defaultValue>
+          <defaultValue>HVH</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
@@ -59,7 +59,7 @@
         <hudson.model.StringParameterDefinition>
           <name>input_s3_bucket</name>
           <description>s3 bucket which holds the vcf files to be annotated</description>
-          <defaultValue>avillach-biodatacatalyst-deployments-3drb48r/genomic-etl/test-files/small</defaultValue>
+          <defaultValue>nih-nhlbi-topmed-released-phs000993-c1</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
@@ -71,7 +71,7 @@
         <hudson.model.BooleanParameterDefinition>
           <name>terminate_on_completion</name>
           <description>set to false to keep all ec2s and configuration files for debugging</description>
-          <defaultValue>false</defaultValue>
+          <defaultValue>true</defaultValue>
         </hudson.model.BooleanParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
@@ -79,6 +79,7 @@
   <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2660.2664.v4c114e93f4c1">
     <script>pipeline {
     agent any
+
     stages {
         stage(&apos;Generating Config Files&apos;) {
             steps {
@@ -134,7 +135,8 @@
                 string(name: &apos;study_name&apos;, value:params.study_name),
                 string(name: &apos;consent_group_tag&apos;, value:&quot;${consent_group_tag}&quot;),
                 string(name: &apos;chrom_number&apos;, value:&quot;${chrom_number}&quot;),
-                string(name: &apos;study_consent_group&apos;, value:params.study_consent_group)
+                string(name: &apos;study_consent_group&apos;, value:params.study_consent_group),
+                [$class: &apos;BooleanParameterValue&apos;, name: &apos;terminate_on_completion&apos;, value:params.terminate_on_completion]
                 ]
                     }
                 }
@@ -161,6 +163,7 @@
             }
         }
     }
+        
     post {
         always {
                 script {

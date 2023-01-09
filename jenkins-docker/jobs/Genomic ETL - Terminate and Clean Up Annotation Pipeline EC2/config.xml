@@ -13,22 +13,22 @@
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>infrastructure_git_hash</name>
-          <defaultValue>ea07153bd8721e8111bed9a60e66ea958bc891b2</defaultValue>
+          <defaultValue>3d79310d36532afece811f9843527a47bc93e89d</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>deployment_git_hash</name>
-          <defaultValue>2fa605d</defaultValue>
+          <defaultValue>7ad1146</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>study_id</name>
-          <defaultValue>phs0000</defaultValue>
+          <defaultValue>phs000974</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>chrom_number</name>
-          <defaultValue>4</defaultValue>
+          <defaultValue>2</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
@@ -76,9 +76,9 @@ export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos
 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 
-aws ec2 describe-instances --region us-east-1 --filters Name=tag-value,Values=&quot;Genomic ETL Annotation Pipeline - ${study_id}${consent_group_tag} Chromosome ${chrom_number}&quot; Name=instance-state-name,Values=running &gt;instance_description_${study_id}${consent_group_tag}_${chrom_number}.json
-aws ec2 terminate-instances --region us-east-1 --instance-ids `jq -r &apos;.Reservations|.[0]|.Instances|.[0]|.InstanceId&apos; instance_description_${study_id}${consent_group_tag}_${chrom_number}.json` || echo &apos;No instance to terminate&apos;
-
+aws ec2 describe-spot-fleet-requests --region us-east-1 --query &quot;SpotFleetRequestConfigs[?SpotFleetRequestConfig.LaunchSpecifications[?TagSpecifications[?Tags[?Value == &apos;Genomic ETL Annotation Pipeline - ${study_id}${consent_group_tag} Chromosome ${chrom_number}&apos;]]] &amp;&amp; (SpotFleetRequestState == &apos;active&apos; || SpotFleetRequestState==&apos;open&apos;)].SpotFleetRequestId&quot; &gt; fleet_id_${study_id}${consent_group_tag}_${chrom_number}.txt
+export fleetId=`grep sfr fleet_id_${study_id}${consent_group_tag}_${chrom_number}.txt  | cut -d &apos;&quot;&apos; -f 2` &amp;&amp; echo fleet id ${fleetId}
+aws ec2 cancel-spot-fleet-requests --region us-east-1 --spot-fleet-request-ids ${fleetId} --terminate-instances  || echo &apos;no fleet active for this chromosome&apos;
 
 unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY
@@ -95,34 +95,7 @@ aws s3 rm --recursive s3://${output_s3_bucket}/genomic-etl/deployment_state_meta
 unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY
 unset AWS_SESSION_TOKEN
-
-aws sts assume-role --duration-seconds 1800 --role-arn $arn_role_cnc --role-session-name &quot;teardown-genomic-etl&quot; &gt; assume-role-output.txt
-
-export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-
-aws ec2 wait instance-terminated --region us-east-1 --instance-ids `jq -r &apos;.Reservations|.[0]|.Instances|.[0]|.InstanceId&apos; instance_description_${study_id}${consent_group_tag}_${chrom_number}.json` || echo &apos;No instance to terminate&apos;
-
-unset AWS_ACCESS_KEY_ID
-unset AWS_SECRET_ACCESS_KEY
-unset AWS_SESSION_TOKEN
-
-
-aws sts assume-role --duration-seconds 900 --role-arn $arn_role_cnc --role-session-name &quot;teardown-genomic-etl&quot; &gt; assume-role-output.txt
-
-export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-
-aws ec2 describe-security-groups --region us-east-1 --filters Name=vpc-id,Values=&quot;vpc-04b9151257af31e0e&quot; Name=group-name,Values=&quot;allow_outbound_to_public_internet_to_genomic_etl_${deployment_git_hash}_${study_id}${consent_group_tag}-${chrom_number}&quot; --query &apos;SecurityGroups[*].[GroupId]&apos; --output text &gt;sec_description_1_${study_id}${consent_group_tag}_${chrom_number}.json
-aws ec2 describe-security-groups --region us-east-1 --filters Name=vpc-id,Values=&quot;vpc-04b9151257af31e0e&quot; Name=group-name,Values=&quot;allow_traffic_from_genomic_etl_to_ssm_${deployment_git_hash}_${study_id}${consent_group_tag}-${chrom_number}&quot; --query &apos;SecurityGroups[*].[GroupId]&apos; --output text &gt;sec_description_2_${study_id}${consent_group_tag}_${chrom_number}.json
-aws ec2 delete-security-group --region us-east-1 --group-id `cat sec_description_1_${study_id}${consent_group_tag}_${chrom_number}.json` || echo &apos;No security group to delete&apos;
-aws ec2 delete-security-group --region us-east-1 --group-id `cat sec_description_2_${study_id}${consent_group_tag}_${chrom_number}.json`|| echo &apos;No security group to delete&apos;
-
-unset AWS_ACCESS_KEY_ID
-unset AWS_SECRET_ACCESS_KEY
-unset AWS_SESSION_TOKEN</command>
+</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>

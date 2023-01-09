@@ -40,7 +40,7 @@ export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apo
 
 aws ec2 --region us-east-1 describe-subnets
 
-aws ec2 --region us-east-1 describe-subnets --filters &quot;Name=vpc-id,Values=$genomic_etl_vpc&quot; &quot;Name=availability-zone,Values=us-east-1b&quot; &gt; subnets_genomic_etl.json
+aws ec2 --region us-east-1 describe-subnets --filters &quot;Name=vpc-id,Values=$genomic_etl_vpc&quot; &gt; subnets_genomic_etl.json
 cat subnets_genomic_etl.json
 
 unset AWS_ACCESS_KEY_ID
@@ -63,11 +63,19 @@ def JsonSlurper js = new JsonSlurper()
 def subnetsResponse = js.parse(new File(&quot;/var/jenkins_home/workspace/Genomic ETL - Update VPC Settings/subnets_genomic_etl.json&quot;))
  
 def subnetNames = [
-  &quot;genomic-etl-subnet-us-east&quot;,
+  &quot;genomic-etl-subnet-1a&quot;,
+&quot;genomic-etl-subnet-1b&quot;,
+&quot;genomic-etl-subnet-1c&quot;,
+&quot;genomic-etl-subnet-1d&quot;,
+&quot;genomic-etl-subnet-1f&quot;
 ]
 
 def subnetAWSNames = [
-  &quot;genomic-etl-subnet-us-east&quot;:&quot;Genomic-ETL-Subnet2&quot;,
+  &quot;genomic-etl-subnet-1a&quot;:&quot;Genomic-ETL-Subnet1&quot;,
+&quot;genomic-etl-subnet-1b&quot;:&quot;Genomic-ETL-Subnet2&quot;,
+&quot;genomic-etl-subnet-1c&quot;:&quot;Genomic-ETL-Subnet3&quot;,
+&quot;genomic-etl-subnet-1d&quot;:&quot;Genomic-ETL-Subnet4&quot;,
+&quot;genomic-etl-subnet-1f&quot;:&quot;Genomic-ETL-Subnet6&quot;
 ]
 
 def subnetVars = [:]

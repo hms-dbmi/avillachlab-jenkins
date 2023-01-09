@@ -18,17 +18,17 @@
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>infrastructure_git_hash</name>
-          <defaultValue>e24730550ecb8edfb792b6bc9459581514944dad</defaultValue>
+          <defaultValue>e45319bd46737756f49c71344b624bf03a30d756</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>deployment_git_hash</name>
-          <defaultValue>8ca17ac9d341bc1eb197aa4de28b4472364e68ee</defaultValue>
+          <defaultValue>81454a34727a7429970a80d51bc78e34aa04454a</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>input_s3_bucket</name>
-          <defaultValue>avillach-biodatacatalyst-deployments-3drb48r/genomic-etl/test-files/small</defaultValue>
+          <defaultValue>nih-nhlbi-topmed-released-phs001412-c2</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
@@ -38,29 +38,33 @@
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>study_id</name>
-          <defaultValue>phs0000</defaultValue>
+          <defaultValue>phs001412</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>consent_group_tag</name>
-          <defaultValue>.c1</defaultValue>
+          <defaultValue>.c2</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>chrom_number</name>
-          <defaultValue>X</defaultValue>
+          <defaultValue>7</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>study_consent_group</name>
-          <defaultValue>c1</defaultValue>
+          <defaultValue>c2</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>study_name</name>
-          <defaultValue>SAMPLE</defaultValue>
+          <defaultValue>DHS</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>terminate_on_completion</name>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -88,7 +92,8 @@
   <concurrentBuild>true</concurrentBuild>
   <builders>
     <hudson.tasks.Shell>
-      <command>cd genomic-etl-infrastructure
+      <command>#!/bin/bash
+cd genomic-etl-infrastructure
 
 aws sts assume-role --role-arn $arn_role_cnc --role-session-name &quot;stand-up-genomic-etl&quot; &gt; assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt
 
@@ -118,24 +123,121 @@ export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output-$study_id-$consent
 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 
-aws ec2 describe-instances --region us-east-1 --filters Name=tag-value,Values=&quot;Genomic ETL Annotation Pipeline - ${study_id}${consent_group_tag} Chromosome ${chrom_number}&quot; &gt;instance_description_${study_id}${consent_group_tag}_${chrom_number}.json
-while [ -z $(aws --region=us-east-1 ec2 describe-tags --filters Name=resource-id,Values=&quot;`jq -r &apos;.Reservations|.[0]|.Instances|.[0]|.InstanceId&apos; instance_description_${study_id}${consent_group_tag}_${chrom_number}.json`&quot; | grep AnnotationComplete)];\
-do \
-echo &quot;Annotation in process&quot;;\
-sleep 120;\
-aws sts assume-role --role-arn $arn_role_cnc --role-session-name &quot;annotation-checks&quot; &gt; assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt;\
-export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`;\
-export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`;\
-export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`;\
+#!/bin/bash
+aws ec2 describe-spot-fleet-requests --region us-east-1 --query &quot;SpotFleetRequestConfigs[?SpotFleetRequestConfig.LaunchSpecifications[?TagSpecifications[?Tags[?Value == &apos;Genomic ETL Annotation Pipeline - ${study_id}${consent_group_tag} Chromosome ${chrom_number}&apos;]]] &amp;&amp; (SpotFleetRequestState == &apos;active&apos; || SpotFleetRequestState==&apos;open&apos;)].SpotFleetRequestId&quot; &gt; fleet_id_${study_id}${consent_group_tag}_${chrom_number}.txt
+export fleetId=`grep sfr fleet_id_${study_id}${consent_group_tag}_${chrom_number}.txt  | cut -d &apos;&quot;&apos; -f 2` &amp;&amp; echo fleet id ${fleetId}
+aws ec2 describe-spot-fleet-request-history --spot-fleet-request-id ${fleetId} --start-time `TZ=&quot;America/New_York&quot; date --date &apos;today -5 minutes&apos; &quot;+%FT%TZ&quot;` --event-type instanceChange --query &quot;HistoryRecords[?EventInformation.EventSubType==&apos;launched&apos;].EventInformation.InstanceId&quot; --region us-east-1 &gt; instance_id.txt
+export instanceId=`grep &apos;i-&apos; instance_id.txt  | cut -d &apos;&quot;&apos; -f 2` &amp;&amp; echo ${instanceId}
+export restartCount=0
+while [ -z ${instanceId} ]
+do
+echo &apos;waiting for instance launch&apos;
+sleep 10
+aws ec2 describe-spot-fleet-request-history --spot-fleet-request-id ${fleetId} --start-time `TZ=&quot;America/New_York&quot; date --date &apos;today -5 minutes&apos; &quot;+%FT%TZ&quot;` --event-type instanceChange --query &quot;HistoryRecords[?EventInformation.EventSubType==&apos;launched&apos;].EventInformation.InstanceId&quot; --region us-east-1 &gt; instance_id.txt
+export instanceId=`grep &apos;i-&apos; instance_id.txt  | cut -d &apos;&quot;&apos; -f 2`
 done
 
-echo &apos;Annotation Complete&apos;
+echo new instance id ${instanceId}
+#!/bin/bash
+while [[ -z $(aws --region=us-east-1 ec2 describe-tags --filters Name=resource-id,Values=&quot;${instanceId}&quot; Name=tag:AnnotationComplete,Values=&quot;true&quot; | grep AnnotationComplete) ]] &amp;&amp; [[ -z $(aws --region=us-east-1 ec2 describe-tags --filters Name=resource-id,Values=&quot;${instanceId}&quot; Name=tag:AnnotationComplete,Values=&quot;false&quot; | grep AnnotationComplete) ]]
+do
+#!/bin/bash
+if [[ -z $(aws ec2 describe-spot-fleet-request-history --spot-fleet-request-id ${fleetId} --start-time `TZ=&quot;America/New_York&quot; date --date &apos;today -10 minutes&apos; &quot;+%FT%TZ&quot;` --event-type instanceChange --query &quot;HistoryRecords[?EventInformation.InstanceId==&apos;${instanceId}&apos;]|[?EventInformation.EventSubType==&apos;terminated&apos;]&quot; --region us-east-1 | grep InstanceId) ]]
+then
+echo instance is stable
+
+
+else
+echo &apos;instance terminated, getting new instance id&apos;
+unset instanceId
+export restartCount=`expr ${restartCount} + 1`
+aws sns publish --topic-arn arn:aws:sns:us-east-1:900561893673:genomic-etl --message &quot;Instance terminated before job completion for ${study_id}${consent_group_tag} Chromosome ${chrom_number}. Fleet id is ${fleetId}. Instance has been restarted ${restartCount} time(s)&quot; --region us-east-1
+
+while [ -z ${instanceId} ]
+
+do
+
+echo &apos;waiting for instance relaunch&apos;
+
+aws sts assume-role --role-arn $arn_role_cnc --role-session-name &quot;relaunch-checks&quot; &gt; assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt;
+export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`;
+export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`;
+export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`;
+
+aws ec2 describe-spot-fleet-request-history --spot-fleet-request-id ${fleetId} --start-time `TZ=&quot;America/New_York&quot; date --d &apos;today -10 minutes&apos; &quot;+%FT%TZ&quot;` --event-type instanceChange --query &quot;HistoryRecords[?EventInformation.EventSubType==&apos;launched&apos;].EventInformation.InstanceId&quot; --region us-east-1 &gt; instance_id.txt
+export instanceId=`grep &apos;i-&apos; instance_id.txt  | cut -d &apos;&quot;&apos; -f 2`
+done
+
+echo new instance id ${instanceId}
+
+fi
+
+echo &quot;Annotation in process&quot;;
+sleep 60
+aws sts assume-role --role-arn $arn_role_cnc --role-session-name &quot;annotation-checks&quot; &gt; assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt;
+export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`;
+export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`;
+export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output-$study_id-$consent_group_tag-$chrom_number.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`;
+
+done
+
+if [ $(aws --region=us-east-1 ec2 describe-tags --filters Name=resource-id,Values=&quot;${instanceId}&quot; Name=key,Values=AnnotationComplete --query &quot;Tags[*].Value&quot; | jq .[0]) = &apos;&quot;true&quot;&apos; ]
+then
+echo &apos;Annotation completed successfully&apos;
+export AnnotationDone=true
+else
+echo &apos;Annotation not successful&apos;
+export AnnotationDone=false
+fi
+
+if ($terminate_on_completion)
+then
+aws ec2 cancel-spot-fleet-requests --region us-east-1 --spot-fleet-request-ids ${fleetId} --terminate-instances || echo &apos;could not terminate&apos;
+fi
+
 unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY
-unset AWS_SESSION_TOKEN</command>
+unset AWS_SESSION_TOKEN
+if [ ${AnnotationDone} = false ]
+then
+exit 44
+fi</command>
       <configuredLocalRules/>
+      <unstableReturn>44</unstableReturn>
     </hudson.tasks.Shell>
   </builders>
-  <publishers/>
+  <publishers>
+    <hudson.plugins.emailext.ExtendedEmailPublisher plugin="email-ext@2.92">
+      <recipientList>sharra_neely@hms.harvard.edu</recipientList>
+      <configuredTriggers>
+        <hudson.plugins.emailext.plugins.trigger.UnstableTrigger>
+          <email>
+            <subject>$PROJECT_DEFAULT_SUBJECT</subject>
+            <body>$PROJECT_DEFAULT_CONTENT</body>
+            <recipientProviders>
+              <hudson.plugins.emailext.plugins.recipients.ListRecipientProvider/>
+            </recipientProviders>
+            <attachmentsPattern></attachmentsPattern>
+            <attachBuildLog>false</attachBuildLog>
+            <compressBuildLog>false</compressBuildLog>
+            <replyTo>$PROJECT_DEFAULT_REPLYTO</replyTo>
+            <contentType>project</contentType>
+          </email>
+        </hudson.plugins.emailext.plugins.trigger.UnstableTrigger>
+      </configuredTriggers>
+      <contentType>default</contentType>
+      <defaultSubject>VEP failure on $study_id group $study_consent_group chromosome $chrom_number</defaultSubject>
+      <defaultContent>$DEFAULT_CONTENT</defaultContent>
+      <attachmentsPattern></attachmentsPattern>
+      <presendScript>$DEFAULT_PRESEND_SCRIPT</presendScript>
+      <postsendScript>$DEFAULT_POSTSEND_SCRIPT</postsendScript>
+      <attachBuildLog>false</attachBuildLog>
+      <compressBuildLog>false</compressBuildLog>
+      <replyTo>$DEFAULT_REPLYTO</replyTo>
+      <from></from>
+      <saveOutput>false</saveOutput>
+      <disabled>false</disabled>
+    </hudson.plugins.emailext.ExtendedEmailPublisher>
+  </publishers>
   <buildWrappers/>
 </project>

@@ -8,17 +8,17 @@
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
           <name>infrastructure_git_hash</name>
-          <defaultValue>08d7a3d49679b5f96282b93fa3f39c1d0394f316</defaultValue>
+          <defaultValue>eeca6083f7923a38ba0891b6e3b9525b07757289</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>study_id</name>
-          <defaultValue>phs0000</defaultValue>
+          <defaultValue>phs001412</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>consent_group_tag</name>
-          <defaultValue>.c1</defaultValue>
+          <defaultValue>.c2</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
@@ -28,7 +28,7 @@
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>study_name</name>
-          <defaultValue>SAMPLE</defaultValue>
+          <defaultValue>DHS</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
