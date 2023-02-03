@@ -1,13 +1,10 @@
 <?xml version='1.1' encoding='UTF-8'?>
-<scriptApproval plugin="script-security@1131.v8b_b_5eda_c328e">
-  <approvedScriptHashes>
-    <string>017d0db438428731cd600b6ebda805065433520f</string>
+<scriptApproval plugin="script-security@1229.v4880b_b_e905a_6">
+<approvedScriptHashes>
     <string>06a421bb34e0e8aa45d8402eab04e6e54e46f913</string>
     <string>06b6d44b82898dcd0960934aea3f4d5eae271fc5</string>
     <string>111a0660bd7c615e97a4b6114a6e6a3048a6ab9a</string>
     <string>1e85783c7377f7012394a563d520e4fbebc0511f</string>
-    <string>28051170b27f1584e04a00030a465f1bd4fbceb4</string>
-    <string>29e61b5ee7c9114091e46e3570618e0104d5cfc6</string>
     <string>322c8d131432ddc7d8da24362c1e9fbd98209def</string>
     <string>41c82a6a8c829d8c2826c2ee9e675231938c91c9</string>
     <string>4562d484eec17bbf6c1a4c2dfb9e75c76db75188</string>
@@ -22,6 +19,11 @@
     <string>9061fb0b398bac834e90acac342c71b75fd5e9b3</string>
     <string>90be77cc74f11f2305ec7704d3c7955b7c1655a2</string>
     <string>957483cc50331b1e2d9142b85015c60ee59085c0</string>
+    <string>SHA512:14c2cd1c2ef413bbc482426e3ec4bb1a2a4c466a82f64fe96d985704d6327813d0e5afc13d16c4b20be990464bb05d38e3d70234aa8b5ea7596198b11df003ab</string>
+    <string>SHA512:1e3e7dd054b193d5e029565fe68e1030c7d339512d686f120b89913d99c86e1ad87c638b1d1b3956b2189456b2a492f53e3b7a8dd440902e6ed5f3be053bbf99</string>
+    <string>SHA512:3f205299bef2fe3329258a42f2c60d332cc35ccb41a3ca0512d7869c6aff4561ff708c48123b4f7c3dec33ccca30d54fb8b9b51b5bc7070f96236d11a3f0bdcb</string>
+    <string>SHA512:b56a7810babfb5328a4adb37c2459723dc632d8d59ac0f829273d62b521019164a70cbb2b48e54fb26de62b8c1ec94d5a9731abcea4cd48493fcb972a581a61e</string>
+    <string>SHA512:d1a422ef19f95e8c6f81b8b0f4c90d988d3e24a0833acb2bb71f103a912f7e1d66203367571bda4283470da26d0a62fba8d60d3fb23ee9304a457892dbf5b919</string>
     <string>adb6d9d969156a0e0d503c00f76271c44e185346</string>
     <string>adce500d4a52fb0b5edb0f93c5c0e26ccca0b4d9</string>
     <string>bf65c48f68235f3efd5c76b56406453d8655fdd9</string>
@@ -31,7 +33,6 @@
     <string>e5ad22ea5934b94ba902974b1677e7d2250594d7</string>
     <string>f93e9f39bdff626b3aa2c9e76c74fe1341f46f44</string>
     <string>fb10b1b30d59d5087570a5af06b603a62fde9408</string>
-  </approvedScriptHashes>
   <approvedSignatures>
     <string>method groovy.json.JsonOutput toJson java.util.Map</string>
     <string>method groovy.json.JsonSlurper parse java.io.File</string>
