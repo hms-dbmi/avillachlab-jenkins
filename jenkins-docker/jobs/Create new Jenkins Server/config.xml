@@ -60,7 +60,7 @@
     </userRemoteConfigs>
     <branches>
       <hudson.plugins.git.BranchSpec>
-        <name>*/master</name>
+        <name>*/dev_deployment</name>
       </hudson.plugins.git.BranchSpec>
     </branches>
     <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
@@ -99,8 +99,8 @@ while [ -z $(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters &
 jenkins_ip_addr=`terraform state show aws_instance.dev-jenkins | grep private_ip | cut -f 2 -d &quot;=&quot; | sed &apos;s/\&quot;//g&apos; | sed &apos;s/ //g&apos; | grep &apos;172.36&apos;`
 
 # update security group for jenkins access
-aws ec2 --region=us-east-1 authorize-security-group-ingress --group-id sg-0ab37675f33775da8 --ip-permissions IpProtocol=tcp,FromPort=443,ToPort=443,IpRanges=[{CidrIp=${jenkins_ip_addr}/32}]
-aws ec2 --region=us-east-1 update-security-group-rule-descriptions-ingress --group-id sg-0ab37675f33775da8 --ip-permissions IpProtocol=tcp,FromPort=443,ToPort=443,IpRanges=[{CidrIp=${jenkins_ip_addr}/32,Description="Allow Jenkins"}]
+# aws ec2 --region=us-east-1 authorize-security-group-ingress --group-id sg-0ab37675f33775da8 --ip-permissions IpProtocol=tcp,FromPort=443,ToPort=443,IpRanges=[{CidrIp=${jenkins_ip_addr}/32}]
+# aws ec2 --region=us-east-1 update-security-group-rule-descriptions-ingress --group-id sg-0ab37675f33775da8 --ip-permissions IpProtocol=tcp,FromPort=443,ToPort=443,IpRanges=[{CidrIp=${jenkins_ip_addr}/32,Description="Allow Jenkins"}]
 
 echo &quot;http://$jenkins_ip_addr&quot;</command>
     </hudson.tasks.Shell>
