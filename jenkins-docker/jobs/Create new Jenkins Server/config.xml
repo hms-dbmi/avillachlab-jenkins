@@ -15,13 +15,13 @@
         <hudson.model.StringParameterDefinition>
           <name>stack_id</name>
           <description></description>
-          <defaultValue></defaultValue>
+          <defaultValue>dev</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>subnet_id</name>
           <description></description>
-          <defaultValue>subnet-002719488d0e4f10d</defaultValue>
+          <defaultValue>subnet-0ccc49f6af09a9678</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
@@ -33,19 +33,19 @@
         <hudson.model.StringParameterDefinition>
           <name>access_cidr</name>
           <description></description>
-          <defaultValue>172.24.0.68/32</defaultValue>
+          <defaultValue>192.168.40.0/23</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>vpc_id</name>
           <description></description>
-          <defaultValue>vpc-07fdd0533a5ec2e35</defaultValue>
+          <defaultValue>vpc-0fd667bb666d1c670</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>provisioning_cidr</name>
           <description></description>
-          <defaultValue>172.36.0.0/25</defaultValue>
+          <defaultValue>172.39.0.0/25</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
