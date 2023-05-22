@@ -7,64 +7,47 @@
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
-          <name>stack_s3_bucket</name>
-          <description></description>
-          <defaultValue></defaultValue>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>stack_id</name>
-          <description></description>
-          <defaultValue></defaultValue>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
           <name>subnet_id</name>
-          <description></description>
-          <defaultValue>subnet-002719488d0e4f10d</defaultValue>
+          <defaultValue>subnet-0ccc49f6af09a9678</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>instance_profile_name</name>
-          <description></description>
           <defaultValue>jenkins-s3-profile</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>access_cidr</name>
-          <description></description>
-          <defaultValue>172.24.0.68/32</defaultValue>
+          <defaultValue>192.168.40.0/23</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>vpc_id</name>
-          <description></description>
-          <defaultValue>vpc-07fdd0533a5ec2e35</defaultValue>
+          <defaultValue>vpc-0fd667bb666d1c670</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>provisioning_cidr</name>
-          <description></description>
-          <defaultValue>172.36.0.0/25</defaultValue>
+          <defaultValue>172.39.0.0/25</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.1.1">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.0.0">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
-        <url>https://${git_base_url}/avillachlab-jenkins.git</url>
+        <url>https://${jenkins_git_base_url}/avillachlab-jenkins.git</url>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
       <hudson.plugins.git.BranchSpec>
-        <name>*/master</name>
+        <name>${jenkins_git_hash}</name>
       </hudson.plugins.git.BranchSpec>
     </branches>
     <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
-    <submoduleCfg class="list"/>
+    <submoduleCfg class="empty-list"/>
     <extensions/>
   </scm>
   <canRoam>true</canRoam>
@@ -82,11 +65,19 @@ terraform apply -auto-approve \
 -var &quot;git-commit=`echo ${GIT_COMMIT} |cut -c1-7`&quot; \
 -var &quot;stack-s3-bucket=${stack_s3_bucket}&quot; \
 -var &quot;stack-id=${stack_id}&quot; \
--var &quot;subnet-id=${subnet_id}&quot; \
--var &quot;vpc-id=${vpc_id}&quot; \
--var &quot;instance-profile-name=${instance_profile_name}&quot; \
--var &quot;access-cidr=${access_cidr}&quot; \
--var &quot;provisioning-cidr=${provisioning_cidr}&quot;
+-var &quot;jenkins-subnet-id=${jenkins_subnet_id}&quot; \
+-var &quot;jenkins-vpc-id=${jenkins_vpc_id}&quot; \
+-var &quot;jenkins-instance-profile-name=${jenkins_instance_profile_name}&quot; \
+-var &quot;jenkins-sg-ingress-http-cidr-blocks=${jenkins_sg_ingress_http_cidr_blocks}&quot; \
+-var &quot;jenkins-sg-ingress-https-cidr-blocks=${jenkins_sg_ingress_https_cidr_blocks}&quot; \
+-var &quot;jenkins-sg-ingress-ssh-cidr-blocks=${jenkins_sg_ingress_ssh_cidr_blocks}&quot; \
+-var &quot;ami-id=${ami_id}&quot; \
+-var &quot;dsm-url=${dsm_url}&quot; \
+-var &quot;jenkins-config-s3-location=${jenkins_config_s3_location}&quot;
+
+# removing
+#-var &quot;access-cidr=${access_cidr}&quot; \
+#-var &quot;provisioning-cidr=${provisioning_cidr}&quot;
 
 aws s3 --sse=AES256 cp terraform.tfstate s3://${stack_s3_bucket}/jenkins_state/jenkins_${GIT_COMMIT}/terraform.tfstate
 aws s3 --sse=AES256 cp env.txt s3://${stack_s3_bucket}/jenkins_state/jenkins_${GIT_COMMIT}/last_env.txt
@@ -96,13 +87,14 @@ INSTANCE_ID=`terraform state show aws_instance.dev-jenkins | grep &quot;\&quot;i
 while [ -z $(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do echo &quot;still initializing&quot;;sleep 10;done
 
 # get Jenkins IP
-jenkins_ip_addr=`terraform state show aws_instance.dev-jenkins | grep private_ip | cut -f 2 -d &quot;=&quot; | sed &apos;s/\&quot;//g&apos; | sed &apos;s/ //g&apos; | grep &apos;172.36&apos;`
+jenkins_ip_addr=`terraform state show aws_instance.dev-jenkins | grep private_ip | cut -f 2 -d &quot;=&quot; | sed &apos;s/\&quot;//g&apos; | sed &apos;s/ //g&apos; | grep &apos;172.39&apos;`
 
 # update security group for jenkins access
-aws ec2 --region=us-east-1 authorize-security-group-ingress --group-id sg-0ab37675f33775da8 --ip-permissions IpProtocol=tcp,FromPort=443,ToPort=443,IpRanges=[{CidrIp=${jenkins_ip_addr}/32}]
-aws ec2 --region=us-east-1 update-security-group-rule-descriptions-ingress --group-id sg-0ab37675f33775da8 --ip-permissions IpProtocol=tcp,FromPort=443,ToPort=443,IpRanges=[{CidrIp=${jenkins_ip_addr}/32,Description="Allow Jenkins"}]
+# aws ec2 --region=us-east-1 authorize-security-group-ingress --group-id sg-0ab37675f33775da8 --ip-permissions IpProtocol=tcp,FromPort=443,ToPort=443,IpRanges=[{CidrIp=${jenkins_ip_addr}/32}]
+# aws ec2 --region=us-east-1 update-security-group-rule-descriptions-ingress --group-id sg-0ab37675f33775da8 --ip-permissions IpProtocol=tcp,FromPort=443,ToPort=443,IpRanges=[{CidrIp=${jenkins_ip_addr}/32,Description=&quot;Allow Jenkins&quot;}]
 
 echo &quot;http://$jenkins_ip_addr&quot;</command>
+      <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
   <publishers/>

@@ -16,6 +16,8 @@ data "template_file" "jenkins-user_data" {
   vars = {
     stack_s3_bucket = var.stack-s3-bucket
     stack_id = var.stack-id
+    dsm-url = var.dsm-url
+    jenkins-config-s3-location = var.jenkins-config-s3-location
   }
 }
 
@@ -31,12 +33,12 @@ data "template_cloudinit_config" "config" {
 }
 
 resource "aws_instance" "dev-jenkins" {
-  ami = "ami-09b3185489372894d"
+  ami = "var.ami-id"
   instance_type = "m5.2xlarge"
   associate_public_ip_address = false
   key_name = aws_key_pair.generated_key.key_name
 
-  iam_instance_profile = var.instance-profile-name
+  iam_instance_profile = var.jenkins-instance-profile-name
 
   root_block_device {
     delete_on_termination = true
@@ -60,7 +62,7 @@ resource "aws_instance" "dev-jenkins" {
     aws_security_group.outbound-jenkins-to-internet.id
   ]
 
-  subnet_id = var.subnet-id
+  subnet_id = var.jenkins-subnet-id
 
   tags = {
     Owner       = "Avillach_Lab"

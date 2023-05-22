@@ -166,7 +166,7 @@
           <default>
             <comparator class="hudson.util.CaseInsensitiveComparator"/>
           </default>
-          <int>4</int>
+          <int>6</int>
           <string>stack_s3_bucket</string>
           <string>avillach-biodatacatalyst-deployments-b7rwpwv</string>
           <string>git_base_url</string>
@@ -174,6 +174,10 @@
           <string>cnc_acct_id</string>
           <string></string>
           <string>app_acct_id</string>
+          <string></string>
+          <string>ami-id</string>
+          <string></string>
+          <string>jenkins-dsm-url</string>
           <string></string>
         </tree-map>
       </envVars>
