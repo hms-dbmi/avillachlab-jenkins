@@ -1,8 +1,8 @@
 <?xml version='1.1' encoding='UTF-8'?>
-<flow-definition plugin="workflow-job@2.36">
+<flow-definition plugin="workflow-job@1295.v395eb_7400005">
   <actions>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@1.5.1"/>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@1.5.1">
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2131.vb_9788088fdb_5"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2131.vb_9788088fdb_5">
       <jobProperties/>
       <triggers/>
       <parameters/>
@@ -16,32 +16,24 @@
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
           <name>deployment_git_hash</name>
-          <description></description>
-          <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>dataset_s3_object_key</name>
-          <description></description>
-          <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
-         <hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
           <name>destigmatized_dataset_s3_object_key</name>
-          <description></description>
-          <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>genomic_dataset_s3_object_key</name>
-          <description></description>
-          <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.78">
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3659.v582dc37621d8">
     <script>import groovy.json.JsonSlurper;
 
 def retrieveDepStateId
@@ -103,7 +95,7 @@ pipeline {
         stage(&apos;Await Initialization&apos;) {
             steps {
                 script {
-                    def result = build job: &apos;Await Initialization&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack], [$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash]]
+                    def result = build job: &apos;Await Initialization&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack], [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: infrastructure_git_hash]]
                 }
             }
         }

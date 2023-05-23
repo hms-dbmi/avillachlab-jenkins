@@ -8,29 +8,26 @@
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
           <name>dictionary_s3_key</name>
-          <description></description>
-          <defaultValue></defaultValue>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>pipeline_build_id</name>
           <description>the githash of the release control for the current release</description>
-          <defaultValue></defaultValue>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.7.1">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.0.2">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
-        <url>https://${git_base_url}/avillachlab-jenkins-dev-release-control.git</url>
+        <url>${release_control_git_repo}</url>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
       <hudson.plugins.git.BranchSpec>
-        <name>*/master</name>
+        <name>${release_control_git_hash}</name>
       </hudson.plugins.git.BranchSpec>
     </branches>
     <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
@@ -68,7 +65,7 @@ aws s3 --sse=AES256 cp dictionary.javabin.tar.gz s3://${stack_s3_bucket}/data/${
   </builders>
   <publishers/>
   <buildWrappers>
-    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.39">
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.45">
       <deleteDirs>false</deleteDirs>
       <cleanupParameter></cleanupParameter>
       <externalDelete></externalDelete>

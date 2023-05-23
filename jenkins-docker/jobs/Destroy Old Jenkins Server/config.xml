@@ -8,69 +8,58 @@
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
           <name>stack_s3_bucket</name>
-          <description></description>
-          <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>stack_id</name>
-          <description></description>
-          <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>subnet_id</name>
-          <description></description>
           <defaultValue>subnet-002719488d0e4f10d</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>instance_profile_name</name>
-          <description></description>
           <defaultValue>jenkins-s3-profile</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>access_cidr</name>
-          <description></description>
           <defaultValue>172.24.0.68/32</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>vpc_id</name>
-          <description></description>
           <defaultValue>vpc-07fdd0533a5ec2e35</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>provisioning_cidr</name>
-          <description></description>
           <defaultValue>172.36.0.0/25</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>jenkins_githash_to_destroy</name>
-          <description></description>
-          <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.1.1">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.0.2">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
-        <url>https://${git_base_url}/avillachlab-jenkins.git</url>
+        <url>${jenkins_git_repo}</url>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
       <hudson.plugins.git.BranchSpec>
-        <name>*/master</name>
+        <name>${jenkins_git_hash}</name>
       </hudson.plugins.git.BranchSpec>
     </branches>
     <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
-    <submoduleCfg class="list"/>
+    <submoduleCfg class="empty-list"/>
     <extensions/>
   </scm>
   <canRoam>true</canRoam>
@@ -107,6 +96,7 @@ aws s3 --sse=AES256 cp env.txt s3://${stack_s3_bucket}/jenkins_state/jenkins_${j
 
 
 </command>
+      <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
   <publishers/>
