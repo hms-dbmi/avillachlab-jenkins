@@ -257,7 +257,7 @@ echo "
 sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/etc/custom_config.json  -s
 
 # Trend Mirco
-echo '172.25.255.76 dsm.datastage.hms.harvard.edu' | sudo tee -a /etc/hosts
+echo '172.25.255.76 ${dsm-url}' | sudo tee -a /etc/hosts
 ACTIVATIONURL='dsm://${dsm-url}:4120/'
 MANAGERURL='https://${dsm-url}:443'
 CURLOPTIONS='--silent --tlsv1.2'
