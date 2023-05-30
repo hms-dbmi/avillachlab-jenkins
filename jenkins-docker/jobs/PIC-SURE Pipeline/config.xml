@@ -1,8 +1,8 @@
 <?xml version='1.1' encoding='UTF-8'?>
-<flow-definition plugin="workflow-job@2.36">
+<flow-definition plugin="workflow-job@1145.v7f2433caa07f">
   <actions>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@1.5.1"/>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@1.5.1">
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@1.9.3"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@1.9.3">
       <jobProperties/>
       <triggers/>
       <parameters/>
@@ -11,13 +11,19 @@
   </actions>
   <description></description>
   <keepDependencies>false</keepDependencies>
-  <properties/>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.78">
+  <properties>
+    <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@1.34">
+      <autoRebuild>false</autoRebuild>
+      <rebuildDisabled>false</rebuildDisabled>
+    </com.sonyericsson.rebuild.RebuildSettings>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2656.vf7a_e7b_75a_457">
     <script>import groovy.json.JsonSlurper;
 
 def retrieveBuildSpecId;
 def pipelineBuildId;
 def build_hashes = {};
+def source_dictionary_s3_object_key;
 pipeline {
     agent any 
     stages {
@@ -37,6 +43,7 @@ pipeline {
                     for(def build : buildSpec.application){
                         build_hashes[build.project_job_git_key] = build.git_hash
                     }
+                    source_dictionary_s3_object_key = buildSpec.source_dictionary_s3_object_key
                 }
             }
         }
@@ -72,16 +79,17 @@ pipeline {
                )
             }
         }
-        stage(&apos;PIC-SURE Dictionary and Visualization image builds&apos;){
+        stage(&apos;PIC-SURE Dictionary and  image builds and data import&apos;){
             steps {
                 script {
-                    build job: &apos;PIC-SURE-HPDS-DICTIONARY Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSS&apos;]]]
-                    build job: &apos;PIC-SURE-HPDS-DICTIONARY-RESOURCE Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;destination_bucket_hash&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSS&apos;]]]
-                    build job: &apos;PIC-SURE-VISUALIZATION Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSV&apos;]]]
+                    //build job: &apos;PIC-SURE-HPDS-DICTIONARY Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSS&apos;]]]
+                    // remove the IMPORT_HPDS_DICTIONARY_DATA does not need to run during deployment
+                    //build job: &apos;IMPORT_HPDS_DICTIONARY_DATA&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;destination_bucket_hash&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId]]
+                    build job: &apos;PIC-SURE-HPDS-DICTIONARY-RESOURCE Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;source_dictionary_s3_object_key&apos;, value: source_dictionary_s3_object_key],[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSS&apos;]]]
                 }
             }
         }
-        stage(&apos;Wildfly Build and UI Customization&apos;){
+        stage(&apos;Wildfly Build and UI Customization&apos;) {
             steps {
                 parallel (
                     wildfly:{

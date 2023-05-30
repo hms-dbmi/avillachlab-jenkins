@@ -1,8 +1,8 @@
 <?xml version='1.1' encoding='UTF-8'?>
-<flow-definition plugin="workflow-job@2.36">
+<flow-definition plugin="workflow-job@1145.v7f2433caa07f">
   <actions>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@1.5.1"/>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@1.5.1">
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@1.9.3"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@1.9.3">
       <jobProperties/>
       <triggers/>
       <parameters/>
@@ -16,40 +16,36 @@
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
           <name>deployment_git_hash</name>
-          <description></description>
-          <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>dataset_s3_object_key</name>
-          <description></description>
-          <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
-         <hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
           <name>destigmatized_dataset_s3_object_key</name>
-          <description></description>
-          <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>genomic_dataset_s3_object_key</name>
-          <description></description>
-          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>source_dictionary_s3_object_key</name>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.78">
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2656.vf7a_e7b_75a_457">
     <script>import groovy.json.JsonSlurper;
 
 def retrieveDepStateId
 def stacksJson
 def ami_id
+def __unused__dataset_s3_object_key
 def target_stack
 def infrastructure_git_hash
-
 pipeline {
     agent any 
     stages {
@@ -67,8 +63,10 @@ pipeline {
                     def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/Deployment Pipeline/build-spec.json&apos;))
                     println(buildSpec)
                     ami_id = buildSpec.terraform_vars[0].ami_id
+                    __unused__dataset_s3_object_key = buildSpec.terraform_vars[0].dataset_s3_object_key
                     infrastructure_git_hash = buildSpec.infrastructure_git_hash
                     println(&quot;AMI : &quot; + ami_id)
+                    println(&quot;__unused__DATASET : &quot; + __unused__dataset_s3_object_key)
                 }
             }
         }
@@ -89,7 +87,7 @@ pipeline {
             steps {
                 script {
                     target_stack = new JsonSlurper().parseText(stacksJson).environments.next_prod
-                    def result = build job: &apos;Teardown and Rebuild Stage Environment&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;ami_id&apos;, value: ami_id], [$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack], [$class: &apos;StringParameterValue&apos;, name: &apos;dataset_s3_object_key&apos;, value: env.dataset_s3_object_key], [$class: &apos;StringParameterValue&apos;, name: &apos;destigmatized_dataset_s3_object_key&apos;, value: env.destigmatized_dataset_s3_object_key], [$class: &apos;StringParameterValue&apos;, name: &apos;genomic_dataset_s3_object_key&apos;, value: env.genomic_dataset_s3_object_key], [$class: &apos;StringParameterValue&apos;, name: &apos;deployment_git_hash&apos;, value: env.deployment_git_hash], [$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash]]
+                    def result = build job: &apos;Teardown and Rebuild Stage Environment&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash],[$class: &apos;StringParameterValue&apos;, name: &apos;ami_id&apos;, value: ami_id],[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack],[$class: &apos;StringParameterValue&apos;, name: &apos;dataset_s3_object_key&apos;, value: env.dataset_s3_object_key],[$class: &apos;StringParameterValue&apos;, name: &apos;destigmatized_dataset_s3_object_key&apos;, value: env.destigmatized_dataset_s3_object_key],[$class: &apos;StringParameterValue&apos;, name: &apos;genomic_dataset_s3_object_key&apos;, value: env.genomic_dataset_s3_object_key],[$class: &apos;StringParameterValue&apos;, name: &apos;deployment_git_hash&apos;, value: env.deployment_git_hash],[$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash],[$class: &apos;StringParameterValue&apos;, name: &apos;source_dictionary_s3_object_key&apos;, value: env.source_dictionary_s3_object_key]]
                 }
             }
         }
@@ -103,7 +101,7 @@ pipeline {
         stage(&apos;Await Initialization&apos;) {
             steps {
                 script {
-                    def result = build job: &apos;Await Initialization&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack], [$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash]]
+                    def result = build job: &apos;Await Initialization&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack],[$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash]]
                 }
             }
         }

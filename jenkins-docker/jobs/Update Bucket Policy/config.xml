@@ -1,8 +1,8 @@
 <?xml version='1.1' encoding='UTF-8'?>
-<flow-definition plugin="workflow-job@2.36">
+<flow-definition plugin="workflow-job@1145.v7f2433caa07f">
   <actions>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@1.5.0"/>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@1.5.0">
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@1.9.3"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@1.9.3">
       <jobProperties/>
       <triggers/>
       <parameters/>
@@ -16,20 +16,16 @@
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
           <name>target_stack</name>
-          <description></description>
-          <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>stack_githash</name>
-          <description></description>
-          <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.78">
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2656.vf7a_e7b_75a_457">
     <script>import groovy.json.JsonSlurper;
 import groovy.json.JsonOutput;
 
@@ -53,12 +49,12 @@ pipeline {
                         }
                     }
                     bucket_policy.Statement.removeAll(statements_to_remove)
-                    bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-open-hpds\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::${app_acct_id}:role/open-hpds-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
-                    bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-auth-hpds\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::${app_acct_id}:role/auth-hpds-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
-                    bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-wildfly\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::${app_acct_id}:role/wildfly-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
-                    bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-httpd\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::${app_acct_id}:role/httpd-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
-                    bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-dictionary\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::${app_acct_id}:role/dictionary-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
-                    bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-visualization\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::${app_acct_id}:role/visualization-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
+                    bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-open-hpds\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::$aws_account_app:role/open-hpds-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
+                    bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-auth-hpds\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::$aws_account_app:role/auth-hpds-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
+                    bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-wildfly\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::$aws_account_app:role/wildfly-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
+                    bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-httpd\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::$aws_account_app:role/httpd-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
+                    bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-dictionary\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::$aws_account_app:role/dictionary-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
+                    
                     new_policy = new JsonOutput().toJson(bucket_policy)
                    
                 }

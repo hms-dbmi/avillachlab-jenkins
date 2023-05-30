@@ -28,7 +28,8 @@
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
-        <url>https://${git_base_url}/pic-sure-visualization-resource.git</url>
+        <url>https://github.com/hms-dbmi/pic-sure-visualization-resource.git</url>
+        <credentialsId>c1cbb1df-9da8-4f3f-85b9-8de0b9685008</credentialsId>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
@@ -57,7 +58,7 @@
       <injectBuildVariables>false</injectBuildVariables>
     </hudson.tasks.Maven>
     <hudson.tasks.Shell>
-      <command>GIT_BRANCH_SHORT=`echo ${GIT_BRANCH} | cut -d &quot;/&quot; -f 2`
+      <command>GIT_BRANCH_SHORT=`echo ${GIT_BRANCH} | cut -d &quot;/&quot; -f 2` 
 GIT_COMMIT_SHORT=`echo ${GIT_COMMIT} | cut -c1-7`
 cd visualization
 docker build -t hms-dbmi/pic-sure-visualization:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .

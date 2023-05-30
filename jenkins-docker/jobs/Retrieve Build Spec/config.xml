@@ -3,7 +3,7 @@
   <actions/>
   <description></description>
   <keepDependencies>false</keepDependencies>
-   <properties>
+  <properties>
     <hudson.plugins.copyartifact.CopyArtifactPermissionProperty plugin="copyartifact@1.45.3">
       <projectNameList>
         <string>*</string>
@@ -14,12 +14,12 @@
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
-        <url>https://${git_base_url}/avillachlab-jenkins-dev-release-control.git</url>
+        <url>$avillachlab_release_control_repo</url>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
       <hudson.plugins.git.BranchSpec>
-        <name>*/master</name>
+        <name>$git_branch_avillachlab_jenkins_dev_release_control</name>
       </hudson.plugins.git.BranchSpec>
     </branches>
     <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>

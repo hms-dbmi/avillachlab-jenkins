@@ -4,64 +4,58 @@
   <description></description>
   <keepDependencies>false</keepDependencies>
   <properties>
+    <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@1.34">
+      <autoRebuild>false</autoRebuild>
+      <rebuildDisabled>false</rebuildDisabled>
+    </com.sonyericsson.rebuild.RebuildSettings>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
           <name>target_stack</name>
-          <description></description>
-          <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>deployment_git_hash</name>
-          <description></description>
-          <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>ROLE_ARN</name>
-          <description></description>
-          <defaultValue>arn:aws:iam::${app_acct_id}:role/hms-dbmi-cnc-role</defaultValue>
+          <defaultValue>$arn_role_app</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>dataset_s3_object_key</name>
-          <description></description>
-          <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>destigmatized_dataset_s3_object_key</name>
-          <description></description>
-          <defaultValue></defaultValue>
+          <description>points to the rekeyed javabins that have been stripped of stigmatizing variables</description>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>genomic_dataset_s3_object_key</name>
-          <description></description>
-          <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>ami_id</name>
-          <description></description>
-          <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>infrastructure_git_hash</name>
-          <description></description>
-          <defaultValue></defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>source_dictionary_s3_object_key</name>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.1.1">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.10.3">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
-        <url>https://${git_base_url}/avillachlab-secure-infrastructure</url>
+        <url>https://github.com/hms-dbmi/avillachlab-secure-infrastructure</url>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
@@ -70,7 +64,7 @@
       </hudson.plugins.git.BranchSpec>
     </branches>
     <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
-    <submoduleCfg class="list"/>
+    <submoduleCfg class="empty-list"/>
     <extensions/>
   </scm>
   <canRoam>true</canRoam>
@@ -84,7 +78,7 @@
       <command>cd app-infrastructure
 wget https://releases.hashicorp.com/terraform/0.12.31/terraform_0.12.31_linux_amd64.zip &amp;&amp; unzip terraform_0.12.31_linux_amd64.zip &amp;&amp; mv terraform /usr/local/bin/
 
-aws sts assume-role --duration-seconds 900 --role-arn &quot;arn:aws:iam::${cnc_acct_id}:role/system/jenkins-s3-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
+aws sts assume-role --duration-seconds 900 --role-arn $arn_role_cnc --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
 
 export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
@@ -101,7 +95,7 @@ unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY
 unset AWS_SESSION_TOKEN
 
-aws sts assume-role --duration-seconds 900 --role-arn &quot;arn:aws:iam::${app_acct_id}:role/hms-dbmi-cnc-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
+aws sts assume-role --duration-seconds 900 --role-arn $arn_role_app --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
 
 export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
@@ -109,18 +103,13 @@ export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apo
 
 cd ../s3-deployment-roles
 terraform init
-terraform destroy -auto-approve -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot; -var=&quot;destigmatized-dataset-s3-object-key=${destigmatized_dataset_s3_object_key}&quot; -var=&quot;genomic-dataset-s3-object-key=${genomic_dataset_s3_object_key}&quot;  -var=&quot;target-stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
-terraform apply -auto-approve -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot;  -var=&quot;destigmatized-dataset-s3-object-key=${destigmatized_dataset_s3_object_key}&quot; -var=&quot;genomic-dataset-s3-object-key=${genomic_dataset_s3_object_key}&quot; -var=&quot;target-stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
+terraform destroy -auto-approve -var=&quot;source_dictionary_s3_object_key=${source_dictionary_s3_object_key}&quot; -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot; -var=&quot;destigmatized-dataset-s3-object-key=${destigmatized_dataset_s3_object_key}&quot; -var=&quot;genomic-dataset-s3-object-key=${genomic_dataset_s3_object_key}&quot;  -var=&quot;target-stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
+terraform apply -auto-approve -var=&quot;source_dictionary_s3_object_key=${source_dictionary_s3_object_key}&quot; -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot;  -var=&quot;destigmatized-dataset-s3-object-key=${destigmatized_dataset_s3_object_key}&quot; -var=&quot;genomic-dataset-s3-object-key=${genomic_dataset_s3_object_key}&quot; -var=&quot;target-stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
 
 cd ../app-infrastructure
-
-#uncomment for dev systems
-#sed -i -r &apos;s/(\$\{target-stack\})/\1.dev/&apos; configs/* scripts/*
-
 terraform init
-terraform destroy -auto-approve -var=&quot;ami-id=${ami_id}&quot; -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot;  -var=&quot;destigmatized-dataset-s3-object-key=${destigmatized_dataset_s3_object_key}&quot;  -var=&quot;genomic-dataset-s3-object-key=${genomic_dataset_s3_object_key}&quot; -var=&quot;target-stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
-terraform apply -auto-approve -var=&quot;ami-id=${ami_id}&quot; -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot;  -var=&quot;destigmatized-dataset-s3-object-key=${destigmatized_dataset_s3_object_key}&quot;  -var=&quot;genomic-dataset-s3-object-key=${genomic_dataset_s3_object_key}&quot; -var=&quot;target-stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
-
+terraform destroy -auto-approve -var=&quot;source_dictionary_s3_object_key=${source_dictionary_s3_object_key}&quot; -var=&quot;ami-id=${ami_id}&quot; -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot;  -var=&quot;destigmatized-dataset-s3-object-key=${destigmatized_dataset_s3_object_key}&quot; -var=&quot;genomic-dataset-s3-object-key=${genomic_dataset_s3_object_key}&quot; -var=&quot;target-stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
+terraform apply -auto-approve -var=&quot;source_dictionary_s3_object_key=${source_dictionary_s3_object_key}&quot; -var=&quot;ami-id=${ami_id}&quot; -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot;  -var=&quot;destigmatized-dataset-s3-object-key=${destigmatized_dataset_s3_object_key}&quot; -var=&quot;genomic-dataset-s3-object-key=${genomic_dataset_s3_object_key}&quot; -var=&quot;target-stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
 
 echo &quot;
 {
@@ -188,18 +177,6 @@ echo &quot;
     },{
       \&quot;Action\&quot;: \&quot;UPSERT\&quot;,
       \&quot;ResourceRecordSet\&quot;: {
-        \&quot;Name\&quot;: \&quot;visualization.${target_stack}.datastage.hms.harvard.edu\&quot;,
-        \&quot;Type\&quot;: \&quot;A\&quot;,
-        \&quot;TTL\&quot;: 60,
-        \&quot;ResourceRecords\&quot;: [
-          {
-            \&quot;Value\&quot;: \&quot;$(grep visualization-ec2-private_ip ip-vars.properties | cut -d &quot;=&quot; -f 2)\&quot;
-          }
-        ]
-      }
-    },{
-      \&quot;Action\&quot;: \&quot;UPSERT\&quot;,
-      \&quot;ResourceRecordSet\&quot;: {
         \&quot;Name\&quot;: \&quot;picsure-db.${target_stack}.datastage.hms.harvard.edu\&quot;,
         \&quot;Type\&quot;: \&quot;CNAME\&quot;,
         \&quot;TTL\&quot;: 60,
@@ -217,12 +194,11 @@ echo &quot;
 &quot; &gt; route-53-records.json
 aws route53 change-resource-record-sets --hosted-zone-id $(grep -A4 &apos;variable &quot;internal-dns-zone-id&apos; subnet_variables.tf  |  grep default | cut -d &quot;\&quot;&quot; -f 2) --change-batch file://route-53-records.json || true
 
-
 unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY
 unset AWS_SESSION_TOKEN
 
-aws sts assume-role --duration-seconds 900 --role-arn &quot;arn:aws:iam::${cnc_acct_id}:role/system/jenkins-s3-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
+aws sts assume-role --duration-seconds 900 --role-arn $arn_role_cnc --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
 
 export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
@@ -230,22 +206,28 @@ export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apo
 
 aws s3 cp terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate 
 aws s3 cp ../s3-deployment-roles/terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate_roles
+
+
 aws s3 --sse=AES256 cp picsureui-settings.json s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/picsureui_settings.json
+#aws s3 --sse=AES256 cp psamaui-settings.json s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/psamaui_settings.json
 aws s3 --sse=AES256 cp standalone.xml s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/standalone.xml
 aws s3 --sse=AES256 cp pic-sure-schema.sql s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/pic-sure-schema.sql
 aws s3 --sse=AES256 cp httpd-vhosts.conf s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/httpd-vhosts.conf
 aws s3 --sse=AES256 cp aggregate-resource.properties s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/aggregate-resource.properties
+aws s3 --sse=AES256 cp visualization-resource.properties s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/visualization-resource.properties
+
 
 
 unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY
 unset AWS_SESSION_TOKEN
 </command>
+      <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
   <publishers/>
   <buildWrappers>
-    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.38">
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.40">
       <deleteDirs>false</deleteDirs>
       <cleanupParameter></cleanupParameter>
       <externalDelete></externalDelete>
