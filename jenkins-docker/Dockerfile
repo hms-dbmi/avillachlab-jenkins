@@ -34,9 +34,9 @@ RUN wget https://downloads.apache.org/maven/maven-3/3.9.2/binaries/apache-maven-
 
 RUN apt-get -y -t stretch-backports install openjdk-11-jdk-headless
 
-RUN tar -xvzf /opt/apache-maven-3.6.3-bin.tar.gz -C /opt
+RUN tar -xvzf /opt/apache-maven-3.9.2-bin.tar.gz -C /opt
 
-RUN rm /opt/apache-maven-3.6.3-bin.tar.gz
+RUN rm /opt/apache-maven-3.9.2-bin.tar.gz
 
 RUN apt-get install jq -y
 
