@@ -257,9 +257,9 @@ echo "
 sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/etc/custom_config.json  -s
 
 # Trend Mirco
-echo '172.25.255.76 ${dsm-url}' | sudo tee -a /etc/hosts
-ACTIVATIONURL='dsm://${dsm-url}:4120/'
-MANAGERURL='https://${dsm-url}:443'
+echo '172.25.255.76 ${dsm_url}' | sudo tee -a /etc/hosts
+ACTIVATIONURL='dsm://${dsm_url}:4120/'
+MANAGERURL='https://${dsm_url}:443'
 CURLOPTIONS='--silent --tlsv1.2'
 linuxPlatform='';
 isRPM='';
@@ -344,7 +344,7 @@ for i in {1..5}; do sudo /usr/local/bin/aws --region us-east-1 s3 cp s3://${stac
 sh /opt/nessus_setup.sh "${stack_s3_bucket}" "CNC_Prod"
 
 # Download Jenkins config file from s3
-for i in {1..5}; do sudo /usr/local/bin/aws --region us-east-1 s3 cp ${jenkins-config-s3-location} /var/jenkins_home/config.xml && break || sleep 45; done
+for i in {1..5}; do sudo /usr/local/bin/aws --region us-east-1 s3 cp ${jenkins_config_s3_location} /var/jenkins_home/config.xml && break || sleep 45; done
 
 # copy ssl cert & key from s3
 for i in {1..5}; do sudo /usr/local/bin/aws --region us-east-1 s3 cp s3://${stack_s3_bucket}/certs/jenkins/jenkins.cer /root/jenkins.cer && break || sleep 45; done
