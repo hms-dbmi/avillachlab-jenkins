@@ -46,6 +46,6 @@ resource "aws_security_group" "outbound-jenkins-to-internet" {
   tags = {
     Owner       = "Avillach_Lab"
     Environment = "development"
-    Name        = "FISMA Terraform Playground - outbound-jenkins-to-internet Security Group - ${var.stack-id}"
+    Name        = "FISMA Terraform Playground - outbound-jenkins-to-internet Security Group - ${var.stack_id}"
   }
 }
