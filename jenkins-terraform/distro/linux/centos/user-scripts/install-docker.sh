@@ -355,7 +355,6 @@ keystore_pass=`echo $RANDOM | md5sum | head -c 20`
 sudo openssl pkcs12 -export -in /root/jenkins.cer -inkey /root/jenkins.key -out /root/jenkins.p12 -password pass:$keystore_pass
 
 #run jenkins docker container
-### $keystore_pass does nothing as it isn't passed by terraform
 sudo docker run -d -v /var/jenkins_home/jobs:/var/jenkins_home/jobs \
                     -v /var/jenkins_home/config.xml:/usr/share/jenkins/ref/config.xml.override \
                     -v /var/jenkins_home/workspace:/var/jenkins_home/workspace \
