@@ -60,10 +60,13 @@ variable "jenkins_ec2_instance_type" {
 variable "jenkins_tf_local_var_OS_dist" {
 	type = string
 	
-	validation {
-	  condition = contains(local.valid_os,var.jenkins_tf_local_var_OS_dist)
-	  error_message = "Unsupported OS Distribution - Check the Terraform accepted valid_os list"
-	}
+	# in terraform .13 variable validations are no longer experimental and is production ready.
+	# use this validations when upgrading to terraform .13
+	# will not implement .12 experimental features
+	#validation {
+	#  condition = contains(local.valid_os,var.jenkins_tf_local_var_OS_dist)
+	#  error_message = "Unsupported OS Distribution - Check the Terraform accepted valid_os list"
+	#}
 }
 
 variable "jenkins_ec2_ebs_volume_size" {
