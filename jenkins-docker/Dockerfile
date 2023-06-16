@@ -1,10 +1,8 @@
 FROM jenkins/jenkins:lts
 
-ARG S3_BUCKET
+ARG JENKINS_DOCKER_MAVEN_DISTRO
 
-ARG jenkins_docker_maven_distro
-
-ARG jenkins_docker_terraform_distro
+ARG JENKINS_DOCKER_TERRAFORM_DISTRO
 
 COPY plugins.txt /usr/share/jenkins/ref/plugins.txt
 
@@ -34,7 +32,7 @@ RUN curl -fsSL https://get.docker.com | sh
 
 RUN docker --version
 
-RUN wget -c $jenkins_docker_maven_distro -O /opt/maven.bin.tar.gz
+RUN wget -c $JENKINS_DOCKER_MAVEN_DISTRO -O /opt/maven.bin.tar.gz
 
 RUN apt-get -y -t stretch-backports install openjdk-11-jdk-headless
 
@@ -50,6 +48,6 @@ RUN apt-get install jq -y
 RUN /bin/jenkins-plugin-cli -f /usr/share/jenkins/ref/plugins.txt || echo "Some errors occurred during plugin installation."
 
 # Should look at using the jenkins terraform plugin instead of what we are doing
-RUN wget -c $jenkins_docker_terraform_distro -O /opt/terraform.zip 
+RUN wget -c $JENKINS_DOCKER_TERRAFORM_DISTRO -O /opt/terraform.zip 
 
 RUN unzip /opt/terraform.zip -d /usr/local/bin/

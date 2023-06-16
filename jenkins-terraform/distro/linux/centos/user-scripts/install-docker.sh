@@ -335,8 +335,8 @@ cp -r jobs/* /var/jenkins_home/jobs/
 
 # Jenkins build using IAC 
 sudo docker build \
-   --build-arg jenkins_docker_maven_binary=${jenkins_docker_maven_distro} \
-   --build-arg jenkins_docker_terraform_distro=${jenkins_docker_terraform_distro} \
+   --build-arg JENKINS_DOCKER_MAVEN_DISTRO=${jenkins_docker_maven_distro} \
+   --build-arg JENKINS_DOCKER_TERRAFORM_DISTRO=${jenkins_docker_terraform_distro} \
    -t ${stack_id}_jenkins .
 
 ## Download and Install Nessus
