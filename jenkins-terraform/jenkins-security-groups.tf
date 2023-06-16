@@ -40,7 +40,7 @@ resource "aws_security_group" "outbound-jenkins-to-internet" {
     from_port = 0
     to_port = 0
     protocol = -1
-    cidr_blocks = var.jenkins_sg_egress_allow_all_cidr_block
+    cidr_blocks = var.jenkins_sg_egress_allow_all_cidr_blocks
   }
 
   tags = {
