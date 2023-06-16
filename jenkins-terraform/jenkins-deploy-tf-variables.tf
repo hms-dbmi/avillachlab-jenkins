@@ -73,7 +73,7 @@ variable "jenkins_ec2_ebs_volume_size" {
 	type = number
 }
 
-variable "jenkins_docker_maven_binary" {
+variable "jenkins_docker_maven_distro" {
     type = string
 }
 
