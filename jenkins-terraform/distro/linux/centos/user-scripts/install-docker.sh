@@ -332,7 +332,12 @@ cd /home/centos/jenkins
 sudo mkdir -p /var/jenkins_home/jobs/
 sudo mkdir -p /var/log/jenkins-docker-logs
 cp -r jobs/* /var/jenkins_home/jobs/
-sudo docker build --build-arg S3_BUCKET=${stack_s3_bucket} -t avillach-lab-dev-jenkins .
+
+# Jenkins build using IAC 
+sudo docker build \
+   --build-arg jenkins_docker_maven_binary=${jenkins_docker_maven_distro} \
+   --build-arg jenkins_docker_terraform_distro=${jenkins_docker_terraform_distro} \
+   -t ${stack_id}_jenkins .
 
 ## Download and Install Nessus
 for i in {1..5}; do sudo /usr/local/bin/aws --region us-east-1 s3 cp s3://${stack_s3_bucket}/nessus_config/setup.sh /opt/nessus_setup.sh && break || sleep 45; done 
@@ -358,7 +363,7 @@ sudo docker run -d -v /var/jenkins_home/jobs:/var/jenkins_home/jobs \
                     -p 443:8443 \
                     --restart always \
                     --name jenkins \
-                    avillach-lab-dev-jenkins \
+                    ${stack_id}-jenkins \
                     --httpsPort=8443 \
 		    --httpsKeyStore=/root/jenkins.p12 \
 		    --httpsKeyStorePassword="$keystore_pass"

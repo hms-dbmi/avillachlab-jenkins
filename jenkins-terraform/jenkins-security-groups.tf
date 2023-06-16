@@ -1,27 +1,34 @@
 resource "aws_security_group" "inbound-jenkins-from-lma" {
   name = "allow_inbound_from_lma_subnet_to_jenkins_vpc_${var.stack-id}_${var.git-commit}"
   description = "Allow inbound traffic from LMA on ports 22, 80 and 443"
-  vpc_id = var.jenkins-vpc-id
+  vpc_id = var.jenkins_vpc_id
 
   ingress {
     from_port = 80
     to_port = 80
     protocol = "tcp"
-    cidr_blocks = var.jenkins-sg-ingress-http-cidr-blocks
+    cidr_blocks = var.jenkins_sg_ingress_http_cidr_blocks
   }
 
   ingress {
     from_port = 443
     to_port = 443
     protocol = "tcp"
-    cidr_blocks = var.jenkins-sg-ingress-https-cidr-blocks
+    cidr_blocks = var.jenkins_sg_ingress_https_cidr_blocks
+  }
+
+  ingress {
+    from_port = 443
+    to_port = 443
+    protocol = "tcp"
+    cidr_blocks = aws-instance.dev-jenkins.
   }
 
   ingress {
     from_port = 22
     to_port = 22
     protocol = "tcp"
-    cidr_blocks = var.jenkins-sg-ingress-ssh-cidr-blocks
+    cidr_blocks = var.jenkins_sg_ingress_ssh_cidr_blocks
   }
 
   tags = {
@@ -40,9 +47,7 @@ resource "aws_security_group" "outbound-jenkins-to-internet" {
     from_port = 0
     to_port = 0
     protocol = -1
-    cidr_blocks = [
-       "0.0.0.0/0"
-    ]
+    cidr_blocks = var.jenkins_sg_egress_allow_all_cidr_block
   }
 
   tags = {

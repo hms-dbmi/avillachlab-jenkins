@@ -2,6 +2,10 @@ FROM jenkins/jenkins:lts
 
 ARG S3_BUCKET
 
+ARG jenkins_docker_maven_distro
+
+ARG jenkins_docker_terraform_distro
+
 COPY plugins.txt /usr/share/jenkins/ref/plugins.txt
 
 COPY config.xml /var/jenkins_home/config.xml
@@ -30,16 +34,22 @@ RUN curl -fsSL https://get.docker.com | sh
 
 RUN docker --version
 
-RUN wget https://www.apache.org/dist/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz -P /opt
+RUN wget -c $jenkins_docker_maven_distro -O /opt/maven.bin.tar.gz
 
 RUN apt-get -y -t stretch-backports install openjdk-11-jdk-headless
 
-RUN tar -xvzf /opt/apache-maven-3.6.3-bin.tar.gz -C /opt
+RUN mkdir /opt/maven/
 
-RUN rm /opt/apache-maven-3.6.3-bin.tar.gz
+RUN tar -xvzf /opt/maven.bin.tar.gz --strip-components=1 -C /opt/maven/
+
+# Might want to keep the tar around
+#RUN rm /opt/maven.bin.tar.gz
 
 RUN apt-get install jq -y
 
 RUN /bin/jenkins-plugin-cli -f /usr/share/jenkins/ref/plugins.txt || echo "Some errors occurred during plugin installation."
 
-RUN wget https://releases.hashicorp.com/terraform/0.12.31/terraform_0.12.31_linux_amd64.zip && unzip terraform_0.12.31_linux_amd64.zip && mv terraform /usr/local/bin/
+# Should look at using the jenkins terraform plugin instead of what we are doing
+RUN wget -c $jenkins_docker_terraform_distro -O /opt/terraform.zip 
+
+RUN unzip /opt/terraform.zip -d /usr/local/bin/

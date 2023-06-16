@@ -3,3 +3,10 @@ provider "aws" {
   profile    = "avillachlab-secure-infrastructure"
   version    = "3.74"
 }
+
+# currenlty using default AES encryption
+terraform {
+  backend "s3" {
+     encrypt = true 
+  }
+}
