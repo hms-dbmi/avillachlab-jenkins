@@ -18,13 +18,6 @@ resource "aws_security_group" "inbound-jenkins-from-lma" {
   }
 
   ingress {
-    from_port = 443
-    to_port = 443
-    protocol = "tcp"
-    cidr_blocks = aws-instance.dev-jenkins.
-  }
-
-  ingress {
     from_port = 22
     to_port = 22
     protocol = "tcp"
