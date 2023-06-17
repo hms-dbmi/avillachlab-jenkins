@@ -32,7 +32,7 @@
 env &gt; env.txt
 # backend s3 config will always be encrypted
 # need to find a better key location that isn&apos;t tied to the git commit for the job
-terraform init /
+terraform init \
 -backend-config=&quot;bucket=${jenkins_tf_state_bucket}&quot; \
 -backend-config=&quot;key=jenkins_state/jenkins_${GIT_COMMIT}/terraform.tfstate&quot; \
 -backend-config=&quot;region=${jenkins_tf_state_region}&quot; 
@@ -48,14 +48,14 @@ terraform apply -auto-approve \
 -var &quot;jenkins_sg_ingress_http_cidr_blocks=${jenkins_sg_ingress_http_cidr_blocks}&quot; \
 -var &quot;jenkins_sg_ingress_https_cidr_blocks=${jenkins_sg_ingress_https_cidr_blocks}&quot; \
 -var &quot;jenkins_sg_ingress_ssh_cidr_blocks=${jenkins_sg_ingress_ssh_cidr_blocks}&quot; \
--var &quot;jenkins_sg_egress_allow_all_cidr_blocks=${jenkins_sg_egress_allow_all_cidr_block}&quot; \
+-var &quot;jenkins_sg_egress_allow_all_cidr_blocks=${jenkins_sg_egress_allow_all_cidr_blocks}&quot; \
 -var &quot;ami_id=${ami_id}&quot; \
 -var &quot;dsm_url=${dsm_url}&quot; \
 -var &quot;jenkins_config_s3_location=${jenkins_config_s3_location}&quot; \
 -var &quot;jenkins_ec2_instance_type=${jenkins_ec2_instance_type}&quot; \
 -var &quot;jenkins_tf_local_var_OS_dist=${jenkins_tf_local_var_OS_dist}&quot; \
--var &quot;jenkins_ec2_ebs_volume_size=${jenkins_ec2_ebs_volume_size}&quot;
--var &quot;jenkins_docker_maven_binary=${jenkins_docker_maven_binary}&quot;
+-var &quot;jenkins_ec2_ebs_volume_size=${jenkins_ec2_ebs_volume_size}&quot; \
+-var &quot;jenkins_docker_maven_distro=${jenkins_docker_maven_distro}&quot; \
 -var &quot;jenkins_docker_terraform_distro=${jenkins_docker_terraform_distro}&quot;
 
 # Moving this to Terraform remote state
@@ -67,7 +67,7 @@ aws s3 --sse=AES256 cp env.txt s3://${stack_s3_bucket}/jenkins_state/jenkins_${G
 echo &quot;Waiting for user-script to initialize the environment.&quot;
 # This could get moved to a terraform provisioner to wait for the user script to finish.  Essientially would look the same though.  Leaving for now
 INSTANCE_ID=`terraform state show aws_instance.dev-jenkins | grep &quot;\&quot;i-[a-f0-9]&quot; | cut -f 2 -d &quot;=&quot; | sed &apos;s/&quot;//g&apos;`
-while [ -z $(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do cho &quot;still initializing&quot;;sleep 10;done
+while [ -z $(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do echo &quot;still initializing&quot;;sleep 10;done
 </command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>

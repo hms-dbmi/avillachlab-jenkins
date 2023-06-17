@@ -7,42 +7,14 @@
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
-          <name>stack_s3_bucket</name>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>stack_id</name>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>subnet_id</name>
-          <defaultValue>subnet-002719488d0e4f10d</defaultValue>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>instance_profile_name</name>
-          <defaultValue>jenkins-s3-profile</defaultValue>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>access_cidr</name>
-          <defaultValue>172.24.0.68/32</defaultValue>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>vpc_id</name>
-          <defaultValue>vpc-07fdd0533a5ec2e35</defaultValue>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>provisioning_cidr</name>
-          <defaultValue>172.36.0.0/25</defaultValue>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
           <name>jenkins_githash_to_destroy</name>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>Destroy</name>
+          <description>Uncheck to only view destroy plan</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -70,28 +42,55 @@
   <concurrentBuild>false</concurrentBuild>
   <builders>
     <hudson.tasks.Shell>
-      <command>cd dev-jenkins-terraform
+      <command>cd jenkins-terraform
 aws s3 --sse=AES256 cp s3://${stack_s3_bucket}/jenkins_state/jenkins_${jenkins_githash_to_destroy}/terraform.tfstate terraform.tfstate
-env &gt; env.txt
-terraform init
+#env &gt; env.txt
+terraform init \
+-backend-config=&quot;bucket=${jenkins_tf_state_bucket}&quot; \
+-backend-config=&quot;key=jenkins_state/jenkins_${jenkins_githash_to_destroy}/terraform.tfstate&quot; \
+-backend-config=&quot;region=${jenkins_tf_state_region}&quot;
 
-# get Jenkins IP
-jenkins_ip_addr=`terraform state show aws_instance.dev-jenkins | grep private_ip | cut -f 2 -d &quot;=&quot; | sed &apos;s/\&quot;//g&apos; | sed &apos;s/ //g&apos; | grep &apos;172.36&apos;`
+terraform plan -destroy \
+-var &quot;git_commit=`echo ${GIT_COMMIT} |cut -c1-7`&quot; \
+-var &quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
+-var &quot;stack_id=${stack_id}&quot; \
+-var &quot;jenkins_subnet_id=${jenkins_subnet_id}&quot; \
+-var &quot;jenkins_vpc_id=${jenkins_vpc_id}&quot; \
+-var &quot;jenkins_instance_profile_name=${jenkins_instance_profile_name}&quot; \
+-var &quot;jenkins_sg_ingress_http_cidr_blocks=${jenkins_sg_ingress_http_cidr_blocks}&quot; \
+-var &quot;jenkins_sg_ingress_https_cidr_blocks=${jenkins_sg_ingress_https_cidr_blocks}&quot; \
+-var &quot;jenkins_sg_ingress_ssh_cidr_blocks=${jenkins_sg_ingress_ssh_cidr_blocks}&quot; \
+-var &quot;jenkins_sg_egress_allow_all_cidr_blocks=${jenkins_sg_egress_allow_all_cidr_blocks}&quot; \
+-var &quot;ami_id=${ami_id}&quot; \
+-var &quot;dsm_url=${dsm_url}&quot; \
+-var &quot;jenkins_config_s3_location=${jenkins_config_s3_location}&quot; \
+-var &quot;jenkins_ec2_instance_type=${jenkins_ec2_instance_type}&quot; \
+-var &quot;jenkins_tf_local_var_OS_dist=${jenkins_tf_local_var_OS_dist}&quot; \
+-var &quot;jenkins_ec2_ebs_volume_size=${jenkins_ec2_ebs_volume_size}&quot; \
+-var &quot;jenkins_docker_maven_distro=${jenkins_docker_maven_distro}&quot; \
+-var &quot;jenkins_docker_terraform_distro=${jenkins_docker_terraform_distro}&quot; \
 
-# remove jenkins access from security group
-aws ec2 --region=us-east-1 revoke-security-group-ingress --group-id sg-0ab37675f33775da8 --ip-permissions IpProtocol=tcp,FromPort=443,ToPort=443,IpRanges=[{CidrIp=${jenkins_ip_addr}/32}]
-
-terraform destroy  -auto-approve \
--var &quot;stack-s3-bucket=${stack_s3_bucket}&quot; \
--var &quot;stack-id=${stack_id}&quot; \
--var &quot;subnet-id=${subnet_id}&quot; \
--var &quot;vpc-id=${vpc_id}&quot; \
--var &quot;instance-profile-name=${instance_profile_name}&quot; \
--var &quot;access-cidr=${access_cidr}&quot; \
--var &quot;provisioning-cidr=${provisioning_cidr}&quot;
-
-aws s3 --sse=AES256 cp terraform.tfstate s3://${stack_s3_bucket}/jenkins_state/jenkins_${jenkins_githash_to_destroy}/terraform.tfstate
-aws s3 --sse=AES256 cp env.txt s3://${stack_s3_bucket}/jenkins_state/jenkins_${jenkins_githash_to_destroy}/last_env.txt
+if $Destroy; then
+  terraform destroy -auto-approve \
+  -var &quot;git_commit=`echo ${GIT_COMMIT} |cut -c1-7`&quot; \
+  -var &quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
+  -var &quot;stack_id=${stack_id}&quot; \
+  -var &quot;jenkins_subnet_id=${jenkins_subnet_id}&quot; \
+  -var &quot;jenkins_vpc_id=${jenkins_vpc_id}&quot; \
+  -var &quot;jenkins_instance_profile_name=${jenkins_instance_profile_name}&quot; \
+  -var &quot;jenkins_sg_ingress_http_cidr_blocks=${jenkins_sg_ingress_http_cidr_blocks}&quot; \
+  -var &quot;jenkins_sg_ingress_https_cidr_blocks=${jenkins_sg_ingress_https_cidr_blocks}&quot; \
+  -var &quot;jenkins_sg_ingress_ssh_cidr_blocks=${jenkins_sg_ingress_ssh_cidr_blocks}&quot; \
+  -var &quot;jenkins_sg_egress_allow_all_cidr_blocks=${jenkins_sg_egress_allow_all_cidr_blocks}&quot; \
+  -var &quot;ami_id=${ami_id}&quot; \
+  -var &quot;dsm_url=${dsm_url}&quot; \
+  -var &quot;jenkins_config_s3_location=${jenkins_config_s3_location}&quot; \
+  -var &quot;jenkins_ec2_instance_type=${jenkins_ec2_instance_type}&quot; \
+  -var &quot;jenkins_tf_local_var_OS_dist=${jenkins_tf_local_var_OS_dist}&quot; \
+  -var &quot;jenkins_ec2_ebs_volume_size=${jenkins_ec2_ebs_volume_size}&quot; \
+  -var &quot;jenkins_docker_maven_distro=${jenkins_docker_maven_distro}&quot; \
+  -var &quot;jenkins_docker_terraform_distro=${jenkins_docker_terraform_distro}&quot;
+fi
 
 
 
@@ -100,5 +99,12 @@ aws s3 --sse=AES256 cp env.txt s3://${stack_s3_bucket}/jenkins_state/jenkins_${j
     </hudson.tasks.Shell>
   </builders>
   <publishers/>
-  <buildWrappers/>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.45">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
 </project>
