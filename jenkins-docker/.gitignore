@@ -2,3 +2,4 @@ builds/
 lastStable
 lastSuccessful
 nextBuildNumber
+.DS_Store
