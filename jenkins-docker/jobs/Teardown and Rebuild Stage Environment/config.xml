@@ -116,8 +116,7 @@ DOMAINS="${allowed_hosts}"
 # Convert commas (with optional whitespace) to spaces
 DOMAINS_ARRAY=$(echo "$DOMAINS" | sed 's/,\s*/ /g')
 # Convert array of domains to regex
-REGEX_DOMAINS=$(echo "$DOMAINS_ARRAY" | sed 's/ /\\|/g')
-
+REGEX_DOMAINS=$(echo "$DOMAINS_ARRAY" | sed 's/ /|/g')
 
 cd ../app-infrastructure
 terraform init
