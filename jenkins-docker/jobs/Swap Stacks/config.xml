@@ -1,8 +1,8 @@
 <?xml version='1.1' encoding='UTF-8'?>
-<flow-definition plugin="workflow-job@2.36">
+<flow-definition plugin="workflow-job@1308.v58d48a_763b_31">
   <actions>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@1.5.1"/>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@1.5.1">
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2141.v5402e818a_779"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2141.v5402e818a_779">
       <jobProperties/>
       <triggers/>
       <parameters/>
@@ -11,8 +11,13 @@
   </actions>
   <description></description>
   <keepDependencies>false</keepDependencies>
-  <properties/>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.78">
+  <properties>
+    <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@320.v5a_0933a_e7d61">
+      <autoRebuild>false</autoRebuild>
+      <rebuildDisabled>false</rebuildDisabled>
+    </com.sonyericsson.rebuild.RebuildSettings>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3691.v28b_14c465a_b_b_">
     <script>import groovy.json.*;
 
 pipeline {
@@ -58,7 +63,7 @@ pipeline {
                     println(target_next_prod_stack)
                     stacksJson = JsonOutput.toJson(stacks)
                     println(stacksJson)
-                    build job: &apos;Move Prod DNS Pointer&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_prod_stack&apos;, value: target_prod_stack],[$class: &apos;StringParameterValue&apos;, name: &apos;target_next_prod_stack&apos;, value: target_next_prod_stack],[$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash]]
+                    build job: &apos;Move Prod DNS Pointer&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_prod_stack],[$class: &apos;StringParameterValue&apos;, name: &apos;target_next_stack&apos;, value: target_next_prod_stack],[$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash]]
                     println(&quot;Moved pointer&quot;)
                     build job: &apos;Write Stack State&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;stacks_json&apos;, value: stacksJson]]
                 }

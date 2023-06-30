@@ -1,9 +1,13 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
   <actions/>
-  <description></description>
+  <description>This would be cleaner and more portable if it was a python script that check for initialization.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
+    <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@320.v5a_0933a_e7d61">
+      <autoRebuild>false</autoRebuild>
+      <rebuildDisabled>false</rebuildDisabled>
+    </com.sonyericsson.rebuild.RebuildSettings>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
@@ -17,7 +21,7 @@
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.0.2">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.1.0">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
@@ -42,10 +46,10 @@
   <builders>
     <hudson.tasks.Shell>
       <command>cd app-infrastructure
-wget https://releases.hashicorp.com/terraform/0.12.31/terraform_0.12.31_linux_amd64.zip &amp;&amp; unzip terraform_0.12.31_linux_amd64.zip &amp;&amp; mv terraform /usr/local/bin/
+#wget https://releases.hashicorp.com/terraform/0.12.31/terraform_0.12.31_linux_amd64.zip &amp;&amp; unzip terraform_0.12.31_linux_amd64.zip &amp;&amp; mv terraform /usr/local/bin/
 terraform init
 
-aws sts assume-role --duration-seconds 3600 --role-arn &quot;arn:aws:iam::${cnc_acct_id}:role/system/jenkins-s3-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
+aws sts assume-role --duration-seconds 3600 --role-arn &quot;arn:aws:iam::${cnc_acct_id}:role/system/${jenkins_s3_role_name}&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
 
 export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
@@ -54,7 +58,7 @@ export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apo
 aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate .
 aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/stack_variables.tf .
 cp stack_variables.tf ../s3-deployment-roles/
-aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate_roles ../s3-deployment-roles/terraform.tfstate || echo &quot;role state doesnt exist, it will be created&quot;
+#aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate_roles ../s3-deployment-roles/terraform.tfstate || echo &quot;role state doesnt exist, it will be created&quot;
 
 unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY
@@ -70,7 +74,7 @@ INSTANCE_ID=`terraform state show aws_instance.wildfly-ec2 | grep &quot;\&quot;i
 while [ -z $(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do echo &quot;still initializing&quot;;sleep 10;done
 echo &quot;Wildfly EC2 Initialization Complete&quot;
 
-aws sts assume-role --duration-seconds 3600 --role-arn &quot;arn:aws:iam::${app_acct_id}:role/hms-dbmi-cnc-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
+aws sts assume-role --duration-seconds 3600 --role-arn &quot;arn:aws:iam::${app_acct_id}:role/${jenkins_provisioning_assume_role_name}&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
 
 export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
@@ -80,7 +84,7 @@ INSTANCE_ID=`terraform state show aws_instance.httpd-ec2 | grep &quot;\&quot;i-[
 while [ -z $(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do echo &quot;still initializing&quot;;sleep 10;done
 echo &quot;HTTPD EC2 Initialization Complete&quot;
 
-aws sts assume-role --duration-seconds 3600 --role-arn &quot;arn:aws:iam::${app_acct_id}:role/hms-dbmi-cnc-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
+aws sts assume-role --duration-seconds 3600 --role-arn &quot;arn:aws:iam::${app_acct_id}:role/${jenkins_provisioning_assume_role_name}&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
 
 export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
@@ -90,7 +94,7 @@ INSTANCE_ID=`terraform state show aws_instance.open-hpds-ec2 | grep &quot;\&quot
 while [ -z $(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do echo &quot;still initializing&quot;;sleep 10;done
 echo &quot;Open HPDS EC2 Initialization Complete&quot;
 
-aws sts assume-role --duration-seconds 3600 --role-arn &quot;arn:aws:iam::${app_acct_id}:role/hms-dbmi-cnc-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
+aws sts assume-role --duration-seconds 3600 --role-arn &quot;arn:aws:iam::${app_acct_id}:role/${jenkins_provisioning_assume_role_name}&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
 
 export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
@@ -100,24 +104,31 @@ INSTANCE_ID=`terraform state show aws_instance.dictionary-ec2 | grep &quot;\&quo
 while [ -z $(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do echo &quot;still initializing&quot;;sleep 10;done
 echo &quot;Dictionary EC2 Initialization Complete&quot;
 
-aws sts assume-role --duration-seconds 3600 --role-arn &quot;arn:aws:iam::${app_acct_id}:role/hms-dbmi-cnc-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
-
-export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-
-INSTANCE_ID=`terraform state show aws_instance.visualization-ec2 | grep &quot;\&quot;i-[a-f0-9]&quot; | cut -f 2 -d &quot;=&quot; | sed &apos;s/&quot;//g&apos;`
-while [ -z $(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do echo &quot;still initializing&quot;;sleep 10;done
-echo &quot;Visualization EC2 Initialization Complete&quot;
-
-aws sts assume-role --duration-seconds 3600 --role-arn &quot;arn:aws:iam::${app_acct_id}:role/hms-dbmi-cnc-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
-
-export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-
+# HPDS can take a long time to finish user-script.  
+# will assume the role more often to avoid time out here
+# 
 INSTANCE_ID=`terraform state show aws_instance.auth-hpds-ec2 | grep &quot;\&quot;i-[a-f0-9]&quot; | cut -f 2 -d &quot;=&quot; | sed &apos;s/&quot;//g&apos;`
-while [ -z $(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do echo &quot;still initializing&quot;;sleep 10;done
+aws sts assume-role --duration-seconds 3600 --role-arn &quot;arn:aws:iam::${app_acct_id}:role/${jenkins_provisioning_assume_role_name}&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
+
+export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+
+while [ -z $(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];
+   do 
+    unset AWS_ACCESS_KEY_ID
+    unset AWS_SECRET_ACCESS_KEY
+    unset AWS_SESSION_TOKEN
+    
+    aws sts assume-role --duration-seconds 3600 --role-arn &quot;arn:aws:iam::${app_acct_id}:role/${jenkins_provisioning_assume_role_name}&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
+
+    export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+    export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+    export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+
+    echo &quot;still initializing&quot;;
+    sleep 60;
+   done
 echo &quot;Auth HPDS EC2 Initialization Complete&quot;
 
 unset AWS_ACCESS_KEY_ID

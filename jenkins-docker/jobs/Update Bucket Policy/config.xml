@@ -1,35 +1,37 @@
 <?xml version='1.1' encoding='UTF-8'?>
-<flow-definition plugin="workflow-job@2.36">
+<flow-definition plugin="workflow-job@1308.v58d48a_763b_31">
   <actions>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@1.5.0"/>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@1.5.0">
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2141.v5402e818a_779"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2141.v5402e818a_779">
       <jobProperties/>
       <triggers/>
       <parameters/>
       <options/>
     </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
   </actions>
-  <description></description>
+  <description>This job  needs to be removed.&#xd;
+&#xd;
+User-scripts have already started by this point... Need to at least execute this before terraform builds the nodes.  Really Terraform should be handling the state of this bucket not jenkins aws-cli calls</description>
   <keepDependencies>false</keepDependencies>
   <properties>
+    <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@320.v5a_0933a_e7d61">
+      <autoRebuild>false</autoRebuild>
+      <rebuildDisabled>false</rebuildDisabled>
+    </com.sonyericsson.rebuild.RebuildSettings>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
           <name>target_stack</name>
-          <description></description>
-          <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>stack_githash</name>
-          <description></description>
-          <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@2.78">
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3691.v28b_14c465a_b_b_">
     <script>import groovy.json.JsonSlurper;
 import groovy.json.JsonOutput;
 
@@ -58,7 +60,6 @@ pipeline {
                     bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-wildfly\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::${app_acct_id}:role/wildfly-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
                     bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-httpd\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::${app_acct_id}:role/httpd-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
                     bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-dictionary\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::${app_acct_id}:role/dictionary-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
-                    bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-visualization\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::${app_acct_id}:role/visualization-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
                     new_policy = new JsonOutput().toJson(bucket_policy)
                    
                 }
