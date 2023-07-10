@@ -120,7 +120,7 @@
         <comparator class="hudson.util.CaseInsensitiveComparator"/>
         <string>Await Initialization</string>
         <string>Backup Jenkins Home</string>
-        <string>biodatacatalyst-ui</string>
+        <string>pic-sure-bdc-frontend</string>
         <string>Create new Jenkins Server</string>
         <string>Create stack_variables.tf Files</string>
         <string>Destroy Old Jenkins Server</string>
@@ -129,7 +129,7 @@
         <string>PIC-SURE Wildfly Image Build</string>
         <string>PIC-SURE-API Build</string>
         <string>PIC-SURE-HPDS Build</string>
-        <string>PIC-SURE-HPDS-UI Docker Build</string>
+        <string>PIC-SURE-BDC-FRONTEND Docker Build</string>
         <string>Retrieve Build Spec</string>
         <string>Retrieve Deployment State</string>
         <string>Teardown and Rebuild Stage Environment</string>

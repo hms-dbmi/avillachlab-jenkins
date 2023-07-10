@@ -237,13 +237,13 @@ echo "
                \"timestamp_format\":\"UTC\"
             },
             {
-               \"file_path\":\"/var/jenkins_home/jobs/PIC-SURE-HPDS-UI Docker Build/**/log\",
+               \"file_path\":\"/var/jenkins_home/jobs/PIC-SURE-CORE-FRONTEND Docker Build/**/log\",
                \"log_group_name\":\"jenkins-logs\",
                \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs PIC_SURE_HPDS_UI_Docker_Build\",
                \"timestamp_format\":\"UTC\"
             },
             {
-               \"file_path\":\"/var/jenkins_home/jobs/biodatacatalyst-ui/**/log\",
+               \"file_path\":\"/var/jenkins_home/jobs/PIC-SURE-BDC-FRONTEND/**/log\",
                \"log_group_name\":\"jenkins-logs\",
                \"log_stream_name\":\"{instance_id} ${stack_id} jenkins-build-logs biodatacatalyst_ui\",
                \"timestamp_format\":\"UTC\"
