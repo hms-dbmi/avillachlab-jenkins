@@ -112,15 +112,21 @@ terraform init
 terraform destroy -auto-approve -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot; -var=&quot;destigmatized-dataset-s3-object-key=${destigmatized_dataset_s3_object_key}&quot; -var=&quot;genomic-dataset-s3-object-key=${genomic_dataset_s3_object_key}&quot;  -var=&quot;target-stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
 terraform apply -auto-approve -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot;  -var=&quot;destigmatized-dataset-s3-object-key=${destigmatized_dataset_s3_object_key}&quot; -var=&quot;genomic-dataset-s3-object-key=${genomic_dataset_s3_object_key}&quot; -var=&quot;target-stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
 
+DOMAINS=&quot;${allowed_hosts}&quot;
+# Convert commas (with optional whitespace) to spaces
+DOMAINS_ARRAY=$(echo &quot;$DOMAINS&quot; | sed &apos;s/,\s*/ /g&apos;)
+# Convert array of domains to regex
+REGEX_DOMAINS=$(echo &quot;$DOMAINS_ARRAY&quot; | sed &apos;s/ /|/g&apos;)
+        
 cd ../app-infrastructure
 
 #uncomment for dev systems
 #sed -i -r &apos;s/(\$\{target-stack\})/\1.dev/&apos; configs/* scripts/*
 
 terraform init
-terraform destroy -auto-approve -var=&quot;ami-id=${ami_id}&quot; -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot;  -var=&quot;destigmatized-dataset-s3-object-key=${destigmatized_dataset_s3_object_key}&quot;  -var=&quot;genomic-dataset-s3-object-key=${genomic_dataset_s3_object_key}&quot; -var=&quot;target-stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
-terraform apply -auto-approve -var=&quot;ami-id=${ami_id}&quot; -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot;  -var=&quot;destigmatized-dataset-s3-object-key=${destigmatized_dataset_s3_object_key}&quot;  -var=&quot;genomic-dataset-s3-object-key=${genomic_dataset_s3_object_key}&quot; -var=&quot;target-stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
-
+        
+terraform destroy -auto-approve -var=&quot;source_dictionary_s3_object_key=${source_dictionary_s3_object_key}&quot; -var=&quot;ami-id=${ami_id}&quot; -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot;  -var=&quot;destigmatized-dataset-s3-object-key=${destigmatized_dataset_s3_object_key}&quot; -var=&quot;genomic-dataset-s3-object-key=${genomic_dataset_s3_object_key}&quot; -var=&quot;target-stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; -var=&quot;allowed_hosts=${REGEX_DOMAINS}&quot; || true
+terraform apply -auto-approve -var=&quot;source_dictionary_s3_object_key=${source_dictionary_s3_object_key}&quot; -var=&quot;ami-id=${ami_id}&quot; -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot;  -var=&quot;destigmatized-dataset-s3-object-key=${destigmatized_dataset_s3_object_key}&quot; -var=&quot;genomic-dataset-s3-object-key=${genomic_dataset_s3_object_key}&quot; -var=&quot;target-stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; -var=&quot;allowed_hosts=${REGEX_DOMAINS}&quot; || true
 
 echo &quot;
 {
