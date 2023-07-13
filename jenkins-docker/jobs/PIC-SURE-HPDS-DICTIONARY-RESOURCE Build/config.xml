@@ -56,7 +56,7 @@
   <builders>
     <hudson.tasks.Maven>
       <targets>clean install -DskipTests</targets>
-      <mavenName>Maven 3.9.2</mavenName>
+      <mavenName>Maven Home</mavenName>
       <pom>tagging/pom.xml</pom>
       <usePrivateRepository>false</usePrivateRepository>
       <settings class="jenkins.mvn.DefaultSettingsProvider"/>
