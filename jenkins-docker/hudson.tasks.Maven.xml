@@ -2,8 +2,8 @@
 <hudson.tasks.Maven_-DescriptorImpl>
   <installations>
     <hudson.tasks.Maven_-MavenInstallation>
-      <name>Maven</name>
-      <home>/opt/maven/</home>
+      <name>Maven Home</name>
+      <home>/usr/share/maven/</home>
       <properties/>
     </hudson.tasks.Maven_-MavenInstallation>
   </installations>

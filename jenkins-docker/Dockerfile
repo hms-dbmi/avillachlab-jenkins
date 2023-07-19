@@ -32,16 +32,9 @@ RUN curl -fsSL https://get.docker.com | sh
 
 RUN docker --version
 
-RUN wget -c $JENKINS_DOCKER_MAVEN_DISTRO -O /opt/maven.bin.tar.gz
-
 RUN apt-get -y -t stretch-backports install openjdk-11-jdk-headless
 
-RUN mkdir /opt/maven/
-
-RUN tar -xvzf /opt/maven.bin.tar.gz --strip-components=1 -C /opt/maven/
-
-# Might want to keep the tar around
-#RUN rm /opt/maven.bin.tar.gz
+RUN apt-get -y install maven
 
 RUN apt-get install jq -y
 

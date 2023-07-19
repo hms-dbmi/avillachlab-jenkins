@@ -34,7 +34,7 @@
   <builders>
     <hudson.tasks.Maven>
       <targets>clean install</targets>
-      <mavenName>Maven</mavenName>
+      <mavenName>Maven Home</mavenName>
       <usePrivateRepository>false</usePrivateRepository>
       <settings class="jenkins.mvn.DefaultSettingsProvider"/>
       <globalSettings class="jenkins.mvn.DefaultGlobalSettingsProvider"/>
