@@ -1,37 +1,46 @@
 #!/bin/bash
 
+### BEFORE RUNNING!
+# Need to export the variables used in the terraform apply below as env variables or store them in a variable.tf file
+# or just replace the variables with the values needed.
+# Values should be stored in the global config.xml that is located at the ${jenkins_config_s3_location} variable.
+# 
+# Also need to have jenkins-s3-role on the ec2 
+
 #### Script that will be used to initialize a jenkins CI environment.
 ## Once a Jenkins server is built it is able to recreate itself.
 ## This should be a replicate of the bash script used in the Create New Jenkins Server.
 
-env > env.txt
-terraform init
+### Install terraform current distro used is https://releases.hashicorp.com/terraform/0.12.31/terraform_0.12.31_linux_amd64.zip
+
+RUN wget -c $JENKINS_DOCKER_TERRAFORM_DISTRO -O /opt/terraform.zip 
+
+RUN unzip /opt/terraform.zip -d /usr/local/bin/
+
+
+# backend s3 config will always be encrypted
+# need to find a better key location that isn't tied to the git commit for the job
+terraform init \
+-backend-config="bucket=${jenkins_tf_state_bucket}" \
+-backend-config="key=jenkins_state/jenkins_${GIT_COMMIT}/terraform.tfstate" \
+-backend-config="region=${jenkins_tf_state_region}" 
+
 terraform apply -auto-approve \
--var "git-commit=`echo ${GIT_COMMIT} |cut -c1-7`" \
--var "stack-s3-bucket=${stack_s3_bucket}" \
--var "stack-id=${stack_id}" \
--var "jenkins-subnet-id=${jenkins_subnet_id}" \
--var "jenkins-vpc-id=${jenkins_vpc_id}" \
--var "jenkins-instance-profile-name=${jenkins_instance_profile_name}" \
--var "jenkins-sg-ingress-http-cidr-blocks=${jenkins_sg_ingress_http_cidr_blocks}" \
--var "jenkins-sg-ingress-https-cidr-blocks=${jenkins_sg_ingress_https_cidr_blocks}" \
--var "jenkins-sg-ingress-ssh-cidr-blocks=${jenkins_sg_ingress_ssh_cidr_blocks}" \
--var "ami-id=${ami_id}" \
--var "dsm-url=${dsm_url}" \
--var "jenkins-config-s3-location=${jenkins_config_s3_location}"
-
-aws s3 --sse=AES256 cp terraform.tfstate s3://${stack_s3_bucket}/jenkins_state/jenkins_${GIT_COMMIT}/terraform.tfstate
-aws s3 --sse=AES256 cp env.txt s3://${stack_s3_bucket}/jenkins_state/jenkins_${GIT_COMMIT}/last_env.txt
-
-INSTANCE_ID=`terraform state show aws_instance.dev-jenkins | grep "\"i-[a-f0-9]" | cut -f 2 -d "=" | sed 's/"//g'`
-
-while [ -z $(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters "Name=resource-id,Values=${INSTANCE_ID}" | grep InitComplete) ];do echo "still initializing";sleep 10;done
-
-# get Jenkins IP
-jenkins_ip_addr=`terraform state show aws_instance.dev-jenkins | grep private_ip | cut -f 2 -d "=" | sed 's/\"//g' | sed 's/ //g' | grep '172.39'`
-
-# update security group for jenkins access
-# aws ec2 --region=us-east-1 authorize-security-group-ingress --group-id sg-0ab37675f33775da8 --ip-permissions IpProtocol=tcp,FromPort=443,ToPort=443,IpRanges=[{CidrIp=${jenkins_ip_addr}/32}]
-# aws ec2 --region=us-east-1 update-security-group-rule-descriptions-ingress --group-id sg-0ab37675f33775da8 --ip-permissions IpProtocol=tcp,FromPort=443,ToPort=443,IpRanges=[{CidrIp=${jenkins_ip_addr}/32,Description="Allow Jenkins"}]
-
-echo "http://$jenkins_ip_addr"
+-var "git_commit=`echo ${GIT_COMMIT} |cut -c1-7`" \
+-var "stack_s3_bucket=${stack_s3_bucket}" \
+-var "stack_id=${stack_id}" \
+-var "jenkins_subnet_id=${jenkins_subnet_id}" \
+-var "jenkins_vpc_id=${jenkins_vpc_id}" \
+-var "jenkins_instance_profile_name=${jenkins_instance_profile_name}" \
+-var "jenkins_sg_ingress_http_cidr_blocks=${jenkins_sg_ingress_http_cidr_blocks}" \
+-var "jenkins_sg_ingress_https_cidr_blocks=${jenkins_sg_ingress_https_cidr_blocks}" \
+-var "jenkins_sg_ingress_ssh_cidr_blocks=${jenkins_sg_ingress_ssh_cidr_blocks}" \
+-var "jenkins_sg_egress_allow_all_cidr_blocks=${jenkins_sg_egress_allow_all_cidr_blocks}" \
+-var "ami_id=${ami_id}" \
+-var "dsm_url=${dsm_url}" \
+-var "jenkins_config_s3_location=${jenkins_config_s3_location}" \
+-var "jenkins_ec2_instance_type=${jenkins_ec2_instance_type}" \
+-var "jenkins_tf_local_var_OS_dist=${jenkins_tf_local_var_OS_dist}" \
+-var "jenkins_ec2_ebs_volume_size=${jenkins_ec2_ebs_volume_size}" \
+-var "jenkins_docker_maven_distro=${jenkins_docker_maven_distro}" \
+-var "jenkins_docker_terraform_distro=${jenkins_docker_terraform_distro}"
