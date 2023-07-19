@@ -6,7 +6,7 @@
 # variable to control OS Distribution. 
 
 locals {
-   # list of support Distributions.  Used by jenkins_tf_local_var_dist for validation of Supported Distributions
+   # list of supported Distributions.  Used by jenkins_tf_local_var_dist for validation of Supported Distributions
    valid_os = [ "CENTOS" ]
    centos_user_script = "distro/linux/centos/user-scripts/install-docker.sh"
    
