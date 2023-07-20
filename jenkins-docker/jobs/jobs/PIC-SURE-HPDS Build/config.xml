@@ -1,0 +1,82 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@320.v5a_0933a_e7d61">
+      <autoRebuild>false</autoRebuild>
+      <rebuildDisabled>false</rebuildDisabled>
+    </com.sonyericsson.rebuild.RebuildSettings>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>pipeline_build_id</name>
+          <defaultValue>MANUAL_RUN</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>git_hash</name>
+          <defaultValue>*/master</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>S3_BUCKET_NAME</name>
+          <defaultValue>${stack_s3_bucket}</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.1.0">
+    <configVersion>2</configVersion>
+    <userRemoteConfigs>
+      <hudson.plugins.git.UserRemoteConfig>
+        <url>${pic_sure_hpds_git_repo}</url>
+      </hudson.plugins.git.UserRemoteConfig>
+    </userRemoteConfigs>
+    <branches>
+      <hudson.plugins.git.BranchSpec>
+        <name>${git_hash}</name>
+      </hudson.plugins.git.BranchSpec>
+    </branches>
+    <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+    <submoduleCfg class="empty-list"/>
+    <extensions/>
+  </scm>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Maven>
+      <targets>clean install -DskipTests</targets>
+      <mavenName>Maven</mavenName>
+      <usePrivateRepository>false</usePrivateRepository>
+      <settings class="jenkins.mvn.DefaultSettingsProvider"/>
+      <globalSettings class="jenkins.mvn.DefaultGlobalSettingsProvider"/>
+      <injectBuildVariables>false</injectBuildVariables>
+    </hudson.tasks.Maven>
+    <hudson.tasks.Shell>
+      <command>GIT_BRANCH_SHORT=`echo ${GIT_BRANCH} | cut -d &quot;/&quot; -f 2` 
+GIT_COMMIT_SHORT=`echo ${GIT_COMMIT} | cut -c1-7`
+cd docker/pic-sure-hpds
+docker build -t hms-dbmi/pic-sure-hpds:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
+cd ../pic-sure-hpds-etl
+docker build -t hms-dbmi/pic-sure-hpds-etl:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
+cd ../../
+mkdir -p docker_image_output
+cd docker_image_output
+docker save hms-dbmi/pic-sure-hpds:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-hpds.tar.gz
+aws s3 --sse=AES256 cp pic-sure-hpds.tar.gz s3://$S3_BUCKET_NAME/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds.tar.gz
+docker save hms-dbmi/pic-sure-hpds-etl:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-hpds-etl.tar.gz
+aws s3 --sse=AES256 cp pic-sure-hpds-etl.tar.gz s3://$S3_BUCKET_NAME/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds-etl.tar.gz
+</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers/>
+</project>

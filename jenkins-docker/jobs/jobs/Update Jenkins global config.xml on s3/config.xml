@@ -1,0 +1,29 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description>This job will sync the current jenkins config.xml to the s3 location described in the global parameter &quot;jenkins_config_s3_location&quot;</description>
+  <keepDependencies>false</keepDependencies>
+  <properties/>
+  <scm class="hudson.scm.NullSCM"/>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+
+echo &quot;aws s3 cp ${jenkins_config_s3_location} ${jenkins_config_s3_location}_backup&quot;
+echo $(env)
+aws s3 cp &quot;${jenkins_config_s3_location}&quot; &quot;${jenkins_config_s3_location}_backup&quot;
+
+echo &quot;aws s3 cp ${JENKINS_HOME}/config.xml ${jenkins_config_s3_location}&quot;
+aws s3 cp ${JENKINS_HOME}/config.xml ${jenkins_config_s3_location}</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers/>
+</project>

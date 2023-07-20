@@ -1,0 +1,180 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description>This can all be handled via terraform as dynamic variables.&#xd;
+&#xd;
+see:&#xd;
+https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/subnet&#xd;
+https://registry.terraform.io/providers/hashicorp/aws/3.5.0/docs/data-sources/vpc&#xd;
+</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>R53_Zone_ID</name>
+          <defaultValue>Z07894451Y9DMEARH90L3</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>vpc_a</name>
+          <defaultValue>vpc-0d248ee6e4ef337ef</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>vpc_b</name>
+          <defaultValue>vpc-037509eb9baffa584</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>db-subnet-group-name-a</name>
+          <defaultValue>main-a</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>db-subnet-group-name-b</name>
+          <defaultValue>main-b</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.scm.NullSCM"/>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>echo $JENKINS_HOME
+
+# Describe subnets in specified VPCs in the prod account
+
+aws sts assume-role --duration-seconds 900 --role-arn &quot;arn:aws:iam::${app_acct_id}:role/hms-dbmi-cnc-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
+
+export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+
+aws ec2 --region us-east-1 describe-subnets
+
+aws ec2 --region us-east-1 describe-subnets --filters &quot;Name=vpc-id,Values=$vpc_a&quot; &gt; subnets_a.json
+cat subnets_a.json
+aws ec2 --region us-east-1 describe-subnets --filters &quot;Name=vpc-id,Values=$vpc_b&quot; &gt; subnets_b.json
+cat subnets_b.json
+
+unset AWS_ACCESS_KEY_ID
+unset AWS_SECRET_ACCESS_KEY
+unset AWS_SESSION_TOKEN
+</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+    <hudson.plugins.groovy.SystemGroovy plugin="groovy@453.vcdb_a_c5c99890">
+      <source class="hudson.plugins.groovy.StringSystemScriptSource">
+        <script plugin="script-security@1251.vfe552ed55f8d">
+          <script>import groovy.json.*
+import java.io.*
+
+buildSubnetVariablesFileForStack(&quot;a&quot;);
+buildSubnetVariablesFileForStack(&quot;b&quot;);
+
+void buildSubnetVariablesFileForStack(String stackId){
+def JsonSlurper js = new JsonSlurper()
+
+def subnetsResponse = js.parse(new File(&quot;/var/jenkins_home/workspace/Update VPC Settings/subnets_${stackId}.json&quot;))
+ 
+def subnetNames = [
+  &quot;edge-subnet-us-east-1a&quot;,
+  &quot;edge-subnet-us-east-1b&quot;,
+  &quot;app-subnet-us-east-1a&quot;,
+  &quot;app-subnet-us-east-1b&quot;,
+  &quot;db-subnet-us-east-1a&quot;,
+  &quot;db-subnet-us-east-1b&quot;,
+]
+
+def subnetAWSNames = [
+  &quot;edge-subnet-us-east-1a&quot;:&quot;Web-Subnet-AZ1&quot;,
+  &quot;edge-subnet-us-east-1b&quot;:&quot;Web-Subnet-AZ2&quot;,
+  &quot;app-subnet-us-east-1a&quot;:&quot;App-Subnet-AZ1&quot;,
+  &quot;app-subnet-us-east-1b&quot;:&quot;App-Subnet-AZ2&quot;,
+  &quot;db-subnet-us-east-1a&quot;:&quot;Database-Subnet-AZ1&quot;,
+  &quot;db-subnet-us-east-1b&quot;:&quot;Database-Subnet-AZ2&quot;,
+]
+
+def subnetVars = [:]
+String subnetVariables = &quot;&quot;
+
+for(def subnetName : subnetNames){
+  def subnet = getSubnetForName(subnetAWSNames.get(subnetName), subnetsResponse);
+  subnetVariables+=&quot;variable \&quot;&quot; + subnetName + &quot;-id\&quot; {\n&quot;;
+  subnetVariables+=&quot;    type = string\n&quot;;
+  subnetVariables+=&quot;    default = \&quot;&quot;+ subnet.SubnetId +&quot;\&quot;\n&quot;;
+  subnetVariables+=&quot;}\n&quot;;
+  subnetVariables+=&quot;variable \&quot;&quot; + subnetName + &quot;-cidr\&quot; {\n&quot;;
+  subnetVariables+=&quot;    type = string\n&quot;;
+  subnetVariables+=&quot;    default = \&quot;&quot;+ subnet.CidrBlock +&quot;\&quot;\n&quot;;
+  subnetVariables+=&quot;}\n&quot;;
+}
+def zoneId = build.buildVariableResolver.resolve(&quot;R53_Zone_ID&quot;)
+subnetVariables+=&quot;&quot;&quot;
+variable &quot;internal-dns-zone-id&quot; {
+  type = string
+  default = &quot;$zoneId&quot;
+}
+&quot;&quot;&quot;
+def vpcId = build.buildVariableResolver.resolve(&quot;vpc_$stackId&quot;)
+subnetVariables+=&quot;&quot;&quot;
+variable &quot;target-vpc&quot; {
+  type = string
+  default = &quot;$vpcId&quot;
+}
+&quot;&quot;&quot;
+def subnetGroupName = build.buildVariableResolver.resolve(&quot;db-subnet-group-name-$stackId&quot;)
+subnetVariables+=&quot;&quot;&quot;
+variable &quot;db-subnet-group-name&quot; {
+  type = string
+  default = &quot;$subnetGroupName&quot;
+}
+&quot;&quot;&quot;
+
+println(subnetVariables)
+
+new File(&quot;/var/jenkins_home/workspace/Update VPC Settings/subnet_variables_${stackId}.tf&quot;).write(subnetVariables)
+}
+
+
+def getSubnetForName(String name, def subnetsResponse){
+  return subnetsResponse.Subnets.find(
+    {it-&gt;it.Tags.find(
+      {tag-&gt;return tag.Key.contentEquals(&quot;Name&quot;) &amp;&amp; tag.Value.contentEquals(name)}
+    )}
+  );
+}</script>
+          <sandbox>false</sandbox>
+        </script>
+      </source>
+    </hudson.plugins.groovy.SystemGroovy>
+    <hudson.tasks.Shell>
+      <command># Push new subnet variables files to bucket
+
+aws sts assume-role --duration-seconds 900 --role-arn &quot;arn:aws:iam::${cnc_acct_id}:role/system/jenkins-s3-role&quot; --role-session-name &quot;configure-vpc-settings&quot; &gt; assume-role-output.txt
+
+export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+
+aws s3 cp subnet_variables_a.tf s3://$stack_s3_bucket/deployment_state_metadata/a/subnet_variables.tf 
+aws s3 cp subnet_variables_b.tf s3://$stack_s3_bucket/deployment_state_metadata/b/subnet_variables.tf 
+
+unset AWS_ACCESS_KEY_ID
+unset AWS_SECRET_ACCESS_KEY
+unset AWS_SESSION_TOKEN
+</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers/>
+</project>
