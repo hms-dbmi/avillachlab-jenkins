@@ -14,10 +14,7 @@
   <builders>
     <hudson.tasks.Shell>
       <command>#!/bin/bash
-
-echo &quot;aws s3 cp ${jenkins_config_s3_location} ${jenkins_config_s3_location}_backup&quot;
-echo $(env)
-aws s3 cp &quot;${jenkins_config_s3_location}&quot; &quot;${jenkins_config_s3_location}_backup&quot;
+# Different environments should set the config.xml name in jenkins_config_s3_location configuration to a unique name such as config_auth_dev.xml
 
 echo &quot;aws s3 cp ${JENKINS_HOME}/config.xml ${jenkins_config_s3_location}&quot;
 aws s3 cp ${JENKINS_HOME}/config.xml ${jenkins_config_s3_location}</command>

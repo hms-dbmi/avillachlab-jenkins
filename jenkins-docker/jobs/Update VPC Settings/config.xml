@@ -1,38 +1,38 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
   <actions/>
-  <description></description>
+  <description>This can all be handled via terraform as dynamic variables.&#xd;
+&#xd;
+see:&#xd;
+https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/subnet&#xd;
+https://registry.terraform.io/providers/hashicorp/aws/3.5.0/docs/data-sources/vpc&#xd;
+</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
           <name>R53_Zone_ID</name>
-          <description></description>
           <defaultValue>Z07894451Y9DMEARH90L3</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>vpc_a</name>
-          <description></description>
           <defaultValue>vpc-0d248ee6e4ef337ef</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>vpc_b</name>
-          <description></description>
           <defaultValue>vpc-037509eb9baffa584</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>db-subnet-group-name-a</name>
-          <description></description>
           <defaultValue>main-a</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>db-subnet-group-name-b</name>
-          <description></description>
           <defaultValue>main-b</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
@@ -69,10 +69,11 @@ unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY
 unset AWS_SESSION_TOKEN
 </command>
+      <configuredLocalRules/>
     </hudson.tasks.Shell>
-    <hudson.plugins.groovy.SystemGroovy plugin="groovy@2.2">
+    <hudson.plugins.groovy.SystemGroovy plugin="groovy@453.vcdb_a_c5c99890">
       <source class="hudson.plugins.groovy.StringSystemScriptSource">
-        <script plugin="script-security@1.68">
+        <script plugin="script-security@1251.vfe552ed55f8d">
           <script>import groovy.json.*
 import java.io.*
 
@@ -171,6 +172,7 @@ unset AWS_ACCESS_KEY_ID
 unset AWS_SECRET_ACCESS_KEY
 unset AWS_SESSION_TOKEN
 </command>
+      <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
   <publishers/>
