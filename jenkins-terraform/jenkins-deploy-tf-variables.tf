@@ -1,4 +1,4 @@
-#  local / dynamic variables can be found in jenkins-local-tf-variables.tf 
+#  local / dynamic variables can be found in jenkins-local-tf-variables.tf
 
 variable "stack_id" {
 	type = string
@@ -25,14 +25,6 @@ variable "jenkins_subnet_id" {
 	type = string
 }
 
-variable "ami_id" {
-	type = string
-}
-
-variable "dsm_url" {
-	type = string
-}
-
 variable "jenkins_sg_egress_allow_all_cidr_blocks" {
 	type = list
 }
@@ -42,10 +34,6 @@ variable "jenkins_sg_ingress_http_cidr_blocks" {
 }
 
 variable "jenkins_sg_ingress_https_cidr_blocks" {
-	type = list
-}
-
-variable "jenkins_sg_ingress_ssh_cidr_blocks" {
 	type = list
 }
 
@@ -59,7 +47,7 @@ variable "jenkins_ec2_instance_type" {
 
 variable "jenkins_tf_local_var_OS_dist" {
 	type = string
-	
+
 	# in terraform .13 variable validations are no longer experimental and is production ready.
 	# use this validations when upgrading to terraform .13
 	# will not implement .12 experimental features

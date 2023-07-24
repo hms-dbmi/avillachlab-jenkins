@@ -1,6 +1,6 @@
-resource "aws_security_group" "inbound-jenkins-from-lma" {
-  name = "allow_inbound_from_lma_subnet_to_jenkins_vpc_${var.stack_id}_${var.git_commit}"
-  description = "Allow inbound traffic from LMA on ports 22, 80 and 443"
+resource "aws_security_group" "inbound-jenkins" {
+  name = "allow_inbound_to_jenkins_vpc_${var.stack_id}_${var.git_commit}"
+  description = "Allow inbound traffic on Ports 80 and 443"
   vpc_id = var.jenkins_vpc_id
 
   ingress {
@@ -15,13 +15,6 @@ resource "aws_security_group" "inbound-jenkins-from-lma" {
     to_port = 443
     protocol = "tcp"
     cidr_blocks = var.jenkins_sg_ingress_https_cidr_blocks
-  }
-
-  ingress {
-    from_port = 22
-    to_port = 22
-    protocol = "tcp"
-    cidr_blocks = var.jenkins_sg_ingress_ssh_cidr_blocks
   }
 
   tags = {

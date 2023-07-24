@@ -18,11 +18,17 @@ data "template_file" "jenkins-user_data" {
   vars = {
     stack_s3_bucket = var.stack_s3_bucket
     stack_id = var.stack_id
-    dsm_url = var.dsm_url
     jenkins_config_s3_location = var.jenkins_config_s3_location
     jenkins_docker_maven_distro = var.jenkins_docker_maven_distro
     jenkins_docker_terraform_distro = var.jenkins_docker_terraform_distro
   }
+}
+
+#Lookup latest AMI
+data "aws_ami" "centos" {
+  most_recent      = true
+  executable_users = ["self"]
+  name_regex       = "^srce-centos7-golden-*"
 }
 
 data "template_cloudinit_config" "config" {
@@ -36,14 +42,13 @@ data "template_cloudinit_config" "config" {
   }
 }
 
-resource "aws_instance" "dev-jenkins" {
-  ami = var.ami_id
+resource "aws_instance" "jenkins" {
+  ami = data.aws_ami.centos.id
   instance_type = var.jenkins_ec2_instance_type
   associate_public_ip_address = false
   key_name = aws_key_pair.generated_key.key_name
 
   iam_instance_profile = var.jenkins_instance_profile_name
-
 
   root_block_device {
     delete_on_termination = true
@@ -64,7 +69,7 @@ resource "aws_instance" "dev-jenkins" {
   }
 
   vpc_security_group_ids = [
-    aws_security_group.inbound-jenkins-from-lma.id,
+    aws_security_group.inbound-jenkins.id,
     aws_security_group.outbound-jenkins-to-internet.id
   ]
 
@@ -73,7 +78,7 @@ resource "aws_instance" "dev-jenkins" {
   tags = {
     Owner       = "Avillach_Lab"
     Environment = "development"
-    Name        = "FISMA Terraform Playground - Jenkins - ${var.stack_id} - ${var.git_commit}"
+    Name        = "BdC Jenkins - ${var.stack_id} - ${var.git_commit}"
   }
 
   user_data = data.template_cloudinit_config.config.rendered
