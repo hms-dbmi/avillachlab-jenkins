@@ -19,6 +19,5 @@ ws-cleanup
 subversion
 ldap
 cloudbees-folder
-list-git-branches-parameter
 copyartifact
 saml

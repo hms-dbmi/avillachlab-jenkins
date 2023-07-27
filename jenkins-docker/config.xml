@@ -175,10 +175,6 @@
           <string></string>
           <string>app_acct_id</string>
           <string></string>
-          <string>ami-id</string>
-          <string></string>
-          <string>jenkins-dsm-url</string>
-          <string></string>
         </tree-map>
       </envVars>
     </hudson.slaves.EnvironmentVariablesNodeProperty>
