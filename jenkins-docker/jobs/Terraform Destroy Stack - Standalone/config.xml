@@ -49,7 +49,7 @@ Deprecated - Use the teardown and rebuild job as destroy only.</description>
     <hudson.tasks.Shell>
       <command>cd app-infrastructure
 
-# Terraform provider can assume role 
+# Terraform provider can assume role
 # Should move this to terraform once we can have multiple providers
 # https://registry.terraform.io/providers/hashicorp/aws/latest/docs#assuming-an-iam-role
 aws sts assume-role --duration-seconds ${jenkins_provisioning_assume_role_duration} --role-arn &quot;arn:aws:iam::${cnc_acct_id}:role/system/${jenkins_s3_role_name}&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
@@ -65,7 +65,7 @@ aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraf
 aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/stack_variables.tf .
 aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/subnet_variables.tf .
 
-# why are the roles and the rest of everything for the nodes in differenet tf states?  
+# why are the roles and the rest of everything for the nodes in differenet tf states?
 #aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate_roles ../s3-deployment-roles/terraform.tfstate || echo &quot;role state doesnt exist, it will be created&quot;
 
 unset AWS_ACCESS_KEY_ID
@@ -78,7 +78,7 @@ export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos
 export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 
-#  why? move the roles in the app-infrastructure and have a flat(ish) model 
+#  why? move the roles in the app-infrastructure and have a flat(ish) model
 #cd ../s3-deployment-roles
 #terraform init
 #terraform destroy -auto-approve -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot; -var=&quot;destigmatized_dataset_s3_object_key=${destigmatized_dataset_s3_object_key}&quot; -var=&quot;genomic_dataset_s3_object_key=${genomic_dataset_s3_object_key}&quot;  -var=&quot;target_stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
@@ -86,10 +86,9 @@ export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apo
 
 #cd ../app-infrastructure
 
-terraform init 
+terraform init
 
 terraform destroy -auto-approve \
-   -var=&quot;ami-id=${ami_id}&quot; \
    -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot;  \
    -var=&quot;destigmatized_dataset_s3_object_key=${destigmatized_dataset_s3_object_key}&quot;  \
    -var=&quot;genomic_dataset_s3_object_key=${genomic_dataset_s3_object_key}&quot; \
@@ -98,7 +97,6 @@ terraform destroy -auto-approve \
    -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
    -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
    -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
-   -var=&quot;dsm_url=${dsm_url}&quot; \
    || true
 
 unset AWS_ACCESS_KEY_ID
@@ -119,7 +117,7 @@ aws s3 cp terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${ta
 # roles are now in the same state as their related resources..
 #aws s3 cp ../s3-deployment-roles/terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate_roles
 
-# These files are uploaded to s3 because user-scripts download them.  The user scripts are already running 
+# These files are uploaded to s3 because user-scripts download them.  The user scripts are already running
 # so this is a race condition at this point as terraform has been applied
 # Just have terraform provision these and remove the aws cli stuff from the user-scripts and here
 aws s3 --sse=AES256 cp picsureui-settings.json s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/picsureui_settings.json

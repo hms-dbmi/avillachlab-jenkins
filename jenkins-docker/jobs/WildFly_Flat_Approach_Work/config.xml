@@ -32,10 +32,6 @@
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>ami_id</name>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
           <name>infrastructure_git_hash</name>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
@@ -105,7 +101,6 @@ sed -i -r &apos;s/(\$\{target-stack\})/\1.dev/&apos; configs/* scripts/*
 
 terraform init
 terraform destroy -auto-approve \
-   -var=&quot;ami-id=${ami_id}&quot; \
    -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot;  \
    -var=&quot;destigmatized-dataset-s3-object-key=${destigmatized_dataset_s3_object_key}&quot;  \
    -var=&quot;genomic-dataset-s3-object-key=${genomic_dataset_s3_object_key}&quot; \
@@ -114,12 +109,10 @@ terraform destroy -auto-approve \
    -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
    -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
    -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
-   -var=&quot;dsm_url=${dsm_url}&quot; \
    || true
 
 
 terraform apply -auto-approve \
-   -var=&quot;ami-id=${ami_id}&quot; \
    -var=&quot;dataset-s3-object-key=${dataset_s3_object_key}&quot; \
    -var=&quot;destigmatized-dataset-s3-object-key=${destigmatized_dataset_s3_object_key}&quot; \
    -var=&quot;genomic-dataset-s3-object-key=${genomic_dataset_s3_object_key}&quot; \
@@ -128,7 +121,6 @@ terraform apply -auto-approve \
    -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
    -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
    -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
-   -var=&quot;dsm_url=${dsm_url}&quot; \
    || true
 
 

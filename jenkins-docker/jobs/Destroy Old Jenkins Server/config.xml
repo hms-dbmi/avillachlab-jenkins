@@ -61,8 +61,6 @@ terraform plan -destroy \
 -var &quot;jenkins_sg_ingress_https_cidr_blocks=${jenkins_sg_ingress_https_cidr_blocks}&quot; \
 -var &quot;jenkins_sg_ingress_ssh_cidr_blocks=${jenkins_sg_ingress_ssh_cidr_blocks}&quot; \
 -var &quot;jenkins_sg_egress_allow_all_cidr_blocks=${jenkins_sg_egress_allow_all_cidr_blocks}&quot; \
--var &quot;ami_id=${ami_id}&quot; \
--var &quot;dsm_url=${dsm_url}&quot; \
 -var &quot;jenkins_config_s3_location=${jenkins_config_s3_location}&quot; \
 -var &quot;jenkins_ec2_instance_type=${jenkins_ec2_instance_type}&quot; \
 -var &quot;jenkins_tf_local_var_OS_dist=${jenkins_tf_local_var_OS_dist}&quot; \
@@ -82,8 +80,6 @@ if $Destroy; then
   -var &quot;jenkins_sg_ingress_https_cidr_blocks=${jenkins_sg_ingress_https_cidr_blocks}&quot; \
   -var &quot;jenkins_sg_ingress_ssh_cidr_blocks=${jenkins_sg_ingress_ssh_cidr_blocks}&quot; \
   -var &quot;jenkins_sg_egress_allow_all_cidr_blocks=${jenkins_sg_egress_allow_all_cidr_blocks}&quot; \
-  -var &quot;ami_id=${ami_id}&quot; \
-  -var &quot;dsm_url=${dsm_url}&quot; \
   -var &quot;jenkins_config_s3_location=${jenkins_config_s3_location}&quot; \
   -var &quot;jenkins_ec2_instance_type=${jenkins_ec2_instance_type}&quot; \
   -var &quot;jenkins_tf_local_var_OS_dist=${jenkins_tf_local_var_OS_dist}&quot; \

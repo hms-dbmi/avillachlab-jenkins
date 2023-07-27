@@ -35,7 +35,7 @@ env &gt; env.txt
 terraform init \
 -backend-config=&quot;bucket=${jenkins_tf_state_bucket}&quot; \
 -backend-config=&quot;key=jenkins_state/jenkins_${GIT_COMMIT}/terraform.tfstate&quot; \
--backend-config=&quot;region=${jenkins_tf_state_region}&quot; 
+-backend-config=&quot;region=${jenkins_tf_state_region}&quot;
 
 # could probably just export env vars with TF_ and terraform will use them.
 terraform apply -auto-approve \
@@ -49,8 +49,6 @@ terraform apply -auto-approve \
 -var &quot;jenkins_sg_ingress_https_cidr_blocks=${jenkins_sg_ingress_https_cidr_blocks}&quot; \
 -var &quot;jenkins_sg_ingress_ssh_cidr_blocks=${jenkins_sg_ingress_ssh_cidr_blocks}&quot; \
 -var &quot;jenkins_sg_egress_allow_all_cidr_blocks=${jenkins_sg_egress_allow_all_cidr_blocks}&quot; \
--var &quot;ami_id=${ami_id}&quot; \
--var &quot;dsm_url=${dsm_url}&quot; \
 -var &quot;jenkins_config_s3_location=${jenkins_config_s3_location}&quot; \
 -var &quot;jenkins_ec2_instance_type=${jenkins_ec2_instance_type}&quot; \
 -var &quot;jenkins_tf_local_var_OS_dist=${jenkins_tf_local_var_OS_dist}&quot; \
