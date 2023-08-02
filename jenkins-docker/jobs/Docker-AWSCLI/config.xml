@@ -43,7 +43,7 @@ pipeline {
       stage(&apos;Build&apos;) {
         steps {
 
-            git branch: &apos;$git_branch_avillachlab_secure_infrastructure&apos;, url: &apos;https://github.com/hms-dbmi/avillachlab-secure-infrastructure.git&apos;
+            git branch: &apos;$git_branch_avillachlab_secure_infrastructure&apos;, url: &apos;https://github.com/hms-dbmi/pic-sure-bdc-infrastructure.git&apos;
 
             sh &quot;&quot;&quot;
                 aws sts assume-role --duration-seconds 3600 --role-arn $arn_role_app --role-session-name &quot;ami-builder&quot; &gt; assume-role-output.txt

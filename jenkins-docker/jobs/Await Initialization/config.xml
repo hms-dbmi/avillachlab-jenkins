@@ -25,7 +25,7 @@
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
-        <url>https://github.com/hms-dbmi/avillachlab-secure-infrastructure</url>
+        <url>https://github.com/hms-dbmi/pic-sure-bdc-infrastructure</url>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
