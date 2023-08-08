@@ -34,7 +34,6 @@ terraform apply -auto-approve \
 -var "jenkins_instance_profile_name=${jenkins_instance_profile_name}" \
 -var "jenkins_sg_ingress_http_cidr_blocks=${jenkins_sg_ingress_http_cidr_blocks}" \
 -var "jenkins_sg_ingress_https_cidr_blocks=${jenkins_sg_ingress_https_cidr_blocks}" \
--var "jenkins_sg_ingress_ssh_cidr_blocks=${jenkins_sg_ingress_ssh_cidr_blocks}" \
 -var "jenkins_sg_egress_allow_all_cidr_blocks=${jenkins_sg_egress_allow_all_cidr_blocks}" \
 -var "jenkins_config_s3_location=${jenkins_config_s3_location}" \
 -var "jenkins_ec2_instance_type=${jenkins_ec2_instance_type}" \

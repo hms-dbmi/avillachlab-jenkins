@@ -1,7 +1,7 @@
 #!/bin/bash
 sudo yum install wget -y
 
-sh /opt/srce/scripts/gsstools.sh
+sh /opt/srce/scripts/start-gsstools.sh
 echo "user-data progress starting update"
 sudo yum -y update
 echo "user-data progress finished update installing epel-release"
