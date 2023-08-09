@@ -8,9 +8,9 @@ echo "user-data progress finished update installing epel-release"
 sudo yum -y install epel-release
 cd /home/centos/jenkins
 
-repo=$(echo ${jenkins_git_repo} |awk -F/ '{print $NF}')
-wget ${jenkins_git_repo}/-/archive/${git_commit}/${repo}.zip
-unzip ${repo}.zip -d tmp && tmp/* tmp/${repo}
+repo=`echo ${jenkins_git_repo} | awk -F/ '{print $NF}'`
+wget ${jenkins_git_repo}/-/archive/${git_commit}/$${repo}.zip
+unzip $${repo}.zip -d tmp && tmp/* tmp/$${repo}
 
 sudo mkdir -p /var/jenkins_home/jobs/
 sudo mkdir -p /var/log/jenkins-docker-logs
