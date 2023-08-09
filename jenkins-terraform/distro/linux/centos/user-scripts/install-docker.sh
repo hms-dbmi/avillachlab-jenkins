@@ -1,22 +1,19 @@
 #!/bin/bash
-sudo yum install wget -y
 
 sh /opt/srce/scripts/start-gsstools.sh
-echo "user-data progress starting update"
 sudo yum -y update
-echo "user-data progress finished update installing epel-release"
-sudo yum -y install epel-release
-cd /home/centos/jenkins
 
 repo=`echo ${jenkins_git_repo} | awk -F/ '{print $NF}'`
-wget ${jenkins_git_repo}/-/archive/${git_commit}/$${repo}.zip
-unzip $${repo}.zip -d tmp && tmp/* tmp/$${repo}
+tmp_dir=`mktemp -d`
+wget ${jenkins_git_repo}/-/archive/${git_commit}/$${repo}.zip -O /tmp/$${repo}.zip
+unzip /tmp/$${repo}.zip -d $tmp_dir
+sudo mv $tmp_dir/*/jenkins-docker /home/centos/jenkins && rm -rf $tmp_dir /tmp/$${repo}.zip
 
-sudo mkdir -p /var/jenkins_home/jobs/
-sudo mkdir -p /var/log/jenkins-docker-logs
-cp -r tmp/jenkins-docker/jobs/* /var/jenkins_home/jobs/
+cd /home/centos/jenkins
 
-rm -rf tmp
+sudo mkdir -p /var/jenkins_home/jobs /var/log/jenkins-docker-logs
+
+cp -r jobs/* /var/jenkins_home/jobs/
 
 # Jenkins build using IAC
 sudo docker build \
@@ -47,9 +44,8 @@ sudo docker run -d --log-driver syslog --log-opt tag=jenkins \
                     --name jenkins \
                     jenkins \
                     --httpsPort=8443 \
-		    --httpsKeyStore=/root/jenkins.p12 \
-		    --httpsKeyStorePassword="$keystore_pass"
-
+                    --httpsKeyStore=/root/jenkins.p12 \
+                    --httpsKeyStorePassword="$keystore_pass"
 
 #sudo docker logs -f jenkins > /var/log/jenkins-docker-logs/jenkins.log &
 
