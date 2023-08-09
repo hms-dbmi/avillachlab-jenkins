@@ -68,3 +68,16 @@ variable "jenkins_docker_maven_distro" {
 variable "jenkins_docker_terraform_distro" {
   type = string
 }
+
+variable "jenkins_git_repo" {
+  type = string
+}
+
+variable "env_is_open_access" {
+  type = boolean
+}
+
+variable "environment_name" {
+  type    = string
+  default = "development"
+}

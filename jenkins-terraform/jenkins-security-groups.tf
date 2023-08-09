@@ -4,13 +4,6 @@ resource "aws_security_group" "inbound-jenkins" {
   vpc_id      = var.jenkins_vpc_id
 
   ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = var.jenkins_sg_ingress_http_cidr_blocks
-  }
-
-  ingress {
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
@@ -19,7 +12,8 @@ resource "aws_security_group" "inbound-jenkins" {
 
   tags = {
     Owner       = "Avillach_Lab"
-    Environment = "development"
+    Environment = var.environment_name
+    Project     = local.project
     Name        = "inbound-jenkins-from-lma Security Group - ${var.stack_id}"
   }
 }
@@ -38,7 +32,8 @@ resource "aws_security_group" "outbound-jenkins-to-internet" {
 
   tags = {
     Owner       = "Avillach_Lab"
-    Environment = "development"
+    Environment = var.environment_name
+    Project     = local.project
     Name        = "outbound-jenkins-to-internet Security Group - ${var.stack_id}"
   }
 }

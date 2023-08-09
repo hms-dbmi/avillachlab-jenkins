@@ -7,9 +7,15 @@ sudo yum -y update
 echo "user-data progress finished update installing epel-release"
 sudo yum -y install epel-release
 cd /home/centos/jenkins
+
+wget ${jenkins_git_repo}/-/archive/${git_commit}/${jenkins_git_repo##*/}.zip
+unzip ${jenkins_git_repo##*/}.zip -d tmp && tmp/* tmp/${jenkins_git_repo##*/}
+
 sudo mkdir -p /var/jenkins_home/jobs/
 sudo mkdir -p /var/log/jenkins-docker-logs
-cp -r jobs/* /var/jenkins_home/jobs/
+cp -r tmp/jenkins-docker/jobs/* /var/jenkins_home/jobs/
+
+rm -rf tmp
 
 # Jenkins build using IAC
 sudo docker build \
