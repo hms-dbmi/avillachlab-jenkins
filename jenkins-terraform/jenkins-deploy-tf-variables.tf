@@ -74,7 +74,7 @@ variable "jenkins_git_repo" {
 }
 
 variable "env_is_open_access" {
-  type = boolean
+  type = bool
 }
 
 variable "environment_name" {
