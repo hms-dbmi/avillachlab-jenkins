@@ -46,8 +46,8 @@ Jenkins.instance.getItemByFullName(&quot;Import_HPDS_Dictionary_File&quot;)
     new StringParameterValue(&quot;dictionary_s3_key&quot;, buildSpec.source_dictionary_s3_object_key.trim()),
     new StringParameterValue(&quot;pipeline_build_id&quot;,  envVars[&quot;GIT_COMMIT&quot;].trim())
     ])).get()
-    
-    
+
+
 Jenkins.instance.getItemByFullName(&quot;PIC-SURE Pipeline&quot;)
     .scheduleBuild2(0).get()
 
@@ -59,7 +59,7 @@ Jenkins.instance.getItemByFullName(&quot;PIC-SURE Pipeline&quot;)
     <hudson.tasks.Shell>
       <command>LAST_DATASET_MODIFICATION_COMMIT=`git blame --abbrev=39 build-spec.json | grep source_dataset_s3_url | cut -f 1 -d &apos; &apos;`
 
-docker exec jenkins /usr/local/bin/aws s3api head-object --bucket $stack_s3_bucket --key &quot;data/${LAST_DATASET_MODIFICATION_COMMIT}/javabins_rekeyed.tar.gz&quot; || not_exist=true
+aws s3api head-object --bucket $stack_s3_bucket --key &quot;data/${LAST_DATASET_MODIFICATION_COMMIT}/javabins_rekeyed.tar.gz&quot; || not_exist=true
 if [ $not_exist ]; then
   echo $LAST_DATASET_MODIFICATION_COMMIT &gt; toBeRekeyed.txt
   echo &quot;Will rekey new dataset.&quot;
@@ -71,7 +71,7 @@ fi
 
 LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT=`git blame --abbrev=39 build-spec.json | grep source_destigmatized_dataset_s3_url | cut -f 1 -d &apos; &apos;`
 
-docker exec jenkins /usr/local/bin/aws s3api head-object --bucket $stack_s3_bucket --key &quot;data/${LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT}/destigmatized_javabins_rekeyed.tar.gz&quot; || not_exist_destig=false
+aws s3api head-object --bucket $stack_s3_bucket --key &quot;data/${LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT}/destigmatized_javabins_rekeyed.tar.gz&quot; || not_exist_destig=false
 
 if [ $not_exist_destig ]; then
   echo $LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT &gt; destigmatized_toBeRekeyed.txt
