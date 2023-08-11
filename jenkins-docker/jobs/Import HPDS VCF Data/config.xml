@@ -31,7 +31,7 @@
       <command>SOURCE_FILE_S3_LINK=`grep source_genomic_dataset_s3_url build-spec.json | cut -d &apos;:&apos; -f 2,3 | sed &apos;s/&quot;//g&apos;`
 
 [ -d &apos;all&apos; ] || mkdir all/
-assume_role() "arn:aws:iam::736265540791:role/curated-datasets-s3-role"
+assume_role() &quot;arn:aws:iam::736265540791:role/curated-datasets-s3-role&quot;
 aws s3 cp --recursive $SOURCE_FILE_S3_LINK all/
 
 reset_role()

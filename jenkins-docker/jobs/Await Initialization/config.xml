@@ -58,9 +58,12 @@ aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraf
 
 for instance in httpd wildfly dictionary hpds; do
 	assume_role()
-	INSTANCE_ID=`terraform output "${instance}-ec2-id"`
-    while [ -z $(aws --region=us-east-1 ec2 describe-tags --filters "Name=resource-id,Values=${INSTANCE_ID}" | grep InitComplete) ];do echo "$instance EC2 still initializing";sleep 60;done
-	echo "$instance EC2 Initialization Complete"
+	INSTANCE_ID=`terraform output &quot;${instance}-ec2-id&quot;`
+  while [ -z $(aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do
+      echo &quot;$instance EC2 still initializing&quot;
+      sleep 60
+  done
+	echo &quot;$instance EC2 Initialization Complete&quot;
 done
 
 reset_role()

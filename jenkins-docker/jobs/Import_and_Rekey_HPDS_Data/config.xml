@@ -62,7 +62,7 @@ mkdir -p local/hpds/
 mkdir -p local/source/
 
 ### Pull data set to rekey.
-assume_role() "arn:aws:iam::736265540791:role/curated-datasets-s3-role"
+assume_role() &quot;arn:aws:iam::736265540791:role/curated-datasets-s3-role&quot;
 aws s3 cp ${source_s3_url} local/source/javabins.tar.gz
 
 tar -xvzf local/source/javabins.tar.gz -C local/source

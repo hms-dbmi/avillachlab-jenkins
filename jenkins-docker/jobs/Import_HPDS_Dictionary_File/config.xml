@@ -45,7 +45,7 @@
       <command>
 
 ### Pull dictionary in boundary.
-assume_role() "arn:aws:iam::736265540791:role/curated-datasets-s3-role"
+assume_role() &quot;arn:aws:iam::736265540791:role/curated-datasets-s3-role&quot;
 aws s3 cp ${dictionary_s3_key} dictionary.javabin.tar.gz
 
 reset_role()
