@@ -4,16 +4,6 @@
   <description></description>
   <keepDependencies>false</keepDependencies>
   <properties>
-    <hudson.model.ParametersDefinitionProperty>
-      <parameterDefinitions>
-        <hudson.model.StringParameterDefinition>
-          <name>S3_BUCKET_NAME</name>
-          <description></description>
-          <defaultValue>${stack_s3_bucket}</defaultValue>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
-      </parameterDefinitions>
-    </hudson.model.ParametersDefinitionProperty>
     <hudson.plugins.copyartifact.CopyArtifactPermissionProperty plugin="copyartifact@1.45.3">
       <projectNameList>
         <string>*</string>
@@ -30,14 +20,14 @@
   <builders>
     <hudson.tasks.Shell>
       <command>
-      
-      echo &quot;Unlocking deployment state.&quot;
+
+echo &quot;Unlocking deployment state.&quot;
 
 aws s3api put-object-legal-hold \
---bucket $S3_BUCKET_NAME \
+--bucket ${stack_s3_bucket} \
 --key deployment_state_metadata/stacks.json \
 --legal-hold Status=OFF
-      
+
       </command>
     </hudson.tasks.Shell>
   </builders>

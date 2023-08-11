@@ -62,20 +62,12 @@ mkdir -p local/hpds/
 mkdir -p local/source/
 
 ### Pull data set to rekey.
-aws sts assume-role --duration-seconds 900 --role-arn arn:aws:iam::736265540791:role/curated-datasets-s3-role --role-session-name &quot;s3-test&quot; &gt; assume-role-output.txt
-
-export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-
+assume_role() "arn:aws:iam::736265540791:role/curated-datasets-s3-role"
 aws s3 cp ${source_s3_url} local/source/javabins.tar.gz
 
 tar -xvzf local/source/javabins.tar.gz -C local/source
 
-unset AWS_ACCESS_KEY_ID
-unset AWS_SECRET_ACCESS_KEY
-unset AWS_SESSION_TOKEN
-
+reset_role()
 ### Move meta into local/hpds to include with new data set
 cp local/source/metadata.json local/hpds/
 

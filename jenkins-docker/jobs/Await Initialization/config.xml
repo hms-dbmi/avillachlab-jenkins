@@ -49,26 +49,22 @@
 #wget https://releases.hashicorp.com/terraform/0.12.31/terraform_0.12.31_linux_amd64.zip &amp;&amp; unzip terraform_0.12.31_linux_amd64.zip &amp;&amp; mv terraform /usr/local/bin/
 terraform init
 
-aws sts assume-role --duration-seconds 3600 --role-arn &quot;arn:aws:iam::${cnc_acct_id}:role/system/${jenkins_s3_role_name}&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
-
-export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-
-aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate .
-aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/stack_variables.tf .
-cp stack_variables.tf ../s3-deployment-roles/
+#aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate .
+#aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/stack_variables.tf .
+#cp stack_variables.tf ../s3-deployment-roles/
 #aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate_roles ../s3-deployment-roles/terraform.tfstate || echo &quot;role state doesnt exist, it will be created&quot;
 
-unset AWS_ACCESS_KEY_ID
-unset AWS_SECRET_ACCESS_KEY
-unset AWS_SESSION_TOKEN
+aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate .
 
-aws sts assume-role --duration-seconds 3600 --role-arn &quot;arn:aws:iam::${app_acct_id}:role/hms-dbmi-cnc-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
+for instance in httpd wildfly dictionary hpds; do
+	assume_role()
+	INSTANCE_ID=`terraform output "${instance}-ec2-id"`
+    while [ -z $(aws --region=us-east-1 ec2 describe-tags --filters "Name=resource-id,Values=${INSTANCE_ID}" | grep InitComplete) ];do echo "$instance EC2 still initializing";sleep 60;done
+	echo "$instance EC2 Initialization Complete"
+done
 
-export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+reset_role()
+exit 0
 
 INSTANCE_ID=`terraform state show aws_instance.wildfly-ec2 | grep &quot;\&quot;i-[a-f0-9]&quot; | cut -f 2 -d &quot;=&quot; | sed &apos;s/&quot;//g&apos;`
 while [ -z $(aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do echo &quot;still initializing&quot;;sleep 10;done

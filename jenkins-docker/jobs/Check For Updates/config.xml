@@ -57,7 +57,9 @@ Jenkins.instance.getItemByFullName(&quot;PIC-SURE Pipeline&quot;)
       </source>
     </hudson.plugins.groovy.SystemGroovy>
     <hudson.tasks.Shell>
-      <command>LAST_DATASET_MODIFICATION_COMMIT=`git blame --abbrev=39 build-spec.json | grep source_dataset_s3_url | cut -f 1 -d &apos; &apos;`
+      <command>#!/bin/bash
+
+LAST_DATASET_MODIFICATION_COMMIT=`git blame --abbrev=39 build-spec.json | grep source_dataset_s3_url | cut -f 1 -d &apos; &apos;`
 
 aws s3api head-object --bucket $stack_s3_bucket --key &quot;data/${LAST_DATASET_MODIFICATION_COMMIT}/javabins_rekeyed.tar.gz&quot; || not_exist=true
 if [ $not_exist ]; then
@@ -81,9 +83,31 @@ else
   echo &quot;Using existing destigmatized dataset (Skipping rekey).&quot;
 fi
 
-
 LAST_GENOMIC_DATASET_MODIFICATION_COMMIT=`git blame --abbrev=39 build-spec.json | grep source_genomic_dataset_s3_url | cut -f 1 -d &apos; &apos;`
 echo $LAST_GENOMIC_DATASET_MODIFICATION_COMMIT &gt; genomicDatasetKey.txt
+
+assume_role(){
+  local role_arn=${1:-&quot;arn:aws:iam::${app_acct_id}:role/${jenkins_provisioning_assume_role_name}&quot;}
+  OUTPUT=$(aws sts assume-role \
+      --role-arn $role_arn \
+      --role-session-name &quot;teardown-rebuild&quot; \
+      --query &quot;Credentials.[AccessKeyId,SecretAccessKey,SessionToken]&quot; \
+      --output text)
+
+  export AWS_ACCESS_KEY_ID=$(echo $OUTPUT | awk &apos;{print $1}&apos;)
+  export AWS_SECRET_ACCESS_KEY=$(echo $OUTPUT | awk &apos;{print $2}&apos;)
+  export AWS_SESSION_TOKEN=$(echo $OUTPUT | awk &apos;{print $3}&apos;)
+}
+
+reset_role(){
+  unset AWS_ACCESS_KEY_ID
+  unset AWS_SECRET_ACCESS_KEY
+  unset AWS_SESSION_TOKEN
+}
+
+export -f assume_role
+export -f reset_role
+
 </command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
