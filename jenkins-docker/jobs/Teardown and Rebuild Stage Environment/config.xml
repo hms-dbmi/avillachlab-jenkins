@@ -71,6 +71,8 @@
   <builders>
     <hudson.tasks.Shell>
       <command>#!/bin/bash
+source &quot;/var/jenkins_home/workspace/Check For Updates/role_functions.sh&quot;
+
 cd app-infrastructure
 
 # Terraform provider can assume role
@@ -90,7 +92,7 @@ aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraf
 #aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate_roles ../s3-deployment-roles/terraform.tfstate || echo &quot;role state doesnt exist, it will be created&quot;
 
 
-assume_role()
+assume_role
 
 #  why?
 # move the roles in the app-infrastructure and have a flat(ish) model
@@ -114,7 +116,7 @@ if $isDestroyOnly; then
      -var=&quot;env_hosted_zone_id=${env_hosted_zone_id}&quot; \
      -var=&quot;allowed_hosts=${REGEX_DOMAINS}&quot; \
 
-  reset_role()
+  reset_role
 
   # Move to terraform backend
   aws s3 cp terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate
@@ -144,7 +146,7 @@ else
      -var=&quot;env_hosted_zone_id=${env_hosted_zone_id}&quot; \
      -var=&quot;allowed_hosts=${REGEX_DOMAINS}&quot; || true
 
-  reset_role()
+  reset_role
 
   # Move to terraform backend
   # If script fails before state file is uploaded to s3 state will be lost for created objects \

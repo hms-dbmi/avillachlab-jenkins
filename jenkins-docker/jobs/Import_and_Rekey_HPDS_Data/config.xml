@@ -50,7 +50,9 @@
   <concurrentBuild>false</concurrentBuild>
   <builders>
     <hudson.tasks.Shell>
-      <command>
+      <command>#!/bin/bash
+source &quot;/var/jenkins_home/workspace/Check For Updates/role_functions.sh&quot;
+
 ### Build ETL Image
 aws s3 --sse=AES256 cp s3://${stack_s3_bucket}/releases/jenkins_pipeline_build_${GIT_COMMIT}/pic-sure-hpds-etl.tar.gz pic-sure-hpds-etl.tar.gz
 
@@ -62,12 +64,12 @@ mkdir -p local/hpds/
 mkdir -p local/source/
 
 ### Pull data set to rekey.
-assume_role() &quot;arn:aws:iam::736265540791:role/curated-datasets-s3-role&quot;
+assume_role &quot;arn:aws:iam::736265540791:role/curated-datasets-s3-role&quot;
 aws s3 cp ${source_s3_url} local/source/javabins.tar.gz
 
 tar -xvzf local/source/javabins.tar.gz -C local/source
 
-reset_role()
+reset_role
 ### Move meta into local/hpds to include with new data set
 cp local/source/metadata.json local/hpds/
 

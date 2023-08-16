@@ -28,13 +28,16 @@
   <concurrentBuild>false</concurrentBuild>
   <builders>
     <hudson.tasks.Shell>
-      <command>SOURCE_FILE_S3_LINK=`grep source_genomic_dataset_s3_url build-spec.json | cut -d &apos;:&apos; -f 2,3 | sed &apos;s/&quot;//g&apos;`
+      <command>#!/bin/bash
+source &quot;/var/jenkins_home/workspace/Check For Updates/role_functions.sh&quot;
+
+SOURCE_FILE_S3_LINK=`grep source_genomic_dataset_s3_url build-spec.json | cut -d &apos;:&apos; -f 2,3 | sed &apos;s/&quot;//g&apos;`
 
 [ -d &apos;all&apos; ] || mkdir all/
-assume_role() &quot;arn:aws:iam::736265540791:role/curated-datasets-s3-role&quot;
+assume_role &quot;arn:aws:iam::736265540791:role/curated-datasets-s3-role&quot;
 aws s3 cp --recursive $SOURCE_FILE_S3_LINK all/
 
-reset_role()
+reset_role
 aws s3 --sse=AES256 cp --recursive all/ s3://${stack_s3_bucket}/data/`git blame --abbrev=39 build-spec.json | grep source_genomic_dataset_s3_url | cut -f 1 -d &apos; &apos;`/all/
 </command>
       <configuredLocalRules/>

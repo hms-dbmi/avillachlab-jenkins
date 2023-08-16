@@ -45,7 +45,10 @@
   <concurrentBuild>false</concurrentBuild>
   <builders>
     <hudson.tasks.Shell>
-      <command>cd app-infrastructure
+      <command>#!/bin/bash
+source &quot;/var/jenkins_home/workspace/Check For Updates/role_functions.sh&quot;
+
+cd app-infrastructure
 #wget https://releases.hashicorp.com/terraform/0.12.31/terraform_0.12.31_linux_amd64.zip &amp;&amp; unzip terraform_0.12.31_linux_amd64.zip &amp;&amp; mv terraform /usr/local/bin/
 terraform init
 
@@ -57,7 +60,7 @@ terraform init
 aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate .
 
 for instance in httpd wildfly dictionary hpds; do
-	assume_role()
+	assume_role
 	INSTANCE_ID=`terraform output &quot;${instance}-ec2-id&quot;`
   while [ -z $(aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do
       echo &quot;$instance EC2 still initializing&quot;
@@ -66,9 +69,9 @@ for instance in httpd wildfly dictionary hpds; do
 	echo &quot;$instance EC2 Initialization Complete&quot;
 done
 
-reset_role()
-exit 0
+reset_role
 
+: '
 INSTANCE_ID=`terraform state show aws_instance.wildfly-ec2 | grep &quot;\&quot;i-[a-f0-9]&quot; | cut -f 2 -d &quot;=&quot; | sed &apos;s/&quot;//g&apos;`
 while [ -z $(aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do echo &quot;still initializing&quot;;sleep 10;done
 echo &quot;Wildfly EC2 Initialization Complete&quot;
@@ -135,6 +138,7 @@ if [[ &quot;${env_is_open_access,,}&quot; == &quot;false&quot; ]]; then
   unset AWS_ACCESS_KEY_ID
   unset AWS_SECRET_ACCESS_KEY
   unset AWS_SESSION_TOKEN
+'
 fi</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
