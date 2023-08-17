@@ -43,6 +43,7 @@
   <builders>
     <hudson.tasks.Shell>
       <command>#!/bin/bash
+source "/var/jenkins_home/workspace/Check For Updates/role_functions.sh"
 
 ### Pull dictionary in boundary.
 assume_role &quot;arn:aws:iam::736265540791:role/curated-datasets-s3-role&quot;
