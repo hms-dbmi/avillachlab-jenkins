@@ -59,3 +59,11 @@ resource "aws_instance" "jenkins" {
   user_data = data.template_cloudinit_config.config.rendered
 
 }
+
+output "jenkins-ec2-id" {
+  value =  aws_instance.jenkins.id
+}
+
+output "jenkins-ec2-ip" {
+  value =  aws_instance.jenkins.private_ip
+}

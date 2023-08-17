@@ -108,9 +108,12 @@ if $isDestroyOnly; then
      -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot;  \
      -var=&quot;destigmatized_dataset_s3_object_key=${destigmatized_dataset_s3_object_key}&quot;  \
      -var=&quot;genomic_dataset_s3_object_key=${genomic_dataset_s3_object_key}&quot; \
+     -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
      -var=&quot;target_stack=${target_stack}&quot; \
      -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; \
      -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
+     -var=&quot;environment_name=${environment_name}&quot; \
+     -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
      -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
      -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
      -var=&quot;env_hosted_zone_id=${env_hosted_zone_id}&quot; \
@@ -126,9 +129,12 @@ else
      -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot;  \
      -var=&quot;destigmatized_dataset_s3_object_key=${destigmatized_dataset_s3_object_key}&quot;  \
      -var=&quot;genomic_dataset_s3_object_key=${genomic_dataset_s3_object_key}&quot; \
+     -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
      -var=&quot;target_stack=${target_stack}&quot; \
      -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; \
      -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
+     -var=&quot;environment_name=${environment_name}&quot; \
+     -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
      -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
      -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
      -var=&quot;env_hosted_zone_id=${env_hosted_zone_id}&quot; \
@@ -138,9 +144,12 @@ else
      -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot;  \
      -var=&quot;destigmatized_dataset_s3_object_key=${destigmatized_dataset_s3_object_key}&quot;  \
      -var=&quot;genomic_dataset_s3_object_key=${genomic_dataset_s3_object_key}&quot; \
+     -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
      -var=&quot;target_stack=${target_stack}&quot; \
      -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; \
      -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
+     -var=&quot;environment_name=${environment_name}&quot; \
+     -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
      -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
      -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
      -var=&quot;env_hosted_zone_id=${env_hosted_zone_id}&quot; \
