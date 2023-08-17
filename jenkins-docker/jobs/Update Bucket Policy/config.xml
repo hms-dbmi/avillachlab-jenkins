@@ -47,6 +47,7 @@ pipeline {
                     def statements_to_remove = [];
                     def target_stack = &quot;$target_stack&quot;
                     def stack_githash = &quot;$stack_githash&quot;
+                    def short_githash = stack_githash.substring(0,7)
                     for(def statement : bucket_policy.Statement){
                         if(statement.Sid!=null &amp;&amp; statement.Sid.startsWith(&quot;stack-&quot;+target_stack+&quot;-statement&quot;)
                         ||statement.Principal.AWS.size()&lt;22){
