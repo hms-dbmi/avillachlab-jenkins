@@ -69,7 +69,7 @@ aws s3 --sse=AES256 cp env.txt s3://${stack_s3_bucket}/jenkins_state/jenkins_${g
 echo &quot;Waiting for user-script to initialize the environment.&quot;
 # This could get moved to a terraform provisioner to wait for the user script to finish.  Essientially would look the same though.  Leaving for now
 INSTANCE_ID=`terraform state show aws_instance.jenkins | grep &quot;\&quot;i-[a-f0-9]&quot; | cut -f 2 -d &quot;=&quot; | sed &apos;s/&quot;//g&apos;`
-while [ -z $(/usr/bin/aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do echo &quot;still initializing&quot;;sleep 10;done
+while [ -z $(aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do echo &quot;still initializing&quot;;sleep 10;done
 </command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
