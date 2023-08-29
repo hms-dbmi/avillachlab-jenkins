@@ -3,13 +3,8 @@
   <actions/>
   <description></description>
   <keepDependencies>false</keepDependencies>
-  <properties>
-    <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@320.v5a_0933a_e7d61">
-      <autoRebuild>false</autoRebuild>
-      <rebuildDisabled>false</rebuildDisabled>
-    </com.sonyericsson.rebuild.RebuildSettings>
-  </properties>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.1.0">
+  <properties/>
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.0">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
@@ -34,7 +29,7 @@
   <builders>
     <hudson.tasks.Maven>
       <targets>clean install</targets>
-      <mavenName>Maven</mavenName>
+      <mavenName>Maven Home</mavenName>
       <usePrivateRepository>false</usePrivateRepository>
       <settings class="jenkins.mvn.DefaultSettingsProvider"/>
       <globalSettings class="jenkins.mvn.DefaultGlobalSettingsProvider"/>
@@ -43,11 +38,11 @@
     <hudson.tasks.Shell>
       <command>cd target
 
-aws sts assume-role --duration-seconds 900 --role-arn &quot;arn:aws:iam::${cnc_acct_id}:role/system/jenkins-s3-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
+#aws sts assume-role --duration-seconds 900 --role-arn &quot;arn:aws:iam::${cnc_acct_id}:role/system/jenkins-s3-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
 
-export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+#export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+#export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+#export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 
 aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/a/stack_variables.tf .
 
@@ -65,20 +60,20 @@ sed -i &quot;s/$old_token_introspection_token/$new_token_introspection_token/g&q
 aws s3 cp stack_variables.tf s3://$stack_s3_bucket/deployment_state_metadata/a/stack_variables.tf 
 
 mv stack_variables.tf stack_variables_a.tf
+# only one stack at the moment
+#aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/b/stack_variables.tf .
 
-aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/b/stack_variables.tf .
+#export old_token_introspection_token=`cat stack_variables.tf | grep -A3 picsure_token_introspection_token | head -n 3 | tail -1 | cut -d &apos; &apos; -f 5 | sed &apos;s/&quot;//g&apos;`
 
-export old_token_introspection_token=`cat stack_variables.tf | grep -A3 picsure_token_introspection_token | head -n 3 | tail -1 | cut -d &apos; &apos; -f 5 | sed &apos;s/&quot;//g&apos;`
+#sed -i &quot;s/$old_token_introspection_token/$new_token_introspection_token/g&quot; stack_variables.tf
 
-sed -i &quot;s/$old_token_introspection_token/$new_token_introspection_token/g&quot; stack_variables.tf
+#aws s3 cp stack_variables.tf s3://$stack_s3_bucket/deployment_state_metadata/b/stack_variables.tf 
 
-aws s3 cp stack_variables.tf s3://$stack_s3_bucket/deployment_state_metadata/b/stack_variables.tf 
+#mv stack_variables.tf stack_variables_b.tf
 
-mv stack_variables.tf stack_variables_b.tf
-
-unset AWS_ACCESS_KEY_ID
-unset AWS_SECRET_ACCESS_KEY
-unset AWS_SESSION_TOKEN
+#unset AWS_ACCESS_KEY_ID
+#unset AWS_SECRET_ACCESS_KEY
+#unset AWS_SESSION_TOKEN
 </command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>

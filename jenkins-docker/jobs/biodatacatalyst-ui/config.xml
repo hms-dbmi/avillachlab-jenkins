@@ -24,7 +24,7 @@
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.0.2">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.0">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
@@ -49,19 +49,31 @@
   <builders>
     <hudson.tasks.Shell>
       <command>aws s3 --sse=AES256 cp s3://$S3_BUCKET_NAME/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds-ui.tar.gz .
-PIC_SURE_HPDS_UI_VERSION=`docker load -i pic-sure-hpds-ui.tar.gz|cut -d &apos;:&apos; -f 3`
+PIC_SURE_HPDS_UI_VERSION=$(docker load -i pic-sure-hpds-ui.tar.gz | cut -d &apos;:&apos; -f 3)
 docker tag hms-dbmi/pic-sure-hpds-ui:${PIC_SURE_HPDS_UI_VERSION} hms-dbmi/pic-sure-hpds-ui:TARGET_BUILD_VERSION
 
-GIT_BRANCH_SHORT=`echo ${GIT_BRANCH} | cut -d &quot;/&quot; -f 2` 
-GIT_COMMIT_SHORT=`echo ${GIT_COMMIT} | cut -c1-7`
+GIT_BRANCH_SHORT=$(echo ${GIT_BRANCH} | cut -d &quot;/&quot; -f 2)
+GIT_COMMIT_SHORT=$(echo ${GIT_COMMIT} | cut -c1-7)
+
+# Clean the dir out first
+rm -rf biodatacatalyst-ui/open-pic-sure-bdc-frontend
+
+# Make the open UI dir if it doesn&apos;t exist, otherwise do nothing.
+#This is to prevent the build from failing if the dir doesn&apos;t exist
+mkdir -p ../open-pic-sure-bdc-frontend
+
+# Move Open Access UI  into BDC UI
+mv ../open-pic-sure-bdc-frontend biodatacatalyst-ui/open-pic-sure-bdc-frontend
+
+# Move into workspace dir
 cd biodatacatalyst-ui
-docker build --build-arg FILE_SUFFIX=${pipeline_build_id} -t hms-dbmi/pic-sure-biodatacatalyst-ui:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
-cd ../
+
+docker build --build-arg FILE_SUFFIX=${pipeline_build_id} --build-arg IS_OPEN_ACCESS=${env_is_open_access} -t hms-dbmi/pic-sure-biodatacatalyst-ui:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
 mkdir -p docker_image_output
 cd docker_image_output
+
 docker save hms-dbmi/pic-sure-biodatacatalyst-ui:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-ui.tar.gz
-aws s3 --sse=AES256 cp pic-sure-ui.tar.gz s3://$S3_BUCKET_NAME/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-ui.tar.gz
-</command>
+aws s3 --sse=AES256 cp pic-sure-ui.tar.gz s3://$S3_BUCKET_NAME/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-ui.tar.gz</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>

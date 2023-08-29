@@ -18,7 +18,7 @@
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.0.2">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.0">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
@@ -43,12 +43,34 @@
   <builders>
     <hudson.tasks.Shell>
       <command>#!/bin/bash
-source &quot;/var/jenkins_home/workspace/Check For Updates/role_functions.sh&quot;
+assume_role(){
+  local role_arn=${1:-&quot;arn:aws:iam::${app_acct_id}:role/${jenkins_provisioning_assume_role_name}&quot;}
+  OUTPUT=$(aws sts assume-role \
+  --role-arn $role_arn \
+  --role-session-name &quot;teardown-rebuild&quot; \
+  --query &quot;Credentials.[AccessKeyId,SecretAccessKey,SessionToken]&quot; \
+  --output text)
+  
+  export AWS_ACCESS_KEY_ID=$(echo $OUTPUT | awk &apos;{print $1}&apos;)
+  export AWS_SECRET_ACCESS_KEY=$(echo $OUTPUT | awk &apos;{print $2}&apos;)
+  export AWS_SESSION_TOKEN=$(echo $OUTPUT | awk &apos;{print $3}&apos;)
+}
+
+reset_role(){
+  unset AWS_ACCESS_KEY_ID
+  unset AWS_SECRET_ACCESS_KEY
+  unset AWS_SESSION_TOKEN
+}
+
+export -f assume_role
+export -f reset_role
 
 ### Pull dictionary in boundary.
+#assume_role() &quot;arn:aws:iam::736265540791:role/curated-datasets-s3-role&quot;
 assume_role &quot;arn:aws:iam::736265540791:role/curated-datasets-s3-role&quot;
 aws s3 cp ${dictionary_s3_key} dictionary.javabin.tar.gz
 
+#reset_role()
 reset_role
 aws s3 --sse=AES256 cp dictionary.javabin.tar.gz s3://${stack_s3_bucket}/data/${pipeline_build_id}/dictionary.javabin.tar.gz --quiet
       </command>

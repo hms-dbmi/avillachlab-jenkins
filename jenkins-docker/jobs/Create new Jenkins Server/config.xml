@@ -28,11 +28,7 @@
   <concurrentBuild>false</concurrentBuild>
   <builders>
     <hudson.tasks.Shell>
-      <command>#!/bin/bash
-
-source "/var/jenkins_home/workspace/Check For Updates/role_functions.sh"
-
-cd jenkins-terraform
+      <command>cd jenkins-terraform
 env &gt; env.txt
 # backend s3 config will always be encrypted
 # need to find a better key location that isn&apos;t tied to the git commit for the job
@@ -72,15 +68,8 @@ aws s3 --sse=AES256 cp env.txt s3://${stack_s3_bucket}/jenkins_state/jenkins_${g
 
 echo &quot;Waiting for user-script to initialize the environment.&quot;
 # This could get moved to a terraform provisioner to wait for the user script to finish.  Essientially would look the same though.  Leaving for now
-INSTANCE_ID=$(terraform output jenkins-ec2-id)
-JENKINS_IP=$(terraform output jenkins-ec2-ip)
-
-while [ -z $(/usr/bin/aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do echo &quot;still initializing&quot;;sleep 30;done
-
-assume_role
-aws route53 change-resource-record-sets --hosted-zone-id ${env_hosted_zone_id} --change-batch &apos;{&quot;Changes&quot;:[{&quot;Action&quot;:&quot;UPSERT&quot;,&quot;ResourceRecordSet&quot;:{&quot;Name&quot;:&quot;jenkins.&apos;${env_private_dns_name}&apos;&quot;,&quot;Type&quot;:&quot;A&quot;,&quot;TTL&quot;:300,&quot;ResourceRecords&quot;:[{&quot;Value&quot;:&quot;&apos;$JENKINS_IP&apos;&quot;}]}}]}&apos;
-
-reset_role
+INSTANCE_ID=`terraform state show aws_instance.jenkins | grep &quot;\&quot;i-[a-f0-9]&quot; | cut -f 2 -d &quot;=&quot; | sed &apos;s/&quot;//g&apos;`
+while [ -z $(/usr/bin/aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do echo &quot;still initializing&quot;;sleep 10;done
 </command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
