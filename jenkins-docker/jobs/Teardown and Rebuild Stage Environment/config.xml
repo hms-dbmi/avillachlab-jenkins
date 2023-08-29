@@ -113,6 +113,7 @@ if $isDestroyOnly; then
      -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; \
      -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
      -var=&quot;environment_name=${environment_name}&quot; \
+     -var=&quot;env_is_open_access=${env_is_open_access}&quot; \
      -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
      -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
      -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
@@ -134,6 +135,7 @@ else
      -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; \
      -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
      -var=&quot;environment_name=${environment_name}&quot; \
+     -var=&quot;env_is_open_access=${env_is_open_access}&quot; \
      -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
      -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
      -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
@@ -149,6 +151,7 @@ else
      -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; \
      -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
      -var=&quot;environment_name=${environment_name}&quot; \
+     -var=&quot;env_is_open_access=${env_is_open_access}&quot; \
      -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
      -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
      -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
