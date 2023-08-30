@@ -138,7 +138,9 @@ if $isDestroyOnly; then
      -var=&quot;environment_name=${environment_name}&quot; \
      -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
      -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
-     -var=&quot;application_id_for_base_query=${application_id_for_base_query}&quot;
+     -var=&quot;application_id_for_base_query=${application_id_for_base_query}&quot; \
+     -var=&quot;idp_provider=${idp_provider}&quot; \
+     -var=&quot;idp_provider_uri=${idp_provider_uri}&quot;
 
   reset_role
 
@@ -160,7 +162,9 @@ else
      -var=&quot;environment_name=${environment_name}&quot; \
      -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
      -var=&quot;application_id_for_base_query=${application_id_for_base_query}&quot; \
-     -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot; || true
+     -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
+     -var=&quot;idp_provider=${idp_provider}&quot; \
+     -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true
 
   terraform apply -auto-approve \
      -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot;  \
@@ -176,7 +180,9 @@ else
      -var=&quot;environment_name=${environment_name}&quot; \
      -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
      -var=&quot;application_id_for_base_query=${application_id_for_base_query}&quot; \
-     -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot; || true
+     -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
+     -var=&quot;idp_provider=${idp_provider}&quot; \
+     -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true
 
   reset_role
 
