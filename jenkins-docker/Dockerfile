@@ -24,7 +24,7 @@ RUN apt-get -y install python3-pip
 
 RUN apt-get -y install wget
 
-RUN pip3 install --no-input awscli --upgrade
+RUN pip3 install --no-input awscli --upgrade --break-system-packages
 
 RUN curl -fsSL https://get.docker.com | sh
 
