@@ -140,6 +140,7 @@ if $isDestroyOnly; then
      -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
      -var=&quot;application_id_for_base_query=${application_id_for_base_query}&quot; \
      -var=&quot;idp_provider=${idp_provider}&quot; \
+     -var=&quot;analytics_id=${analytics_id}&quot; \
      -var=&quot;idp_provider_uri=${idp_provider_uri}&quot;
 
   reset_role
@@ -158,6 +159,7 @@ else
      -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
      -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
      -var=&quot;env_hosted_zone_id=${env_hosted_zone_id}&quot; \
+     -var=&quot;analytics_id=${analytics_id}&quot; \
      -var=&quot;env_is_open_access=${env_is_open_access}&quot; \
      -var=&quot;environment_name=${environment_name}&quot; \
      -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
@@ -176,6 +178,7 @@ else
      -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
      -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
      -var=&quot;env_hosted_zone_id=${env_hosted_zone_id}&quot; \
+     -var=&quot;analytics_id=${analytics_id}&quot; \
      -var=&quot;env_is_open_access=${env_is_open_access}&quot; \
      -var=&quot;environment_name=${environment_name}&quot; \
      -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
