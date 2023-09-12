@@ -1,8 +1,8 @@
 <?xml version='1.1' encoding='UTF-8'?>
-<flow-definition plugin="workflow-job@1308.v58d48a_763b_31">
+<flow-definition plugin="workflow-job@1316.vd2290d3341a_f">
   <actions>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2141.v5402e818a_779"/>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2141.v5402e818a_779">
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2144.v077a_d1928a_40"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2144.v077a_d1928a_40">
       <jobProperties/>
       <triggers/>
       <parameters/>
@@ -14,10 +14,6 @@
 User-scripts have already started by this point... Need to at least execute this before terraform builds the nodes.  Really Terraform should be handling the state of this bucket not jenkins aws-cli calls</description>
   <keepDependencies>false</keepDependencies>
   <properties>
-    <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@320.v5a_0933a_e7d61">
-      <autoRebuild>false</autoRebuild>
-      <rebuildDisabled>false</rebuildDisabled>
-    </com.sonyericsson.rebuild.RebuildSettings>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
@@ -31,15 +27,15 @@ User-scripts have already started by this point... Need to at least execute this
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3691.v28b_14c465a_b_b_">
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3740.v6d35b_4ed5f9f">
     <script>import groovy.json.JsonSlurper;
 import groovy.json.JsonOutput;
 
 def new_policy
 pipeline {
-    agent any 
+    agent any
     stages {
-        stage(&apos;Retrieve Build Spec&apos;) { 
+        stage(&apos;Retrieve Build Spec&apos;) {
             steps {
                 script {
                     sh &apos;aws s3api get-bucket-policy --bucket ${stack_s3_bucket} --query Policy --output text &gt; /tmp/policy.json&apos;
@@ -47,6 +43,7 @@ pipeline {
                     def statements_to_remove = [];
                     def target_stack = &quot;$target_stack&quot;
                     def stack_githash = &quot;$stack_githash&quot;
+                    def short_githash = stack_githash.substring(0,7)
                     for(def statement : bucket_policy.Statement){
                         if(statement.Sid!=null &amp;&amp; statement.Sid.startsWith(&quot;stack-&quot;+target_stack+&quot;-statement&quot;)
                         ||statement.Principal.AWS.size()&lt;22){
@@ -55,13 +52,9 @@ pipeline {
                         }
                     }
                     bucket_policy.Statement.removeAll(statements_to_remove)
-                    bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-open-hpds\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::${app_acct_id}:role/open-hpds-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
-                    bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-auth-hpds\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::${app_acct_id}:role/auth-hpds-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
-                    bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-wildfly\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::${app_acct_id}:role/wildfly-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
-                    bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-httpd\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::${app_acct_id}:role/httpd-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
-                    bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-dictionary\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: \&quot;arn:aws:iam::${app_acct_id}:role/dictionary-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + stack_githash.substring(0,7) + &quot;\&quot;},\&quot;Action\&quot;: \&quot;s3:GetObject\&quot;,\&quot;Resource\&quot;: \&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;}&quot;));
+                    bucket_policy.Statement.push(new JsonSlurper().parseText(&quot;{\&quot;Sid\&quot;: \&quot;stack-&quot;+target_stack+&quot;-statement-&quot;+short_githash+&quot;\&quot;, \&quot;Effect\&quot;: \&quot;Allow\&quot;,\&quot;Principal\&quot;: {\&quot;AWS\&quot;: [ \&quot;arn:aws:iam::${app_acct_id}:role/httpd-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + short_githash + &quot;\&quot;, \&quot;arn:aws:iam::${app_acct_id}:role/open-hpds-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + short_githash + &quot;\&quot;, \&quot;arn:aws:iam::${app_acct_id}:role/auth-hpds-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + short_githash + &quot;\&quot;, \&quot;arn:aws:iam::${app_acct_id}:role/wildfly-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + short_githash + &quot;\&quot;, \&quot;arn:aws:iam::${app_acct_id}:role/dictionary-deployment-s3-role-&quot; + target_stack + &quot;-&quot; + short_githash + &quot;\&quot;] }, \&quot;Action\&quot;: [\&quot;s3:GetObject\&quot;, \&quot;s3:ListBucket\&quot; ], \&quot;Resource\&quot;: [\&quot;arn:aws:s3:::${stack_s3_bucket}/*\&quot;, \&quot;arn:aws:s3:::${stack_s3_bucket}\&quot;] }&quot;));
                     new_policy = new JsonOutput().toJson(bucket_policy)
-                   
+
                 }
                 script{
                     println(new_policy)

@@ -1,14 +1,18 @@
 #!/bin/bash
-sudo yum install wget -y
 
-sh /opt/srce/scripts/gsstools.sh
-echo "user-data progress starting update"
+sh /opt/srce/scripts/start-gsstools.sh
 sudo yum -y update
-echo "user-data progress finished update installing epel-release"
-sudo yum -y install epel-release
+
+repo=`echo ${jenkins_git_repo} | awk -F/ '{print $NF}'`
+tmp_dir=`mktemp -d`
+wget ${jenkins_git_repo}/-/archive/${git_commit}/$${repo}.zip -O /tmp/$${repo}.zip
+unzip /tmp/$${repo}.zip -d $tmp_dir
+sudo mv $tmp_dir/*/jenkins-docker /home/centos/jenkins && rm -rf $tmp_dir /tmp/$${repo}.zip
+
 cd /home/centos/jenkins
-sudo mkdir -p /var/jenkins_home/jobs/
-sudo mkdir -p /var/log/jenkins-docker-logs
+
+sudo mkdir -p /var/jenkins_home/jobs /var/log/jenkins-docker-logs
+
 cp -r jobs/* /var/jenkins_home/jobs/
 
 # Jenkins build using IAC
@@ -18,11 +22,11 @@ sudo docker build \
    -t jenkins .
 
 # Download Jenkins config file from s3
-for i in {1..5}; do sudo /usr/local/bin/aws --region us-east-1 s3 cp ${jenkins_config_s3_location} /var/jenkins_home/config.xml && break || sleep 45; done
+for i in {1..5}; do sudo /usr/bin/aws --region us-east-1 s3 cp ${jenkins_config_s3_location} /var/jenkins_home/config.xml && break || sleep 45; done
 
 # copy ssl cert & key from s3
-for i in {1..5}; do sudo /usr/local/bin/aws --region us-east-1 s3 cp s3://${stack_s3_bucket}/certs/jenkins/jenkins.cer /root/jenkins.cer && break || sleep 45; done
-for i in {1..5}; do sudo /usr/local/bin/aws --region us-east-1 s3 cp s3://${stack_s3_bucket}/certs/jenkins/jenkins.key /root/jenkins.key && break || sleep 45; done
+for i in {1..5}; do sudo /usr/bin/aws --region us-east-1 s3 cp s3://${stack_s3_bucket}/certs/jenkins/jenkins.cer /root/jenkins.cer && break || sleep 45; done
+for i in {1..5}; do sudo /usr/bin/aws --region us-east-1 s3 cp s3://${stack_s3_bucket}/certs/jenkins/jenkins.key /root/jenkins.key && break || sleep 45; done
 
 # generate keystore file for docker/jenkins use
 keystore_pass=`echo $RANDOM | md5sum | head -c 20`
@@ -40,11 +44,10 @@ sudo docker run -d --log-driver syslog --log-opt tag=jenkins \
                     --name jenkins \
                     jenkins \
                     --httpsPort=8443 \
-		    --httpsKeyStore=/root/jenkins.p12 \
-		    --httpsKeyStorePassword="$keystore_pass"
-
+                    --httpsKeyStore=/root/jenkins.p12 \
+                    --httpsKeyStorePassword="$keystore_pass"
 
 #sudo docker logs -f jenkins > /var/log/jenkins-docker-logs/jenkins.log &
 
 INSTANCE_ID=$(curl -H "X-aws-ec2-metadata-token: $(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")" --silent http://169.254.169.254/latest/meta-data/instance-id)
-sudo docker exec jenkins /usr/local/bin/aws --region=us-east-1 ec2 create-tags --resources $${INSTANCE_ID} --tags Key=InitComplete,Value=true
+sudo /usr/bin/aws --region=us-east-1 ec2 create-tags --resources $${INSTANCE_ID} --tags Key=InitComplete,Value=true
