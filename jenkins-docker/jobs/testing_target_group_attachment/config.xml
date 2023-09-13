@@ -1,0 +1,87 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>lb_tg_arn</name>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>lb_tg_name</name>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>target_id</name>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.0">
+    <configVersion>2</configVersion>
+    <userRemoteConfigs>
+      <hudson.plugins.git.UserRemoteConfig>
+        <url>https://github.com/hms-dbmi/pic-sure-bdc-infrastructure</url>
+      </hudson.plugins.git.UserRemoteConfig>
+    </userRemoteConfigs>
+    <branches>
+      <hudson.plugins.git.BranchSpec>
+        <name>ALS-4796</name>
+      </hudson.plugins.git.BranchSpec>
+    </branches>
+    <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+    <submoduleCfg class="empty-list"/>
+    <extensions/>
+  </scm>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+assume_role(){
+  local role_arn=${1:-&quot;arn:aws:iam::${app_acct_id}:role/${jenkins_provisioning_assume_role_name}&quot;}
+  OUTPUT=$(aws sts assume-role \
+  --role-arn $role_arn \
+  --role-session-name &quot;teardown-rebuild&quot; \
+  --query &quot;Credentials.[AccessKeyId,SecretAccessKey,SessionToken]&quot; \
+  --output text)
+  
+  export AWS_ACCESS_KEY_ID=$(echo $OUTPUT | awk &apos;{print $1}&apos;)
+  export AWS_SECRET_ACCESS_KEY=$(echo $OUTPUT | awk &apos;{print $2}&apos;)
+  export AWS_SESSION_TOKEN=$(echo $OUTPUT | awk &apos;{print $3}&apos;)
+}
+
+reset_role(){
+  unset AWS_ACCESS_KEY_ID
+  unset AWS_SECRET_ACCESS_KEY
+  unset AWS_SESSION_TOKEN
+}
+
+export -f assume_role
+export -f reset_role
+
+cd target-group-attachment
+
+assume_role
+
+terraform init
+
+terraform apply -auto-approve \
+-var=&quot;lb_tg_arn=${lb_tg_arn}&quot;  \
+-var=&quot;lb_tg_name=${lb_tg_name}&quot;  \
+-var=&quot;target_id=${target_id}&quot;
+
+reset_role</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers/>
+</project>
