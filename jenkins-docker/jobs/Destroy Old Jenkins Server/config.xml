@@ -52,7 +52,7 @@ terraform init \
 -backend-config=&quot;region=${jenkins_tf_state_region}&quot;
 
 terraform plan -destroy -out jenkins.tfplan \
--var &quot;git_commit=${git_commit_short}&quot; \
+-var &quot;git_commit=${jenkins_githash_to_destroy}&quot; \
 -var &quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
 -var &quot;stack_id=${stack_id}&quot; \
 -var &quot;environment_name=${environment_name}&quot; \
@@ -63,6 +63,7 @@ terraform plan -destroy -out jenkins.tfplan \
 -var &quot;jenkins_instance_profile_name=${jenkins_instance_profile_name}&quot; \
 -var &quot;jenkins_sg_ingress_http_cidr_blocks=${jenkins_sg_ingress_http_cidr_blocks}&quot; \
 -var &quot;jenkins_sg_ingress_https_cidr_blocks=${jenkins_sg_ingress_https_cidr_blocks}&quot; \
+-var &quot;jenkins_sg_ingress_ssh_cidr_blocks=${jenkins_sg_ingress_ssh_cidr_blocks}&quot; \
 -var &quot;jenkins_sg_egress_allow_all_cidr_blocks=${jenkins_sg_egress_allow_all_cidr_blocks}&quot; \
 -var &quot;jenkins_config_s3_location=${jenkins_config_s3_location}&quot; \
 -var &quot;jenkins_ec2_instance_type=${jenkins_ec2_instance_type}&quot; \

@@ -67,13 +67,13 @@ mv ../open-pic-sure-bdc-frontend biodatacatalyst-ui/open-pic-sure-bdc-frontend
 
 # Move into workspace dir
 cd biodatacatalyst-ui
-
 docker build --build-arg FILE_SUFFIX=${pipeline_build_id} --build-arg IS_OPEN_ACCESS=${env_is_open_access} -t hms-dbmi/pic-sure-biodatacatalyst-ui:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
 mkdir -p docker_image_output
 cd docker_image_output
 
 docker save hms-dbmi/pic-sure-biodatacatalyst-ui:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-ui.tar.gz
-aws s3 --sse=AES256 cp pic-sure-ui.tar.gz s3://$S3_BUCKET_NAME/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-ui.tar.gz</command>
+aws s3 --sse=AES256 cp pic-sure-ui.tar.gz s3://$S3_BUCKET_NAME/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-ui.tar.gz
+</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
