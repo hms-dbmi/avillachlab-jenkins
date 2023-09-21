@@ -52,15 +52,6 @@ aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraf
 output_names=$(terraform output -json | jq -r &apos;keys[]&apos;)
 echo &quot;Output names: $output_names&quot;
 
-<<<<<<< HEAD
-for output_name in $output_names; do
-  reset_role
-  assume_role
-       
-  echo &quot;Current instance: ${output_name}.&quot;
-  INSTANCE_ID=`terraform output &quot;${output_name}&quot;`
-
-=======
 output_names=$(terraform output -json | jq -r &apos;keys[]&apos;)
 echo &quot;Output names: $output_names&quot;
 
@@ -72,7 +63,6 @@ for output_name in $output_names; do
     INSTANCE_ID=`terraform output &quot;${output_name}&quot;`
 
   
->>>>>>> open-picsure-infrastructure
   # Skip if the instance ID is empty
   if [ -z &quot;$INSTANCE_ID&quot; ]; then
     echo &quot;No instance ID for output ${output_name}. Skipping...&quot;
@@ -87,10 +77,6 @@ for output_name in $output_names; do
     sleep 60
   done
   echo &quot;${output_name} EC2 Initialization Complete&quot;
-<<<<<<< HEAD
-=======
-
->>>>>>> open-picsure-infrastructure
 done
 </command>
       <configuredLocalRules/>
