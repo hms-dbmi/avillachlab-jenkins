@@ -69,6 +69,10 @@ variable "jenkins_git_repo" {
   type = string
 }
 
+variable "program" {
+  type = string
+}
+
 variable "env_is_open_access" {
   type = bool
 }
