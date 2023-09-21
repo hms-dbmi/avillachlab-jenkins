@@ -98,7 +98,7 @@ cd app-infrastructure
 aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate . || echo &quot;bad state or doesnt exist, it will be created&quot;
 
 # NEED TO ADD STACK VARIABLES BACK.  They contain the client secret and introspection token.  Need a better secret store than an s3 bucket
-aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/stack_variables.tf .
+#aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/stack_variables.tf .
 #aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/subnet_variables.tf .
 
 #cp stack_variables.tf ../s3-deployment-roles/
@@ -117,6 +117,8 @@ assume_role
 #terraform destroy -auto-approve -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot; -var=&quot;destigmatized_dataset_s3_object_key=${destigmatized_dataset_s3_object_key}&quot; -var=&quot;genomic_dataset_s3_object_key=${genomic_dataset_s3_object_key}&quot;  -var=&quot;target_stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
 #terraform apply -auto-approve -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot;  -var=&quot;destigmatized_dataset_s3_object_key=${destigmatized_dataset_s3_object_key}&quot; -var=&quot;genomic_dataset_s3_object_key=${genomic_dataset_s3_object_key}&quot; -var=&quot;target_stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
 
+#export TF_LOG=DEBUG
+
 terraform init
 if $isDestroyOnly; then
 
@@ -130,17 +132,21 @@ if $isDestroyOnly; then
      -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
      -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
      -var=&quot;env_hosted_zone_id=${env_hosted_zone_id}&quot; \
+     -var=&quot;analytics_id=${analytics_id}&quot; \
      -var=&quot;env_is_open_access=${env_is_open_access}&quot; \
      -var=&quot;include_auth_hpds=${include_auth_hpds}&quot; \
      -var=&quot;include_open_hpds=${include_open_hpds}&quot; \
      -var=&quot;environment_name=${environment_name}&quot; \
-     -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
      -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
      -var=&quot;application_id_for_base_query=${application_id_for_base_query}&quot; \
+     -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
      -var=&quot;idp_provider=${idp_provider}&quot; \
-     -var=&quot;analytics_id=${analytics_id}&quot; \
      -var=&quot;env_project=${env_project}&quot; \
-     -var=&quot;idp_provider_uri=${idp_provider_uri}&quot;
+     -var=&quot;picsure_token_introspection_token=${picsure_token_introspection_token}&quot; \
+     -var=&quot;picsure_client_secret=${env_project}&quot; \
+     -var=&quot;fence_client_id=${fence_client_id}&quot; \
+     -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
+     -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true
 
   reset_role
 
@@ -164,11 +170,18 @@ else
      -var=&quot;include_open_hpds=${include_open_hpds}&quot; \
      -var=&quot;environment_name=${environment_name}&quot; \
      -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
+     -var=&quot;env_live_subdomain=${env_live_subdomain}&quot; \
      -var=&quot;application_id_for_base_query=${application_id_for_base_query}&quot; \
      -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
      -var=&quot;idp_provider=${idp_provider}&quot; \
      -var=&quot;env_project=${env_project}&quot; \
-     -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true
+     -var=&quot;picsure_token_introspection_token=${picsure_token_introspection_token}&quot; \
+     -var=&quot;picsure_client_secret=${env_project}&quot; \
+     -var=&quot;fence_client_id=${fence_client_id}&quot; \
+     -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
+     -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; \
+     -var=&quot;staging_lb_name=${staging_lb_name}&quot; \
+     -var=&quot;live_lb_name=${live_lb_name}&quot; || true
 
   terraform apply -auto-approve \
      -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot;  \
@@ -186,11 +199,18 @@ else
      -var=&quot;include_open_hpds=${include_open_hpds}&quot; \
      -var=&quot;environment_name=${environment_name}&quot; \
      -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
+     -var=&quot;env_live_subdomain=${env_live_subdomain}&quot; \
      -var=&quot;application_id_for_base_query=${application_id_for_base_query}&quot; \
      -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
      -var=&quot;idp_provider=${idp_provider}&quot; \
      -var=&quot;env_project=${env_project}&quot; \
-     -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true
+     -var=&quot;picsure_token_introspection_token=${picsure_token_introspection_token}&quot; \
+     -var=&quot;picsure_client_secret=${env_project}&quot; \
+     -var=&quot;fence_client_id=${fence_client_id}&quot; \
+     -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
+     -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; \
+     -var=&quot;staging_lb_name=${staging_lb_name}&quot; \
+     -var=&quot;live_lb_name=${live_lb_name}&quot;|| true
 
   reset_role
 

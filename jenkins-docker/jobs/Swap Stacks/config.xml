@@ -1,5 +1,5 @@
 <?xml version='1.1' encoding='UTF-8'?>
-<flow-definition plugin="workflow-job@1316.vd2290d3341a_f">
+<flow-definition plugin="workflow-job@1346.v180a_63f40267">
   <actions>
     <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2144.v077a_d1928a_40"/>
     <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2144.v077a_d1928a_40">
@@ -9,10 +9,10 @@
       <options/>
     </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
   </actions>
-  <description>Disabled for now </description>
+  <description>Use this to swap environment Staging and Live environments.</description>
   <keepDependencies>false</keepDependencies>
   <properties/>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3740.v6d35b_4ed5f9f">
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3787.v8f5dcd14a_fa_c">
     <script>import groovy.json.*;
 
 pipeline {
@@ -56,8 +56,8 @@ pipeline {
                     println(target_next_prod_stack)
                     stacksJson = JsonOutput.toJson(stacks)
                     println(stacksJson)
-                    build job: &apos;Move Prod DNS Pointer&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_prod_stack],[$class: &apos;StringParameterValue&apos;, name: &apos;target_next_stack&apos;, value: target_next_prod_stack],[$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash]]
-                    println(&quot;Moved pointer&quot;)
+                    //build job: &apos;Move Prod DNS Pointer&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_prod_stack],[$class: &apos;StringParameterValue&apos;, name: &apos;target_next_stack&apos;, value: target_next_prod_stack],[$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash]]
+                    //println(&quot;Moved pointer&quot;)
                     build job: &apos;Write Stack State&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;stacks_json&apos;, value: stacksJson]]
                 }
             }
@@ -68,5 +68,5 @@ pipeline {
     <sandbox>true</sandbox>
   </definition>
   <triggers/>
-  <disabled>true</disabled>
+  <disabled>false</disabled>
 </flow-definition>
