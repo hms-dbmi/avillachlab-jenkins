@@ -12,7 +12,7 @@
   <description>Use this to swap environment Staging and Live environments.</description>
   <keepDependencies>false</keepDependencies>
   <properties/>
-<definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3787.v8f5dcd14a_fa_c">
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3787.v8f5dcd14a_fa_c">
     <script>import groovy.json.*;
 
 pipeline {

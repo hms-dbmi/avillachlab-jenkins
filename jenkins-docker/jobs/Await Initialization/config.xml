@@ -49,16 +49,30 @@ cd app-infrastructure
 terraform init
 aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate .
 
-for instance in httpd wildfly dictionary hpds; do
-    assume_role
-    INSTANCE_ID=`terraform output &quot;${instance}-ec2-id&quot;`
-    while [ -z $(aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do
-        echo &quot;$instance EC2 still initializing&quot;
-        sleep 60
-    done
-    echo &quot;$instance EC2 Initialization Complete&quot;
+output_names=$(terraform output -json | jq -r &apos;keys[]&apos;)
+echo &quot;Output names: $output_names&quot;
 
-    reset_role
+for output_name in $output_names; do
+  reset_role
+  assume_role
+       
+  echo &quot;Current instance: ${output_name}.&quot;
+  INSTANCE_ID=`terraform output &quot;${output_name}&quot;`
+
+  # Skip if the instance ID is empty
+  if [ -z &quot;$INSTANCE_ID&quot; ]; then
+    echo &quot;No instance ID for output ${output_name}. Skipping...&quot;
+    continue
+  fi
+  
+  echo &quot;Instance-id is $INSTANCE_ID&quot;
+
+  aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot;
+  while [ $(aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete | wc -l ) -eq 0 ]; do 
+    echo &quot;${output_name} EC2 still initializing&quot;
+    sleep 60
+  done
+  echo &quot;${output_name} EC2 Initialization Complete&quot;
 done
 </command>
       <configuredLocalRules/>

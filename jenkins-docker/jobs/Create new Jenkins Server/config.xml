@@ -29,8 +29,7 @@
   <builders>
     <hudson.tasks.Shell>
       <command>#!/bin/bash
-
-source "/var/jenkins_home/workspace/Check For Updates/role_functions.sh"
+source &quot;/var/jenkins_home/workspace/Check For Updates/role_functions.sh&quot;
 
 cd jenkins-terraform
 env &gt; env.txt
