@@ -54,9 +54,9 @@ assume_role
 terraform init
 
 terraform apply -auto-approve \
-  --var=&quot;lb_tg_arn=${lb_tg_arn}&quot;  \
-  --var=&quot;lb_tg_name=${lb_tg_name}&quot;  \
-  --var=&quot;target_id=${target_id}&quot;
+  -var=&quot;lb_tg_arn=${lb_tg_arn}&quot;  \
+  -var=&quot;lb_tg_name=${lb_tg_name}&quot;  \
+  -var=&quot;target_id=${target_id}&quot;
 
 reset_role</command>
       <configuredLocalRules/>

@@ -46,11 +46,9 @@ source &quot;/var/jenkins_home/workspace/Check For Updates/role_functions.sh&quo
 
 cd app-infrastructure
 
-terraform init
 aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate .
 
-output_names=$(terraform output -json | jq -r &apos;keys[]&apos;)
-echo &quot;Output names: $output_names&quot;
+terraform init
 
 output_names=$(terraform output -json | jq -r &apos;keys[]&apos;)
 echo &quot;Output names: $output_names&quot;
@@ -59,9 +57,8 @@ for output_name in $output_names; do
   reset_role
   assume_role
   	
-    echo &quot;Current instance: ${output_name}.&quot;
-    INSTANCE_ID=`terraform output &quot;${output_name}&quot;`
-
+  echo &quot;Current instance: ${output_name}.&quot;
+  INSTANCE_ID=`terraform output &quot;${output_name}&quot;`
   
   # Skip if the instance ID is empty
   if [ -z &quot;$INSTANCE_ID&quot; ]; then
@@ -76,6 +73,7 @@ for output_name in $output_names; do
     echo &quot;${output_name} EC2 still initializing&quot;
     sleep 60
   done
+  
   echo &quot;${output_name} EC2 Initialization Complete&quot;
 done
 </command>
