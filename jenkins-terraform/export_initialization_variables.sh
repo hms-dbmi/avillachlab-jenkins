@@ -8,7 +8,6 @@ export stack_id=<environment short name ( dev or prod )> \
 export jenkins_subnet_id=<aws subnet_id used for jenkins> \
 export jenkins_vpc_id=<aws vpc_id for Jenkins> \
 export jenkins_instance_profile_name=<IAM Profile name for Jenkins> \
-export jenkins_sg_ingress_http_cidr_blocks=<CIDR block used for Jenkins HTTP Security group> \
 export jenkins_sg_ingress_https_cidr_blocks=<CIDR block used for Jenkins HTTPS Security group> \
 export jenkins_sg_egress_allow_all_cidr_blocks=<CIDR block used for Outbound Access SG> \
 export jenkins_config_s3_location=<s3 location that stores Jenkins config.xml> \
