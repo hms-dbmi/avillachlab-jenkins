@@ -60,6 +60,20 @@ mv stack_variables.tf stack_variables_a.tf
 
 echo &quot;New token:&quot;
 echo &quot;${new_token_introspection_token}&quot;
+# only one stack at the moment
+#aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/b/stack_variables.tf .
+
+#export old_token_introspection_token=`cat stack_variables.tf | grep -A3 picsure_token_introspection_token | head -n 3 | tail -1 | cut -d &apos; &apos; -f 5 | sed &apos;s/&quot;//g&apos;`
+
+#sed -i &quot;s/$old_token_introspection_token/$new_token_introspection_token/g&quot; stack_variables.tf
+
+#aws s3 cp stack_variables.tf s3://$stack_s3_bucket/deployment_state_metadata/b/stack_variables.tf 
+
+#mv stack_variables.tf stack_variables_b.tf
+
+#unset AWS_ACCESS_KEY_ID
+#unset AWS_SECRET_ACCESS_KEY
+#unset AWS_SESSION_TOKEN
 </command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
