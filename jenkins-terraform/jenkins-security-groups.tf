@@ -35,6 +35,7 @@ resource "aws_security_group" "outbound-jenkins-to-internet" {
     Owner       = "Avillach_Lab"
     Environment = var.environment_name
     Project     = local.project
+    Program     = var.program
     Name        = "${local.project} Jenkins Outbound Security Group - ${var.stack_id}"
   }
 }

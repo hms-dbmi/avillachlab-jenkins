@@ -71,6 +71,7 @@ variable "jenkins_git_repo" {
 
 variable "program" {
   type = string
+  default = "BdC"
 }
 
 variable "env_is_open_access" {
