@@ -32,7 +32,6 @@ terraform apply -auto-approve \
 -var "jenkins_subnet_id=${jenkins_subnet_id}" \
 -var "jenkins_vpc_id=${jenkins_vpc_id}" \
 -var "jenkins_instance_profile_name=${jenkins_instance_profile_name}" \
--var "jenkins_sg_ingress_http_cidr_blocks=${jenkins_sg_ingress_http_cidr_blocks}" \
 -var "jenkins_sg_ingress_https_cidr_blocks=${jenkins_sg_ingress_https_cidr_blocks}" \
 -var "jenkins_sg_egress_allow_all_cidr_blocks=${jenkins_sg_egress_allow_all_cidr_blocks}" \
 -var "jenkins_config_s3_location=${jenkins_config_s3_location}" \

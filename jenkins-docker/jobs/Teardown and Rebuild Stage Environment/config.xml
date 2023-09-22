@@ -67,27 +67,7 @@
   <builders>
     <hudson.tasks.Shell>
       <command>#!/bin/bash
-assume_role(){
-  local role_arn=${1:-&quot;arn:aws:iam::${app_acct_id}:role/${jenkins_provisioning_assume_role_name}&quot;}
-  OUTPUT=$(aws sts assume-role \
-  --role-arn $role_arn \
-  --role-session-name &quot;teardown-rebuild&quot; \
-  --query &quot;Credentials.[AccessKeyId,SecretAccessKey,SessionToken]&quot; \
-  --output text)
-  
-  export AWS_ACCESS_KEY_ID=$(echo $OUTPUT | awk &apos;{print $1}&apos;)
-  export AWS_SECRET_ACCESS_KEY=$(echo $OUTPUT | awk &apos;{print $2}&apos;)
-  export AWS_SESSION_TOKEN=$(echo $OUTPUT | awk &apos;{print $3}&apos;)
-}
-
-reset_role(){
-  unset AWS_ACCESS_KEY_ID
-  unset AWS_SECRET_ACCESS_KEY
-  unset AWS_SESSION_TOKEN
-}
-
-export -f assume_role
-export -f reset_role
+source &quot;/var/jenkins_home/workspace/Check For Updates/role_functions.sh&quot;
 
 cd app-infrastructure
 
@@ -97,27 +77,7 @@ cd app-infrastructure
 # Just use an s3 backend in terraform. no reason to store this state via aws cli
 aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate . || echo &quot;bad state or doesnt exist, it will be created&quot;
 
-# NEED TO ADD STACK VARIABLES BACK.  They contain the client secret and introspection token.  Need a better secret store than an s3 bucket
-#aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/stack_variables.tf .
-#aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/subnet_variables.tf .
-
-#cp stack_variables.tf ../s3-deployment-roles/
-#cp subnet_variables.tf ../s3-deployment-roles/
-
-# why are the roles and the rest of everything for the nodes in differenet tf states?
-#aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate_roles ../s3-deployment-roles/terraform.tfstate || echo &quot;role state doesnt exist, it will be created&quot;
-
-
 assume_role
-
-#  why?
-# move the roles in the app-infrastructure and have a flat(ish) model
-#cd ../s3-deployment-roles
-#terraform init
-#terraform destroy -auto-approve -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot; -var=&quot;destigmatized_dataset_s3_object_key=${destigmatized_dataset_s3_object_key}&quot; -var=&quot;genomic_dataset_s3_object_key=${genomic_dataset_s3_object_key}&quot;  -var=&quot;target_stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
-#terraform apply -auto-approve -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot;  -var=&quot;destigmatized_dataset_s3_object_key=${destigmatized_dataset_s3_object_key}&quot; -var=&quot;genomic_dataset_s3_object_key=${genomic_dataset_s3_object_key}&quot; -var=&quot;target_stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
-
-#export TF_LOG=DEBUG
 
 terraform init
 if $isDestroyOnly; then

@@ -29,10 +29,6 @@ variable "jenkins_sg_egress_allow_all_cidr_blocks" {
   type = list(any)
 }
 
-variable "jenkins_sg_ingress_http_cidr_blocks" {
-  type = list(any)
-}
-
 variable "jenkins_sg_ingress_https_cidr_blocks" {
   type = list(any)
 }
@@ -73,11 +69,16 @@ variable "jenkins_git_repo" {
   type = string
 }
 
+variable "program" {
+  type = string
+  default = "BdC"
+}
+
 variable "env_is_open_access" {
   type = bool
 }
 
 variable "environment_name" {
   type    = string
-  default = "development"
+  default = "dev"
 }

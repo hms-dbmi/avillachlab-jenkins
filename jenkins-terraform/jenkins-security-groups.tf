@@ -1,6 +1,6 @@
 resource "aws_security_group" "inbound-jenkins" {
-  name        = "allow_inbound_to_jenkins_vpc_${var.stack_id}_${var.git_commit}"
-  description = "Allow inbound traffic on Ports 80 and 443"
+  name        = "allow_inbound_to_jenkins_${var.stack_id}_${var.git_commit}"
+  description = "Allow inbound traffic on Port 443"
   vpc_id      = var.jenkins_vpc_id
 
   ingress {
@@ -14,7 +14,8 @@ resource "aws_security_group" "inbound-jenkins" {
     Owner       = "Avillach_Lab"
     Environment = var.environment_name
     Project     = local.project
-    Name        = "inbound-jenkins-from-lma Security Group - ${var.stack_id}"
+    Program     = var.program
+    Name        = "${local.project} Jenkins Inbound Security Group - ${var.stack_id}"
   }
 }
 
@@ -34,6 +35,7 @@ resource "aws_security_group" "outbound-jenkins-to-internet" {
     Owner       = "Avillach_Lab"
     Environment = var.environment_name
     Project     = local.project
-    Name        = "outbound-jenkins-to-internet Security Group - ${var.stack_id}"
+    Program     = var.program
+    Name        = "${local.project} Jenkins Outbound Security Group - ${var.stack_id}"
   }
 }
