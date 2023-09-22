@@ -53,7 +53,7 @@ resource "aws_instance" "jenkins" {
     Owner       = "Avillach_Lab"
     Environment = var.environment_name
     Project     = local.project
-    Name        = "BdC Jenkins - ${var.stack_id} - ${var.git_commit}"
+    Name        = "BdC Jenkins ${local.project} - ${var.stack_id} - ${var.git_commit}"
   }
 
   user_data = data.template_cloudinit_config.config.rendered
