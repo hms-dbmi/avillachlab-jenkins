@@ -1,0 +1,278 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description>Job will be triggered by Check for updates. &#xd;
+&#xd;
+Gives a central location to store bash functions used in the pipeline.</description>
+  <keepDependencies>false</keepDependencies>
+  <properties/>
+  <scm class="hudson.scm.NullSCM"/>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>echo &apos;
+assume_role(){
+  local role_arn=${1:-&quot;arn:aws:iam::&apos;${app_acct_id}&apos;:role/&apos;${jenkins_provisioning_assume_role_name}&apos;&quot;}
+  OUTPUT=$(aws sts assume-role \
+      --role-arn $role_arn \
+      --role-session-name &quot;teardown-rebuild&quot; \
+      --query &quot;Credentials.[AccessKeyId,SecretAccessKey,SessionToken]&quot; \
+      --output text)
+
+  export AWS_ACCESS_KEY_ID=$(echo $OUTPUT | awk &quot;{print \$1}&quot;)
+  export AWS_SECRET_ACCESS_KEY=$(echo $OUTPUT | awk &quot;{print \$2}&quot;)
+  export AWS_SESSION_TOKEN=$(echo $OUTPUT | awk &quot;{print \$3}&quot;)
+  export AWS_DEFAULT_REGION=us-east-1
+}
+
+reset_role(){
+  unset AWS_ACCESS_KEY_ID
+  unset AWS_SECRET_ACCESS_KEY
+  unset AWS_SESSION_TOKEN
+}
+
+export -f assume_role
+export -f reset_role
+        &apos; &gt; role_functions.sh</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command># Provides automation for swapping instances between staging and live target groups, using green/blue deployment strategy.
+
+# Script Usage:
+# To use this script, specify the names of the staging and live target groups, as well as JSON files
+# containing tag filters for identifying instances to swap between the target groups.
+
+# Example Usage:
+# swap_stacks &quot;staging-tg-name&quot; &quot;live-tg-name&quot; &quot;staging-httpd-tags.txt&quot; &quot;live-httpd-tags.txt&quot;
+
+# Function to get Target Group ARN by name
+
+echo &apos;
+get_target_group_arn_by_name() {
+  # Use AWS CLI to describe target groups and extract the ARN by name
+  aws elbv2 describe-target-groups \
+    --query &quot;TargetGroups[?TargetGroupName==\`$1\`].TargetGroupArn&quot; \
+    --output text
+}
+
+# Function to get Target Group VPC by name
+get_target_group_vpc_by_tg_name() {
+  local target_group_name=$1
+  # Use AWS CLI to describe the target group and extract the VPC ID
+  aws elbv2 describe-target-groups \
+    --names &quot;$target_group_name&quot; \
+    --query &quot;TargetGroups[0].VpcId&quot; \
+    --output text
+}
+
+# Function to get private IP by tags
+get_private_ip_by_tags() {
+  local tag_filters_file=&quot;$1&quot;
+  # Use AWS CLI to describe instances with specified tag filters from a file and extract private IPs
+  aws ec2 describe-instances \
+    --filters &quot;file://$tag_filters_file&quot; \
+    --query &quot;Reservations[].Instances[].PrivateIpAddress&quot; \
+    --output text
+}
+
+# Function to check if an EC2 instance is in the same VPC as a target group
+is_ec2_in_same_vpc_as_target_group() {
+  local ec2_private_ip=&quot;$1&quot;
+  local target_group_vpc_id=&quot;$2&quot;
+  # Use AWS CLI to describe the EC2 instance and extract its VPC ID
+  local ec2_vpc_id=$(aws ec2 describe-instances \
+    --filters &quot;Name=private-ip-address,Values=$ec2_private_ip&quot; \
+    --query &quot;Reservations[0].Instances[0].VpcId&quot; \
+    --output text)
+
+  # Compare the EC2 instances VPC ID with the known target groups VPC ID
+  if [ &quot;$ec2_vpc_id&quot; == &quot;$target_group_vpc_id&quot; ]; then
+    echo &quot;The EC2 instance with private IP $ec2_private_ip is in the same VPC as the target group.&quot;
+    return 0  # Return success (0)
+  else
+    echo &quot;The EC2 instance with private IP $ec2_private_ip is NOT in the same VPC as the target group.&quot;
+    return 1  # Return failure (non-zero)
+  fi
+}
+
+# Function to register targets in a target group
+register_targets() {
+  local local_target_group_vpc=&quot;$1&quot;
+  local local_target_group_arn=&quot;$2&quot;
+  local httpd_priv_ips=(&quot;${@:3}&quot;)
+
+  for local_httpd_priv_ips in &quot;${httpd_priv_ips[@]}&quot;; do
+    # Check if the EC2 instance is in the same VPC as the target group and register it accordingly
+    if is_ec2_in_same_vpc_as_target_group &quot;$local_httpd_priv_ips&quot; &quot;$local_target_group_vpc&quot;; then
+      aws elbv2 register-targets --target-group-arn $local_target_group_arn --targets &quot;Id=$local_httpd_priv_ips&quot;
+    else
+      aws elbv2 register-targets --target-group-arn $local_target_group_arn --targets &quot;Id=$local_httpd_priv_ips,AvailabilityZone=all&quot;
+    fi
+  done
+}
+
+# Function to deregister targets from a target group
+deregister_targets() {
+  local local_target_group_vpc=&quot;$1&quot;
+  local local_target_group_arn=&quot;$2&quot;
+  local httpd_priv_ips=(&quot;${@:3}&quot;)
+
+  for httpd_priv_ip in &quot;${httpd_priv_ips[@]}&quot;; do
+    # Check if the EC2 instance is in the same VPC as the target group and deregister it accordingly
+    if is_ec2_in_same_vpc_as_target_group &quot;$httpd_priv_ip&quot; &quot;$local_target_group_vpc&quot;; then
+      aws elbv2 deregister-targets --target-group-arn $local_target_group_arn --targets &quot;Id=$httpd_priv_ip&quot;
+    else
+      aws elbv2 deregister-targets --target-group-arn $local_target_group_arn --targets &quot;Id=$httpd_priv_ip,AvailabilityZone=all&quot;
+    fi
+  done
+}
+
+# Function to wait for a target group to become healthy for all instances
+wait_for_target_group_health() {
+  local target_group_arn=&quot;$1&quot;
+  local wait_for_health=&quot;$2&quot;
+  local target_instance_ips=(&quot;${@:3}&quot;)
+
+  local timeout_secs=600
+  local start_time=$(date +%s)
+
+  for target_instance_ip in &quot;${target_instance_ips[@]}&quot;; do
+    local health_status=$(aws elbv2 describe-target-health \
+      --target-group-arn &quot;$target_group_arn&quot; \
+      --targets &quot;Id=$target_instance_ip&quot; \
+      --query &quot;TargetHealthDescriptions[0].TargetHealth.State&quot; \
+      --output text
+    )
+
+    while [[ ${health_status^^} != ${wait_for_health^^} ]]; do
+      local elapsed_time=$(( $(date +%s) - start_time ))
+      if [ $elapsed_time -ge $timeout_secs ]; then
+        echo &quot;Target group health check exceeds timeout&quot;
+        echo &quot;Target=$target_instance_ip Current_Health=${health_status^^} wait_for_health=$wait_for_health&quot;
+        exit 1
+      fi
+
+      # Use AWS CLI to describe the target health status and update the health_status variable
+      health_status=$(aws elbv2 describe-target-health \
+        --target-group-arn &quot;$target_group_arn&quot; \
+        --targets &quot;Id=$target_instance_ip&quot; \
+        --query &quot;TargetHealthDescriptions[0].TargetHealth.State&quot; \
+        --output text
+      )
+      echo &quot;$target_instance_ip - ${health_status^^}.  Waiting for health of ${wait_for_health^^}&quot;
+      sleep 10  # Wait for 10 seconds before checking again
+    done
+  done
+}
+
+# Function to swap instances between staging and live target groups
+swap_stacks() {
+  local staging_tg_name=$1
+  local live_tg_name=$2
+  local staging_httpd_tags_file=&quot;$3&quot;
+  local live_httpd_tags_file=&quot;$4&quot;
+  local fail_empty_stacks=&quot;${5,,:-&quot;false&quot;,,}&quot;  # Set to true for stable prod and release testing
+  echo &quot;staging_tg_name=$1&quot;
+  echo &quot;live_tg_name=$2&quot;
+  echo &quot;staging_httpd_tags_file=$3&quot;
+  echo &quot;live_httpd_tags_file=$4&quot;
+  
+  # Get Target Group ARNs using the function
+  local local_staging_target_group_arn=$(get_target_group_arn_by_name &quot;$staging_tg_name&quot;)
+  local local_live_target_group_arn=$(get_target_group_arn_by_name &quot;$live_tg_name&quot;)
+  
+  # Get target group VPC. Both target groups are known to be in the same VPC
+  local local_target_group_vpc=$(get_target_group_vpc_by_tg_name &quot;$live_tg_name&quot;)
+
+  # Get private IPs using the function with tags from files
+  local local_staging_httpd_instance_prv_ips=$(get_private_ip_by_tags &quot;$staging_httpd_tags_file&quot;)
+  local local_live_httpd_instance_prv_ips=$(get_private_ip_by_tags &quot;$live_httpd_tags_file&quot;)
+
+  # Promote Staging to Live (green to blue)
+  echo &quot;Promote Staging to Live (green to blue)&quot;
+  if [ -z &quot;${local_staging_httpd_instance_prv_ips}&quot; ]; then
+    echo &quot;No staging IP Addresses found when promoting to live server.&quot;
+    echo &quot;Ensure nodes have been created with proper tags for Node, Project, and Stack keys.&quot;
+    if [ &quot;${fail_empty_stacks}&quot; = &quot;true&quot; ]; then
+      echo &quot;failing build&quot;
+      exit 1
+    else
+      register_targets &quot;$local_target_group_vpc&quot; &quot;$local_live_target_group_arn&quot; &quot;${local_staging_httpd_instance_prv_ips[@]}&quot;
+      wait_for_target_group_health &quot;$local_live_target_group_arn&quot; &quot;HEALTHY&quot; &quot;${local_staging_httpd_instance_prv_ips[@]}&quot; 
+    fi
+  fi
+  
+  # Demote Live to Staging (blue to green)
+  echo &quot;Demote Live to Staging (blue to green)&quot;
+  if [ -z &quot;${local_live_httpd_instance_prv_ips}&quot; ]; then
+    echo &quot;No live IP Addresses found when demoting to staging server.&quot;
+    echo &quot;Ensure nodes have been created with proper tags for Node, Project, and Stack keys.&quot;
+    if [ &quot;${fail_empty_stacks}&quot; = &quot;true&quot; ]; then
+      echo &quot;failing build&quot;
+      exit 1
+    fi
+  else
+    register_targets &quot;$local_target_group_vpc&quot; &quot;$local_staging_target_group_arn&quot; &quot;${local_live_httpd_instance_prv_ips[@]}&quot;
+    wait_for_target_group_health &quot;$local_staging_target_group_arn&quot; &quot;HEALTHY&quot; &quot;${local_live_httpd_instance_prv_ips[@]}&quot;
+  fi
+
+  # Deregister previous Live from Live TG (remove blue from blue)
+  echo &quot;Deregister previous Live from Live TG (remove blue from blue)&quot;
+  if [ -z &quot;${local_live_httpd_instance_prv_ips}&quot; ]; then
+    echo &quot;No live IP Addresses found when deregistering from live TG.&quot;
+    echo &quot;Ensure nodes have been created with proper tags for Node, Project, and Stack keys and that it has a TGA.&quot;
+    if [ &quot;${fail_empty_stacks}&quot; = &quot;true&quot; ]; then
+      echo &quot;failing build&quot;
+      exit 1
+    fi
+  else  
+    deregister_targets &quot;$local_target_group_vpc&quot; &quot;$local_live_target_group_arn&quot; &quot;${local_live_httpd_instance_prv_ips[@]}&quot;
+    # Wait for draining
+    wait_for_target_group_health &quot;$local_live_target_group_arn&quot; &quot;UNUSED&quot; &quot;${local_live_httpd_instance_prv_ips[@]}&quot;
+  fi
+
+  # Deregister previous Staging from Staging TG (remove green from green)
+  echo &quot;Deregister previous Staging from Staging TG (remove green from green)&quot;  
+  if [ -z &quot;${local_staging_httpd_instance_prv_ips}&quot; ]; then
+    echo &quot;No staging IP Addresses found when deregistering from live TG.&quot;
+    echo &quot;Ensure nodes have been created with proper tags for Node, Project, and Stack keys and that it has a TGA.&quot;
+    if [ &quot;${fail_empty_stacks}&quot; = &quot;true&quot; ]; then
+      echo &quot;failing build&quot;
+      exit 1
+    fi
+  else  
+    deregister_targets &quot;$local_target_group_vpc&quot; &quot;$local_staging_target_group_arn&quot; &quot;${local_staging_httpd_instance_prv_ips[@]}&quot;
+    # Wait for draining
+    wait_for_target_group_health &quot;$local_staging_target_group_arn&quot; &quot;UNUSED&quot; &quot;${local_staging_httpd_instance_prv_ips[@]}&quot;
+  fi
+  echo &quot;Swap Stacks complete&quot;
+}&apos; &gt; target_group_attachment_functions.sh</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers>
+    <hudson.tasks.ArtifactArchiver>
+      <artifacts>target_group_attachment_functions.sh, role_functions.sh</artifacts>
+      <allowEmptyArchive>false</allowEmptyArchive>
+      <onlyIfSuccessful>false</onlyIfSuccessful>
+      <fingerprint>false</fingerprint>
+      <defaultExcludes>true</defaultExcludes>
+      <caseSensitive>true</caseSensitive>
+      <followSymlinks>false</followSymlinks>
+    </hudson.tasks.ArtifactArchiver>
+  </publishers>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.45">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
+</project>

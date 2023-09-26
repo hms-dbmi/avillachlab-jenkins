@@ -66,15 +66,80 @@
   <concurrentBuild>false</concurrentBuild>
   <builders>
     <hudson.tasks.Shell>
-      <command>#!/bin/bash
-source &quot;/var/jenkins_home/workspace/Check For Updates/role_functions.sh&quot;
+      <command># json tag schema.  Used to uniquely identify a projects staging instances.
+cat &lt;&lt;EOF &gt; staging_httpd_tags_file.json
+[
+  {
+    &quot;Name&quot;: &quot;tag:Stack&quot;,
+    &quot;Values&quot;: [&quot;$target_stack&quot;]
+  },
+  {
+    &quot;Name&quot;: &quot;tag:Node&quot;,
+    &quot;Values&quot;: [&quot;HTTPD&quot;]
+  },
+  {
+    &quot;Name&quot;: &quot;tag:Project&quot;,
+    &quot;Values&quot;: [&quot;$env_project&quot;]
+  }
+]
+EOF
 
+</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+set -e
+# Source folder containing the scripts
+source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+ls -la &quot;$source_scripts_folder&quot;
+
+# Iterate through the files in the folder and source them
+for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+    chmod +x &quot;$script_file&quot;
+    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+        echo &quot;sourcing $script_file&quot;
+        source &quot;$script_file&quot;
+    fi
+done
+
+assume_role
+# Deregister previous staging from staging TG (remove green from green)
+target_group_vpc=$(get_target_group_vpc_by_tg_name $staging_tg_name)
+staging_target_group_arn=$(get_target_group_arn_by_name &quot;$staging_tg_name&quot;)
+staging_httpd_instance_prv_ips=$(get_private_ip_by_tags &quot;staging_httpd_tags_file.json&quot;) # json generated in previous build step.
+
+if [ -z &quot;${staging_httpd_instance_prv_ips}&quot; ]; then
+   echo &quot;No private IPs found. Skipping function execution.&quot;
+else
+   deregister_targets &quot;$target_group_vpc&quot; &quot;$staging_target_group_arn&quot; &quot;${staging_httpd_instance_prv_ips[@]}&quot;
+   echo &quot;wait_for_target_group_health \&quot;$staging_target_group_arn\&quot; \&quot;UNUSED\&quot; \&quot;${staging_httpd_instance_prv_ips[@]}\&quot;&quot;
+   wait_for_target_group_health &quot;$staging_target_group_arn&quot; &quot;UNUSED&quot; &quot;${staging_httpd_instance_prv_ips[@]}&quot;
+fi 
+# Wait for draining
+
+reset_role</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+set -e
+# Source folder containing the scripts
+source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+ls -la &quot;$source_scripts_folder&quot;
+
+# Iterate through the files in the folder and source them
+for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+    chmod +x &quot;$script_file&quot;
+    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+        echo &quot;sourcing $script_file&quot;
+        source &quot;$script_file&quot;
+    fi
+done
+# Destroy and Build resources
 cd app-infrastructure
 
-# Terraform provider can assume role
-# Should move this to terraform once we can have multiple providers in provider.tf
-# https://registry.terraform.io/providers/hashicorp/aws/latest/docs#assuming-an-iam-role
-# Just use an s3 backend in terraform. no reason to store this state via aws cli
+# TODO - Needs backend state management.
 aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate . || echo &quot;bad state or doesnt exist, it will be created&quot;
 
 assume_role
@@ -98,12 +163,13 @@ if $isDestroyOnly; then
      -var=&quot;include_open_hpds=${include_open_hpds}&quot; \
      -var=&quot;environment_name=${environment_name}&quot; \
      -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
+     -var=&quot;env_live_subdomain=${env_live_subdomain}&quot; \
      -var=&quot;application_id_for_base_query=${application_id_for_base_query}&quot; \
      -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
      -var=&quot;idp_provider=${idp_provider}&quot; \
      -var=&quot;env_project=${env_project}&quot; \
      -var=&quot;picsure_token_introspection_token=${picsure_token_introspection_token}&quot; \
-     -var=&quot;picsure_client_secret=${env_project}&quot; \
+     -var=&quot;picsure_client_secret=${picsure_client_secret}&quot; \
      -var=&quot;fence_client_id=${fence_client_id}&quot; \
      -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
      -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true
@@ -136,12 +202,10 @@ else
      -var=&quot;idp_provider=${idp_provider}&quot; \
      -var=&quot;env_project=${env_project}&quot; \
      -var=&quot;picsure_token_introspection_token=${picsure_token_introspection_token}&quot; \
-     -var=&quot;picsure_client_secret=${env_project}&quot; \
+     -var=&quot;picsure_client_secret=${picsure_client_secret}&quot; \
      -var=&quot;fence_client_id=${fence_client_id}&quot; \
      -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
-     -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; \
-     -var=&quot;staging_lb_name=${staging_lb_name}&quot; \
-     -var=&quot;live_lb_name=${live_lb_name}&quot; || true
+     -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true
 
   terraform apply -auto-approve \
      -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot;  \
@@ -165,12 +229,10 @@ else
      -var=&quot;idp_provider=${idp_provider}&quot; \
      -var=&quot;env_project=${env_project}&quot; \
      -var=&quot;picsure_token_introspection_token=${picsure_token_introspection_token}&quot; \
-     -var=&quot;picsure_client_secret=${env_project}&quot; \
+     -var=&quot;picsure_client_secret=${picsure_client_secret}&quot; \
      -var=&quot;fence_client_id=${fence_client_id}&quot; \
      -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
-     -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; \
-     -var=&quot;staging_lb_name=${staging_lb_name}&quot; \
-     -var=&quot;live_lb_name=${live_lb_name}&quot;|| true
+     -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true
 
   reset_role
 
@@ -191,6 +253,7 @@ else
   aws s3 --sse=AES256 cp httpd-vhosts.conf s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/httpd-vhosts.conf
   aws s3 --sse=AES256 cp aggregate-resource.properties s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/aggregate-resource.properties
   aws s3 --sse=AES256 cp visualization-resource.properties s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/visualization-resource.properties
+
 
 fi</command>
       <configuredLocalRules/>
