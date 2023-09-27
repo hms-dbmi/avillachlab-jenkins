@@ -139,9 +139,8 @@ else
      -var=&quot;picsure_client_secret=${env_project}&quot; \
      -var=&quot;fence_client_id=${fence_client_id}&quot; \
      -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
-     -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; \
-     -var=&quot;staging_lb_name=${staging_lb_name}&quot; \
-     -var=&quot;live_lb_name=${live_lb_name}&quot; || true
+     -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true
+
 
   terraform apply -auto-approve \
      -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot;  \
@@ -168,9 +167,7 @@ else
      -var=&quot;picsure_client_secret=${env_project}&quot; \
      -var=&quot;fence_client_id=${fence_client_id}&quot; \
      -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
-     -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; \
-     -var=&quot;staging_lb_name=${staging_lb_name}&quot; \
-     -var=&quot;live_lb_name=${live_lb_name}&quot;|| true
+     -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true
 
   reset_role
 
