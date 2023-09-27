@@ -1,4 +1,4 @@
-Prerequisites:
+Prerequisites: 
 
 AWS CLI installed and configured with admin access to the C&C account.
 Terraform installed
