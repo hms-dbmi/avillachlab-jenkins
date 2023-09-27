@@ -202,10 +202,10 @@ swap_stacks() {
     if [ &quot;${fail_empty_stacks}&quot; = &quot;true&quot; ]; then
       echo &quot;failing build&quot;
       exit 1
-    else
-      register_targets &quot;$local_target_group_vpc&quot; &quot;$local_live_target_group_arn&quot; &quot;${local_staging_httpd_instance_prv_ips[@]}&quot;
-      wait_for_target_group_health &quot;$local_live_target_group_arn&quot; &quot;HEALTHY&quot; &quot;${local_staging_httpd_instance_prv_ips[@]}&quot; 
     fi
+  else
+    register_targets &quot;$local_target_group_vpc&quot; &quot;$local_live_target_group_arn&quot; &quot;${local_staging_httpd_instance_prv_ips[@]}&quot;
+    wait_for_target_group_health &quot;$local_live_target_group_arn&quot; &quot;HEALTHY&quot; &quot;${local_staging_httpd_instance_prv_ips[@]}&quot;   
   fi
   
   # Demote Live to Staging (blue to green)

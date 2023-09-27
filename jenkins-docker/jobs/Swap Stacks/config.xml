@@ -12,7 +12,7 @@
   <description>Use this to swap environment Staging and Live environments.</description>
   <keepDependencies>false</keepDependencies>
   <properties/>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3791.va_c0338ea_b_59c">
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3793.v65dec41c3a_c3">
     <script>import groovy.json.*;
 
 pipeline {
@@ -52,8 +52,8 @@ pipeline {
                     println(&quot;Swapping target stack for staging in - stacks.json&quot;)
                     def target_prod_stack = stacks.environments.next_prod
                     def target_next_prod_stack = stacks.environments.prod
-                    stacks.environments.next_prod = target_prod_stack
-                    stacks.environments.prod = target_next_prod_stack
+                    stacks.environments.next_prod = target_next_prod_stack
+                    stacks.environments.prod = target_prod_stack
                     println(target_prod_stack)
                     println(target_next_prod_stack)
                     stacksJson = JsonOutput.toJson(stacks)

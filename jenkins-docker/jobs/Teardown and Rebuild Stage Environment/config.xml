@@ -110,13 +110,12 @@ staging_target_group_arn=$(get_target_group_arn_by_name &quot;$staging_tg_name&q
 staging_httpd_instance_prv_ips=$(get_private_ip_by_tags &quot;staging_httpd_tags_file.json&quot;) # json generated in previous build step.
 
 if [ -z &quot;${staging_httpd_instance_prv_ips}&quot; ]; then
-   echo &quot;No private IPs found. Skipping function execution.&quot;
+   echo &quot;No private IPs found. No Staging Ips to deregister&quot;
 else
+   echo &quot;Deregistering staging target(s) before teardown.&quot;
    deregister_targets &quot;$target_group_vpc&quot; &quot;$staging_target_group_arn&quot; &quot;${staging_httpd_instance_prv_ips[@]}&quot;
-   echo &quot;wait_for_target_group_health \&quot;$staging_target_group_arn\&quot; \&quot;UNUSED\&quot; \&quot;${staging_httpd_instance_prv_ips[@]}\&quot;&quot;
    wait_for_target_group_health &quot;$staging_target_group_arn&quot; &quot;UNUSED&quot; &quot;${staging_httpd_instance_prv_ips[@]}&quot;
 fi 
-# Wait for draining
 
 reset_role</command>
       <configuredLocalRules/>
