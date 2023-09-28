@@ -28,36 +28,9 @@
   <triggers/>
   <concurrentBuild>false</concurrentBuild>
   <builders>
-    <hudson.tasks.Shell>
-      <command>echo &apos;
-assume_role(){
-  local role_arn=${1:-&quot;arn:aws:iam::&apos;${app_acct_id}&apos;:role/&apos;${jenkins_provisioning_assume_role_name}&apos;&quot;}
-  OUTPUT=$(aws sts assume-role \
-      --role-arn $role_arn \
-      --role-session-name &quot;teardown-rebuild&quot; \
-      --query &quot;Credentials.[AccessKeyId,SecretAccessKey,SessionToken]&quot; \
-      --output text)
-
-  export AWS_ACCESS_KEY_ID=$(echo $OUTPUT | awk &quot;{print \$1}&quot;)
-  export AWS_SECRET_ACCESS_KEY=$(echo $OUTPUT | awk &quot;{print \$2}&quot;)
-  export AWS_SESSION_TOKEN=$(echo $OUTPUT | awk &quot;{print \$3}&quot;)
-}
-
-reset_role(){
-  unset AWS_ACCESS_KEY_ID
-  unset AWS_SECRET_ACCESS_KEY
-  unset AWS_SESSION_TOKEN
-}
-
-export -f assume_role
-export -f reset_role
-        &apos; &gt; role_functions.sh
-      </command>
-      <configuredLocalRules/>
-    </hudson.tasks.Shell>
     <hudson.plugins.groovy.SystemGroovy plugin="groovy@453.vcdb_a_c5c99890">
       <source class="hudson.plugins.groovy.StringSystemScriptSource">
-        <script plugin="script-security@1244.ve463715a_f89c">
+        <script plugin="script-security@1275.v23895f409fb_d">
           <script>import jenkins.*
 import jenkins.model.*
 import hudson.*
@@ -67,6 +40,9 @@ import groovy.json.JsonSlurper;
 def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/Check For Updates/build-spec.json&apos;));
 
 def envVars= Hudson.instance.getItem(&quot;Check For Updates&quot;).lastBuild.properties.get(&quot;envVars&quot;);
+
+Jenkins.instance.getItemByFullName(&quot;Bash_Functions&quot;)
+.scheduleBuild2(0).get()
 
 Jenkins.instance.getItemByFullName(&quot;Import_HPDS_Dictionary_File&quot;)
 .scheduleBuild2(0, new ParametersAction([
@@ -118,7 +94,7 @@ echo $LAST_GENOMIC_DATASET_MODIFICATION_COMMIT &gt; genomicDatasetKey.txt
     </hudson.tasks.Shell>
     <hudson.plugins.groovy.SystemGroovy plugin="groovy@453.vcdb_a_c5c99890">
       <source class="hudson.plugins.groovy.StringSystemScriptSource">
-        <script plugin="script-security@1244.ve463715a_f89c">
+        <script plugin="script-security@1275.v23895f409fb_d">
           <script>import jenkins.*
 import jenkins.model.*
 import hudson.*

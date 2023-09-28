@@ -12,7 +12,7 @@
   <description>Use this to swap environment Staging and Live environments.</description>
   <keepDependencies>false</keepDependencies>
   <properties/>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3787.v8f5dcd14a_fa_c">
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3793.v65dec41c3a_c3">
     <script>import groovy.json.*;
 
 pipeline {
@@ -45,19 +45,19 @@ pipeline {
                     sh &apos;cat stacks.json&apos;
                     stacksJson = new File(&apos;/var/jenkins_home/workspace/Retrieve Deployment State/stacks.json&apos;).text
                     def stacks = new JsonSlurperClassic().parseText(stacksJson)
-                    def prod = stacks.environments.prod
-                    println(stacks.environments.next_prod)
-                    println(stacks.environments.prod)
-                    stacks.environments.prod = stacks.environments.next_prod
-                    stacks.environments.next_prod = prod
-                    def target_prod_stack = stacks.environments.prod
-                    def target_next_prod_stack = stacks.environments.next_prod
+                    def staging_stack = stacks.environments.next_prod
+                    def live_stack = stacks.environments.prod
+                    build job: &apos;Swap_Stacks_TGA&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;live_stack&apos;, value: live_stack],[$class: &apos;StringParameterValue&apos;, name: &apos;staging_stack&apos;, value: staging_stack],[$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash]]
+                    println(&quot;Blue / Green Swap complete&quot;)
+                    println(&quot;Swapping target stack for staging in - stacks.json&quot;)
+                    def target_prod_stack = stacks.environments.next_prod
+                    def target_next_prod_stack = stacks.environments.prod
+                    stacks.environments.next_prod = target_next_prod_stack
+                    stacks.environments.prod = target_prod_stack
                     println(target_prod_stack)
                     println(target_next_prod_stack)
                     stacksJson = JsonOutput.toJson(stacks)
                     println(stacksJson)
-                    //build job: &apos;Move Prod DNS Pointer&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_prod_stack],[$class: &apos;StringParameterValue&apos;, name: &apos;target_next_stack&apos;, value: target_next_prod_stack],[$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash]]
-                    //println(&quot;Moved pointer&quot;)
                     build job: &apos;Write Stack State&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;stacks_json&apos;, value: stacksJson]]
                 }
             }
