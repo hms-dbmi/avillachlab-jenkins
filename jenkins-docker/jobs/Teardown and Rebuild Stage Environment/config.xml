@@ -154,6 +154,7 @@ if $isDestroyOnly; then
      -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; \
      -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
      -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
+     -var=&quot;env_public_dns_name_staging=${env_public_dns_name_staging}&quot; \
      -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
      -var=&quot;env_hosted_zone_id=${env_hosted_zone_id}&quot; \
      -var=&quot;analytics_id=${analytics_id}&quot; \
@@ -187,6 +188,7 @@ else
      -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; \
      -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
      -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
+     -var=&quot;env_public_dns_name_staging=${env_public_dns_name_staging}&quot; \
      -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
      -var=&quot;env_hosted_zone_id=${env_hosted_zone_id}&quot; \
      -var=&quot;analytics_id=${analytics_id}&quot; \
@@ -214,6 +216,7 @@ else
      -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; \
      -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
      -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
+     -var=&quot;env_public_dns_name_staging=${env_public_dns_name_staging}&quot; \
      -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
      -var=&quot;env_hosted_zone_id=${env_hosted_zone_id}&quot; \
      -var=&quot;analytics_id=${analytics_id}&quot; \
