@@ -33,7 +33,7 @@ set -e
 # Source folder containing the scripts
 source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
 ls -la &quot;$source_scripts_folder&quot;
-
+#export TF_LOG=TRACE
 # Iterate through the files in the folder and source them
 for script_file in &quot;$source_scripts_folder&quot;*.sh; do
     chmod +x &quot;$script_file&quot;
@@ -45,13 +45,16 @@ done
 
 cd jenkins-terraform
 env &gt; env.txt
-# backend s3 config will always be encrypted
-# need to find a better key location that isn&apos;t tied to the git commit for the job
+# git commit used in Terraform and user-scripts
 git_commit_short=`echo ${GIT_COMMIT} |head -c7`
 
+
+echo &quot;Deploying new jenkins&quot;
+# Deploy state to green 
+# should only deploy to green. safe to leave as constant
 terraform init \
 -backend-config=&quot;bucket=${jenkins_tf_state_bucket}&quot; \
--backend-config=&quot;key=jenkins_state/jenkins_${git_commit_short}/terraform.tfstate&quot; \
+-backend-config=&quot;key=jenkins_state/green/terraform.tfstate&quot; \
 -backend-config=&quot;region=${jenkins_tf_state_region}&quot;
 
 # could probably just export env vars with TF_ and terraform will use them.
@@ -78,7 +81,7 @@ terraform apply -auto-approve \
 #aws s3 --sse=AES256 cp terraform.tfstate s3://${stack_s3_bucket}/jenkins_state/jenkins_${GIT_COMMIT}/terraform.tfstate
 
 # Not quite sure why we save the env variables to s3 so leaving it in for now.
-aws s3 --sse=AES256 cp env.txt s3://${stack_s3_bucket}/jenkins_state/jenkins_${git_commit_short}/last_env.txt
+#aws s3 --sse=AES256 cp env.txt s3://${jenkins_tf_state_bucket}/jenkins_state/jenkins_${git_commit_short}/last_env.txt
 
 echo &quot;Waiting for user-script to initialize the environment.&quot;
 # This could get moved to a terraform provisioner to wait for the user script to finish.  Essientially would look the same though.  Leaving for now
@@ -87,6 +90,40 @@ JENKINS_IP=$(terraform output jenkins-ec2-ip)
 
 while [ -z $(aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do echo &quot;still initializing&quot;;sleep 30;done
 
+# Tag it true in state file
+echo &quot;Tagging as initialized&quot;
+terraform apply -auto-approve \
+-var &quot;git_commit=${git_commit_short}&quot; \
+-var &quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
+-var &quot;stack_id=${stack_id}&quot; \
+-var &quot;environment_name=${environment_name}&quot; \
+-var &quot;env_is_open_access=${env_is_open_access}&quot; \
+-var &quot;jenkins_subnet_id=${jenkins_subnet_id}&quot; \
+-var &quot;jenkins_git_repo=${jenkins_git_repo}&quot; \
+-var &quot;jenkins_vpc_id=${jenkins_vpc_id}&quot; \
+-var &quot;jenkins_instance_profile_name=${jenkins_instance_profile_name}&quot; \
+-var &quot;jenkins_sg_ingress_https_cidr_blocks=${jenkins_sg_ingress_https_cidr_blocks}&quot; \
+-var &quot;jenkins_sg_egress_allow_all_cidr_blocks=${jenkins_sg_egress_allow_all_cidr_blocks}&quot; \
+-var &quot;jenkins_config_s3_location=${jenkins_config_s3_location}&quot; \
+-var &quot;jenkins_ec2_instance_type=${jenkins_ec2_instance_type}&quot; \
+-var &quot;jenkins_tf_local_var_OS_dist=${jenkins_tf_local_var_OS_dist}&quot; \
+-var &quot;jenkins_ec2_ebs_volume_size=${jenkins_ec2_ebs_volume_size}&quot; \
+-var &quot;jenkins_docker_maven_distro=${jenkins_docker_maven_distro}&quot; \
+-var &quot;jenkins_docker_terraform_distro=${jenkins_docker_terraform_distro}&quot; \
+-var &quot;is_initialized=true&quot;
+
+# swap the backends so newly deployed jenkins backend is stored in blue
+echo &quot;Moving states for green/blue&quot;
+echo &quot;Staging state swap&quot;
+aws s3 --sse=AES256 cp s3://${jenkins_tf_state_bucket}/jenkins_state/green/terraform.tfstate s3://${jenkins_tf_state_bucket}/jenkins_state/blue/terraform.tfstate_swap
+aws s3 --sse=AES256 cp s3://${jenkins_tf_state_bucket}/jenkins_state/blue/terraform.tfstate s3://${jenkins_tf_state_bucket}/jenkins_state/green/terraform.tfstate_swap
+
+echo &quot;Swapping states&quot;
+aws s3 --sse=AES256 mv s3://${jenkins_tf_state_bucket}/jenkins_state/blue/terraform.tfstate_swap s3://${jenkins_tf_state_bucket}/jenkins_state/blue/terraform.tfstate
+aws s3 --sse=AES256 mv s3://${jenkins_tf_state_bucket}/jenkins_state/green/terraform.tfstate_swap s3://${jenkins_tf_state_bucket}/jenkins_state/green/terraform.tfstate
+
+# Update dns
+echo &quot;Updating DNS. Jenkins should update to new server automatically&quot;
 assume_role
 aws route53 change-resource-record-sets --hosted-zone-id ${env_hosted_zone_id} --change-batch &apos;{&quot;Changes&quot;:[{&quot;Action&quot;:&quot;UPSERT&quot;,&quot;ResourceRecordSet&quot;:{&quot;Name&quot;:&quot;jenkins.&apos;${env_private_dns_name}&apos;&quot;,&quot;Type&quot;:&quot;A&quot;,&quot;TTL&quot;:300,&quot;ResourceRecords&quot;:[{&quot;Value&quot;:&quot;&apos;$JENKINS_IP&apos;&quot;}]}}]}&apos;
 
