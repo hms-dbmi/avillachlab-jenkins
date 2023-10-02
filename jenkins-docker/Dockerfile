@@ -11,7 +11,7 @@ ARG PKCS12_PASS
 
 COPY $PLUGINS_FILE /usr/share/jenkins/ref/plugins.txt
 
-COPY $CONFIG_XML_FILE /var/jenkins_home/config.xml.override
+COPY $CONFIG_XML_FILE /var/jenkins_home/config.xml
 
 COPY $SCRIPT_APPROVAL_FILE /var/jenkins_home/scriptApproval.xml
 
