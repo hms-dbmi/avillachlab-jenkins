@@ -88,7 +88,7 @@ echo &quot;Waiting for user-script to initialize the environment.&quot;
 INSTANCE_ID=$(terraform output jenkins-ec2-id)
 JENKINS_IP=$(terraform output jenkins-ec2-ip)
 
-while [ &quot;$(aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | jq -r &apos;.Tags[] | select(.Key==&quot;InitComplete&quot;) | .Value&apos;)&quot; != &quot;TRUE&quot; ]
+while [ &quot;$(aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | jq -r &apos;.Tags[] | select(.Key==&quot;InitComplete&quot;) | .Value&apos;)&quot; != &quot;true&quot; ]
 do 
     echo &quot;still initializing&quot;
     sleep 30
