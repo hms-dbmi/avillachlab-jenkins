@@ -1,0 +1,31 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties/>
+  <scm class="hudson.scm.NullSCM"/>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+
+echo &quot;Moving states for green/blue&quot;
+echo &quot;Staging state swap&quot;
+aws s3 --sse=AES256 cp s3://${jenkins_tf_state_bucket}/jenkins_state/green/terraform.tfstate s3://${jenkins_tf_state_bucket}/jenkins_state/blue/terraform.tfstate_swap
+aws s3 --sse=AES256 cp s3://${jenkins_tf_state_bucket}/jenkins_state/blue/terraform.tfstate s3://${jenkins_tf_state_bucket}/jenkins_state/green/terraform.tfstate_swap
+
+echo &quot;Swapping states&quot;
+aws s3 --sse=AES256 mv s3://${jenkins_tf_state_bucket}/jenkins_state/blue/terraform.tfstate_swap s3://${jenkins_tf_state_bucket}/jenkins_state/blue/terraform.tfstate
+aws s3 --sse=AES256 mv s3://${jenkins_tf_state_bucket}/jenkins_state/green/terraform.tfstate_swap s3://${jenkins_tf_state_bucket}/jenkins_state/green/terraform.tfstate
+</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers/>
+</project>
