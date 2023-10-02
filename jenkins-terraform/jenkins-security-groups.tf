@@ -1,10 +1,10 @@
 # uniq name for security group.  
-data "random_string" "random" {
+resource "random_string" "random" {
    length  = 6
    special = false
 }
 locals {
-   uniq_name = data.random_string.random.result
+   uniq_name = random_string.random.result
 }
 
 resource "aws_security_group" "inbound-jenkins" {
