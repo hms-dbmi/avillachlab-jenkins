@@ -55,6 +55,7 @@ resource "aws_instance" "jenkins" {
     Project     = local.project
     Program     = var.program
     Name        = "${var.program} Jenkins ${local.project} - ${var.stack_id} - ${var.git_commit}"
+    initComplete = var.is_initialized
   }
 
   user_data = data.template_cloudinit_config.config.rendered

@@ -82,3 +82,8 @@ variable "environment_name" {
   type    = string
   default = "dev"
 }
+
+variable "is_initialized" {
+  type    = string
+  default = "false"
+}
