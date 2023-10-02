@@ -3,14 +3,21 @@
 sh /opt/srce/scripts/start-gsstools.sh
 sudo yum -y update
 
-#run jenkins docker container
+# grab image tar
+aws s3 cp s3://${stack_s3_bucket}/containers/jenkins/jenkins.tar.gz jenkins.tar.gz
+
+# load image
+load_result=$(docker load -i jenkins.tar.gz)
+image_tag=$(echo "$load_result" | grep -o -E "jenkins:[[:alnum:]_]+")
+
+#run docker container
 sudo docker run -d --log-driver syslog --log-opt tag=jenkins \
                     -v /var/jenkins_home/workspace:/var/jenkins_home/workspace \
                     -v /var/run/docker.sock:/var/run/docker.sock \
                     -p 443:8443 \
                     --restart always \
                     --name jenkins \
-                    jenkins
+                    $image_tag
 
 #sudo docker logs -f jenkins > /var/log/jenkins-docker-logs/jenkins.log &
 
