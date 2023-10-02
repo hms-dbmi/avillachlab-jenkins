@@ -5,7 +5,7 @@ sudo yum -y update
 
 repo=`echo ${jenkins_git_repo} | awk -F/ '{print $NF}'`
 tmp_dir=`mktemp -d`
-wget ${jenkins_git_repo}/-/archive/${git_commit}/$${repo}.zip -O /tmp/$${repo}.zip
+wget ${jenkins_git_repo}/archive/${git_commit}/$${repo}.zip -O /tmp/$${repo}.zip
 unzip /tmp/$${repo}.zip -d $tmp_dir
 sudo mv $tmp_dir/*/jenkins-docker /home/centos/jenkins && rm -rf $tmp_dir /tmp/$${repo}.zip
 
