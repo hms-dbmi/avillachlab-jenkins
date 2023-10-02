@@ -59,6 +59,10 @@ resource "aws_instance" "jenkins" {
 
   user_data = data.template_cloudinit_config.config.rendered
 
+  lifecycle {
+     create_before_destroy = true
+  }
+
 }
 
 output "jenkins-ec2-id" {
