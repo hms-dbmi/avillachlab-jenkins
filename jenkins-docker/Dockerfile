@@ -1,7 +1,5 @@
 FROM jenkins/jenkins:lts
 
-ARG JENKINS_DOCKER_MAVEN_DISTRO
-
 ARG JENKINS_DOCKER_TERRAFORM_DISTRO
 
 COPY plugins.txt /usr/share/jenkins/ref/plugins.txt
