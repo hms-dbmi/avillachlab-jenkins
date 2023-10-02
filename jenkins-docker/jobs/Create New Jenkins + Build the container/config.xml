@@ -1,0 +1,201 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties/>
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.0">
+    <configVersion>2</configVersion>
+    <userRemoteConfigs>
+      <hudson.plugins.git.UserRemoteConfig>
+        <url>${jenkins_git_repo}</url>
+      </hudson.plugins.git.UserRemoteConfig>
+    </userRemoteConfigs>
+    <branches>
+      <hudson.plugins.git.BranchSpec>
+        <name>feature/build-container-in-jenkins-job</name>
+      </hudson.plugins.git.BranchSpec>
+    </branches>
+    <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+    <submoduleCfg class="empty-list"/>
+    <extensions/>
+  </scm>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+set -e
+
+cd &quot;${WORKSPACE}/jenkins-docker&quot;
+
+# Source folder containing the scripts
+source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+ls -la &quot;$source_scripts_folder&quot;
+#export TF_LOG=TRACE
+# Iterate through the files in the folder and source them
+for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+    chmod +x &quot;$script_file&quot;
+    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+ echo &quot;sourcing $script_file&quot;
+        source &quot;$script_file&quot;
+    fi
+done
+git_commit_short=`echo ${GIT_COMMIT} |head -c7`
+
+mkdir certs/
+aws s3 cp s3://${stack_s3_bucket}/certs/jenkins/jenkins.key certs/
+aws s3 cp s3://${stack_s3_bucket}/certs/jenkins/jenkins.cer certs/
+
+# generate keystore file for docker/jenkins use
+echo &quot;# generate keystore file for docker/jenkins use&quot;
+keystore_pass=`echo $RANDOM | md5sum | head -c 20`
+openssl pkcs12 -export -in certs/jenkins.cer -inkey certs/jenkins.key -out certs/jenkins.p12 -password pass:$keystore_pass
+
+# Download Jenkins config file from s3
+echo &quot;# Download Jenkins config file from s3&quot;
+aws --region us-east-1 s3 cp &quot;${jenkins_config_s3_location}&quot; ./config.xml
+
+# Build Container
+echo &quot;# Build Container&quot;
+docker build \
+  --build-arg JENKINS_DOCKER_TERRAFORM_DISTRO=&quot;${jenkins_docker_terraform_distro}&quot; \
+  --build-arg CONFIG_XML_FILE=&quot;./config.xml&quot; \
+  --build-arg PLUGINS_FILE=&quot;./plugins.txt&quot; \
+  --build-arg SCRIPT_APPROVAL_FILE=&quot;./scriptApproval.xml&quot; \
+  --build-arg HUDSON_TASKS_FILE=&quot;./hudson.tasks.Maven.xml&quot; \
+  --build-arg JENKINS_JOBS_DIR=&quot;./jobs/&quot; \
+  --build-arg PKCS12_FILE=&quot;./certs/jenkins.p12&quot; \
+  --build-arg PKCS12_PASS=&quot;${keystore_pass}&quot; \
+  -t jenkins:$git_commit_short .
+
+# Time to put it in a private repo instead of just a image tar.
+docker save jenkins:$git_commit_short | gzip &gt; jenkins.tar.gz
+
+aws s3 cp jenkins.tar.gz s3://${stack_s3_bucket}/containers/jenkins/ 
+
+cd &quot;${WORKSPACE}&quot;</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+set -e
+# Source folder containing the scripts
+source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+ls -la &quot;$source_scripts_folder&quot;
+#export TF_LOG=TRACE
+# Iterate through the files in the folder and source them
+for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+    chmod +x &quot;$script_file&quot;
+    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+        echo &quot;sourcing $script_file&quot;
+        source &quot;$script_file&quot;
+    fi
+done
+
+cd jenkins-terraform
+env &gt; env.txt
+# git commit used in Terraform and user-scripts
+git_commit_short=`echo ${GIT_COMMIT} |head -c7`
+
+
+echo &quot;Deploying new jenkins&quot;
+# Deploy state to green 
+# should only deploy to green. safe to leave as constant
+terraform init \
+-backend-config=&quot;bucket=${jenkins_tf_state_bucket}&quot; \
+-backend-config=&quot;key=jenkins_state/green/terraform.tfstate&quot; \
+-backend-config=&quot;region=${jenkins_tf_state_region}&quot;
+
+# could probably just export env vars with TF_ and terraform will use them.
+terraform apply -auto-approve \
+-var &quot;git_commit=${git_commit_short}&quot; \
+-var &quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
+-var &quot;stack_id=${stack_id}&quot; \
+-var &quot;environment_name=${environment_name}&quot; \
+-var &quot;env_is_open_access=${env_is_open_access}&quot; \
+-var &quot;jenkins_subnet_id=${jenkins_subnet_id}&quot; \
+-var &quot;jenkins_git_repo=${jenkins_git_repo}&quot; \
+-var &quot;jenkins_vpc_id=${jenkins_vpc_id}&quot; \
+-var &quot;jenkins_instance_profile_name=${jenkins_instance_profile_name}&quot; \
+-var &quot;jenkins_sg_ingress_https_cidr_blocks=${jenkins_sg_ingress_https_cidr_blocks}&quot; \
+-var &quot;jenkins_sg_egress_allow_all_cidr_blocks=${jenkins_sg_egress_allow_all_cidr_blocks}&quot; \
+-var &quot;jenkins_config_s3_location=${jenkins_config_s3_location}&quot; \
+-var &quot;jenkins_ec2_instance_type=${jenkins_ec2_instance_type}&quot; \
+-var &quot;jenkins_tf_local_var_OS_dist=${jenkins_tf_local_var_OS_dist}&quot; \
+-var &quot;jenkins_ec2_ebs_volume_size=${jenkins_ec2_ebs_volume_size}&quot; \
+-var &quot;jenkins_docker_maven_distro=${jenkins_docker_maven_distro}&quot; \
+-var &quot;jenkins_docker_terraform_distro=${jenkins_docker_terraform_distro}&quot;
+
+# Moving this to Terraform remote state
+#aws s3 --sse=AES256 cp terraform.tfstate s3://${stack_s3_bucket}/jenkins_state/jenkins_${GIT_COMMIT}/terraform.tfstate
+
+# Not quite sure why we save the env variables to s3 so leaving it in for now.
+#aws s3 --sse=AES256 cp env.txt s3://${jenkins_tf_state_bucket}/jenkins_state/jenkins_${git_commit_short}/last_env.txt
+
+echo &quot;Waiting for user-script to initialize the environment.&quot;
+# This could get moved to a terraform provisioner to wait for the user script to finish.  Essientially would look the same though.  Leaving for now
+INSTANCE_ID=$(terraform output jenkins-ec2-id)
+JENKINS_IP=$(terraform output jenkins-ec2-ip)
+
+while [ &quot;$(aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | jq -r &apos;.Tags[] | select(.Key==&quot;InitComplete&quot;) | .Value&apos;)&quot; != &quot;true&quot; ]
+do 
+    echo &quot;still initializing&quot;
+    sleep 30
+done
+
+# Tag it true in state file
+echo &quot;Tagging as initialized&quot;
+terraform apply -auto-approve \
+-var &quot;git_commit=${git_commit_short}&quot; \
+-var &quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
+-var &quot;stack_id=${stack_id}&quot; \
+-var &quot;environment_name=${environment_name}&quot; \
+-var &quot;env_is_open_access=${env_is_open_access}&quot; \
+-var &quot;jenkins_subnet_id=${jenkins_subnet_id}&quot; \
+-var &quot;jenkins_git_repo=${jenkins_git_repo}&quot; \
+-var &quot;jenkins_vpc_id=${jenkins_vpc_id}&quot; \
+-var &quot;jenkins_instance_profile_name=${jenkins_instance_profile_name}&quot; \
+-var &quot;jenkins_sg_ingress_https_cidr_blocks=${jenkins_sg_ingress_https_cidr_blocks}&quot; \
+-var &quot;jenkins_sg_egress_allow_all_cidr_blocks=${jenkins_sg_egress_allow_all_cidr_blocks}&quot; \
+-var &quot;jenkins_config_s3_location=${jenkins_config_s3_location}&quot; \
+-var &quot;jenkins_ec2_instance_type=${jenkins_ec2_instance_type}&quot; \
+-var &quot;jenkins_tf_local_var_OS_dist=${jenkins_tf_local_var_OS_dist}&quot; \
+-var &quot;jenkins_ec2_ebs_volume_size=${jenkins_ec2_ebs_volume_size}&quot; \
+-var &quot;jenkins_docker_maven_distro=${jenkins_docker_maven_distro}&quot; \
+-var &quot;jenkins_docker_terraform_distro=${jenkins_docker_terraform_distro}&quot; \
+-var &quot;is_initialized=true&quot;
+
+# swap the backends so newly deployed jenkins backend is stored in blue
+echo &quot;Moving states for green/blue&quot;
+echo &quot;Staging state swap&quot;
+aws s3 --sse=AES256 cp s3://${jenkins_tf_state_bucket}/jenkins_state/green/terraform.tfstate s3://${jenkins_tf_state_bucket}/jenkins_state/blue/terraform.tfstate_swap
+aws s3 --sse=AES256 cp s3://${jenkins_tf_state_bucket}/jenkins_state/blue/terraform.tfstate s3://${jenkins_tf_state_bucket}/jenkins_state/green/terraform.tfstate_swap
+
+echo &quot;Swapping states&quot;
+aws s3 --sse=AES256 mv s3://${jenkins_tf_state_bucket}/jenkins_state/blue/terraform.tfstate_swap s3://${jenkins_tf_state_bucket}/jenkins_state/blue/terraform.tfstate
+aws s3 --sse=AES256 mv s3://${jenkins_tf_state_bucket}/jenkins_state/green/terraform.tfstate_swap s3://${jenkins_tf_state_bucket}/jenkins_state/green/terraform.tfstate
+
+# Update dns
+echo &quot;Updating DNS. Jenkins should update to new server automatically&quot;
+assume_role
+aws route53 change-resource-record-sets --hosted-zone-id ${env_hosted_zone_id} --change-batch &apos;{&quot;Changes&quot;:[{&quot;Action&quot;:&quot;UPSERT&quot;,&quot;ResourceRecordSet&quot;:{&quot;Name&quot;:&quot;jenkins.&apos;${env_private_dns_name}&apos;&quot;,&quot;Type&quot;:&quot;A&quot;,&quot;TTL&quot;:300,&quot;ResourceRecords&quot;:[{&quot;Value&quot;:&quot;&apos;$JENKINS_IP&apos;&quot;}]}}]}&apos;
+
+reset_role</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.45">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
+</project>
