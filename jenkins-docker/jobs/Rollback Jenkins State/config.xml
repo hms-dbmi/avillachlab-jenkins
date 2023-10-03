@@ -27,7 +27,7 @@ terraform init \
 jenkins_green_ip=$(terraform state pull -json | jq -r &apos;.resources[] | select(.type == &quot;aws_instance&quot; and .name == &quot;jenkins&quot;) | .instances[0].attributes.private_ip&apos;)
 
 # Check if green state exists.
-jenkins_green_ip=$(terraform state pull -json | jq -r &apos;.resources[] | select(.type == &quot;aws_instance&quot; and .name == &quot;jenkins&quot;) | .instances[0].attributes.private_ip&apos;)
+jenkins_green_ip=$(terraform state pull | jq -r &apos;.resources[] | select(.type == &quot;aws_instance&quot; and .name == &quot;jenkins&quot;) | .instances[0].attributes.private_ip&apos;)
 if [ -z $jenkins_green_ip ] || ! [[ $jenkins_green_ip =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
    echo &quot;Jenkins Green server does not exist.  Nothing to rollback to.&quot;
    exit 1
