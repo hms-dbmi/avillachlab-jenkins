@@ -1,8 +1,14 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
+  <actions/>
   <description></description>
   <keepDependencies>false</keepDependencies>
-  <properties/>
+  <properties>
+    <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@320.v5a_0933a_e7d61">
+      <autoRebuild>false</autoRebuild>
+      <rebuildDisabled>false</rebuildDisabled>
+    </com.sonyericsson.rebuild.RebuildSettings>
+  </properties>
   <scm class="hudson.scm.NullSCM"/>
   <canRoam>true</canRoam>
   <disabled>false</disabled>
@@ -13,16 +19,30 @@
   <builders>
     <hudson.tasks.Shell>
       <command>#!/bin/bash
+terraform init \
+-backend-config=&quot;bucket=${jenkins_tf_state_bucket}&quot; \
+-backend-config=&quot;key=jenkins_state/green/terraform.tfstate&quot; \
+-backend-config=&quot;region=${jenkins_tf_state_region}&quot;
 
-echo &quot;Moving states for green/blue&quot;
-echo &quot;Staging state swap&quot;
-aws s3 --sse=AES256 cp s3://${jenkins_tf_state_bucket}/jenkins_state/green/terraform.tfstate s3://${jenkins_tf_state_bucket}/jenkins_state/blue/terraform.tfstate_swap
-aws s3 --sse=AES256 cp s3://${jenkins_tf_state_bucket}/jenkins_state/blue/terraform.tfstate s3://${jenkins_tf_state_bucket}/jenkins_state/green/terraform.tfstate_swap
+jenkins_green_ip=$(terraform state pull -json | jq -r &apos;.resources[] | select(.type == &quot;aws_instance&quot; and .name == &quot;jenkins&quot;) | .instances[0].attributes.private_ip&apos;)
 
-echo &quot;Swapping states&quot;
-aws s3 --sse=AES256 mv s3://${jenkins_tf_state_bucket}/jenkins_state/blue/terraform.tfstate_swap s3://${jenkins_tf_state_bucket}/jenkins_state/blue/terraform.tfstate
-aws s3 --sse=AES256 mv s3://${jenkins_tf_state_bucket}/jenkins_state/green/terraform.tfstate_swap s3://${jenkins_tf_state_bucket}/jenkins_state/green/terraform.tfstate
-</command>
+# Check if green state exists.
+jenkins_green_ip=$(terraform state pull | jq -r &apos;.resources[] | select(.type == &quot;aws_instance&quot; and .name == &quot;jenkins&quot;) | .instances[0].attributes.private_ip&apos;)
+if [ -z $jenkins_green_ip ] || ! [[ $jenkins_green_ip =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+   echo &quot;Jenkins Green server does not exist.  Nothing to rollback to.&quot;
+   exit 1
+else
+  aws route53 change-resource-record-sets --hosted-zone-id ${env_hosted_zone_id} --change-batch &apos;{&quot;Changes&quot;:[{&quot;Action&quot;:&quot;UPSERT&quot;,&quot;ResourceRecordSet&quot;:{&quot;Name&quot;:&quot;jenkins.&apos;${env_private_dns_name}&apos;&quot;,&quot;Type&quot;:&quot;A&quot;,&quot;TTL&quot;:300,&quot;ResourceRecords&quot;:[{&quot;Value&quot;:&quot;&apos;$jenkins_green_ip&apos;&quot;}]}}]}&apos;
+  
+  echo &quot;Moving states for green/blue&quot;
+  echo &quot;Staging state swap&quot;
+  aws s3 --sse=AES256 cp s3://${jenkins_tf_state_bucket}/jenkins_state/green/terraform.tfstate s3://${jenkins_tf_state_bucket}/jenkins_state/blue/terraform.tfstate_swap
+  aws s3 --sse=AES256 cp s3://${jenkins_tf_state_bucket}/jenkins_state/blue/terraform.tfstate s3://${jenkins_tf_state_bucket}/jenkins_state/green/terraform.tfstate_swap
+  
+  echo &quot;Swapping states&quot;
+  aws s3 --sse=AES256 mv s3://${jenkins_tf_state_bucket}/jenkins_state/blue/terraform.tfstate_swap s3://${jenkins_tf_state_bucket}/jenkins_state/blue/terraform.tfstate
+  aws s3 --sse=AES256 mv s3://${jenkins_tf_state_bucket}/jenkins_state/green/terraform.tfstate_swap s3://${jenkins_tf_state_bucket}/jenkins_state/green/terraform.tfstate
+fi</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
