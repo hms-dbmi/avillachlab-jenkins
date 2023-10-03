@@ -66,7 +66,7 @@
                 mkdir -p open-pic-sure-bdc-frontend/ui/src/main/picsureui/
                 fi
 
-                docker build --build-arg FILE_SUFFIX=${pipeline_build_id} -t
+                docker build --build-arg FILE_SUFFIX=${pipeline_build_id} --build-arg IS_OPEN_ACCESS=${is_open_access} -t
                 hms-dbmi/pic-sure-biodatacatalyst-ui:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
                 cd ../
                 mkdir -p docker_image_output
