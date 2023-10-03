@@ -4,6 +4,10 @@
   <description>This would be cleaner and more portable if it was a python script that check for initialization.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
+    <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@320.v5a_0933a_e7d61">
+      <autoRebuild>false</autoRebuild>
+      <rebuildDisabled>false</rebuildDisabled>
+    </com.sonyericsson.rebuild.RebuildSettings>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
@@ -72,8 +76,8 @@ for output_name in $output_names; do
   echo &quot;Current instance: ${output_name}.&quot;
   INSTANCE_ID=`terraform output &quot;${output_name}&quot;`
   
-  # Skip if the instance ID is empty
-  if [ -z &quot;$INSTANCE_ID&quot; ]; then
+  # Skip if the instance ID is empty or is not a valid instance-id
+  if [ -z &quot;$INSTANCE_ID&quot; ] || ! [[ &quot;$INSTANCE_ID&quot; =~ ^i-[a-fA-F0-9]{17}$ ]]; then
     echo &quot;No instance ID for output ${output_name}. Skipping...&quot;
     continue
   fi
