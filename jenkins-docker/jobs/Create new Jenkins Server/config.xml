@@ -53,8 +53,8 @@ done
 git_commit_short=`echo ${GIT_COMMIT} |head -c7`
 
 mkdir certs/
-aws s3 cp s3://${stack_s3_bucket}/certs/jenkins/jenkins.key certs/
-aws s3 cp s3://${stack_s3_bucket}/certs/jenkins/jenkins.cer certs/
+aws s3 cp s3://${jenkins_tf_state_bucket}/certs/jenkins/jenkins.key certs/
+aws s3 cp s3://${jenkins_tf_state_bucket}/certs/jenkins/jenkins.cer certs/
 
 # generate keystore file for docker/jenkins use
 echo &quot;# generate keystore file for docker/jenkins use&quot;
@@ -81,7 +81,7 @@ docker build \
 # Time to put it in a private repo instead of just a image tar on s3.
 docker save jenkins:$git_commit_short | gzip &gt; jenkins.tar.gz
 
-aws s3 cp jenkins.tar.gz s3://${stack_s3_bucket}/containers/jenkins/ 
+aws s3 cp jenkins.tar.gz s3://${jenkins_tf_state_bucket}/containers/jenkins/ 
 
 cd &quot;${WORKSPACE}&quot;</command>
       <configuredLocalRules/>
@@ -126,7 +126,7 @@ fi
 # could probably just export env vars with TF_ and terraform will use them.
 terraform apply -auto-approve \
 -var &quot;git_commit=${git_commit_short}&quot; \
--var &quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
+-var &quot;jenkins_tf_state_bucket=${jenkins_tf_state_bucket}&quot; \
 -var &quot;stack_id=${stack_id}&quot; \
 -var &quot;environment_name=${environment_name}&quot; \
 -var &quot;env_is_open_access=${env_is_open_access}&quot; \
@@ -144,7 +144,7 @@ terraform apply -auto-approve \
 -var &quot;jenkins_docker_terraform_distro=${jenkins_docker_terraform_distro}&quot;
 
 # Moving this to Terraform remote state
-#aws s3 --sse=AES256 cp terraform.tfstate s3://${stack_s3_bucket}/jenkins_state/jenkins_${GIT_COMMIT}/terraform.tfstate
+#aws s3 --sse=AES256 cp terraform.tfstate s3://${jenkins_tf_state_bucket}/jenkins_state/jenkins_${GIT_COMMIT}/terraform.tfstate
 
 # Not quite sure why we save the env variables to s3 so leaving it in for now.
 #aws s3 --sse=AES256 cp env.txt s3://${jenkins_tf_state_bucket}/jenkins_state/jenkins_${git_commit_short}/last_env.txt
@@ -164,7 +164,7 @@ done
 echo &quot;Tagging as initialized&quot;
 terraform apply -auto-approve \
 -var &quot;git_commit=${git_commit_short}&quot; \
--var &quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
+-var &quot;jenkins_tf_state_bucket=${jenkins_tf_state_bucket}&quot; \
 -var &quot;stack_id=${stack_id}&quot; \
 -var &quot;environment_name=${environment_name}&quot; \
 -var &quot;env_is_open_access=${env_is_open_access}&quot; \

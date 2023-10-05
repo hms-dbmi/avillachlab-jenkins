@@ -17,7 +17,7 @@ variable "jenkins_instance_profile_name" {
   type = string
 }
 
-variable "stack_s3_bucket" {
+variable "jenkins_tf_state_bucket" {
   type = string
 }
 

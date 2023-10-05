@@ -4,7 +4,7 @@ sh /opt/srce/scripts/start-gsstools.sh
 sudo yum -y update
 
 # grab image tar
-aws s3 cp s3://${stack_s3_bucket}/containers/jenkins/jenkins.tar.gz jenkins.tar.gz
+aws s3 cp s3://${jenkins_tf_state_bucket}/containers/jenkins/jenkins.tar.gz jenkins.tar.gz
 
 # load image
 load_result=$(docker load -i jenkins.tar.gz)

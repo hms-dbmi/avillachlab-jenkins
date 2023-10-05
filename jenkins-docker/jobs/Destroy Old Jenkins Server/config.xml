@@ -47,7 +47,7 @@ terraform init \
 
 terraform plan -destroy -out jenkins.tfplan \
 -var &quot;git_commit=${jenkins_githash_to_destroy}&quot; \
--var &quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
+-var &quot;jenkins_tf_state_bucket=${jenkins_tf_state_bucket}&quot; \
 -var &quot;stack_id=${stack_id}&quot; \
 -var &quot;environment_name=${environment_name}&quot; \
 -var &quot;env_is_open_access=${env_is_open_access}&quot; \
