@@ -70,8 +70,7 @@
                 cd docker_image_output
                 docker save hms-dbmi/pic-sure-biodatacatalyst-ui:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt;
                 pic-sure-ui.tar.gz
-                aws s3 --sse=AES256 cp pic-sure-ui.tar.gz
-                s3://$S3_BUCKET_NAME/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-ui.tar.gz
+                aws s3 --sse=AES256 cp pic-sure-ui.tar.gz s3://$S3_BUCKET_NAME/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-ui.tar.gz
             </command>
         </hudson.tasks.Shell>
     </builders>
