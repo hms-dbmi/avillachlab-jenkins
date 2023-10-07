@@ -17,7 +17,7 @@ variable "jenkins_instance_profile_name" {
   type = string
 }
 
-variable "stack_s3_bucket" {
+variable "jenkins_tf_state_bucket" {
   type = string
 }
 
@@ -81,4 +81,9 @@ variable "env_is_open_access" {
 variable "environment_name" {
   type    = string
   default = "dev"
+}
+
+variable "is_initialized" {
+  type    = string
+  default = "false"
 }

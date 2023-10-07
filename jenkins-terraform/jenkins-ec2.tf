@@ -2,13 +2,13 @@
 data "template_file" "jenkins-user_data" {
   template = file(local.user_script)
   vars = {
-    stack_s3_bucket                 = var.stack_s3_bucket
+    jenkins_tf_state_bucket                 = var.jenkins_tf_state_bucket
     stack_id                        = var.stack_id
     jenkins_config_s3_location      = var.jenkins_config_s3_location
     jenkins_docker_maven_distro     = var.jenkins_docker_maven_distro
     jenkins_docker_terraform_distro = var.jenkins_docker_terraform_distro
     jenkins_git_repo                = var.jenkins_git_repo
-    git_commit = var.git_commit
+    git_commit                      = var.git_commit
   }
 }
 
@@ -55,9 +55,14 @@ resource "aws_instance" "jenkins" {
     Project     = local.project
     Program     = var.program
     Name        = "${var.program} Jenkins ${local.project} - ${var.stack_id} - ${var.git_commit}"
+    InitComplete = "${var.is_initialized}"
   }
 
   user_data = data.template_cloudinit_config.config.rendered
+
+  lifecycle {
+     create_before_destroy = true
+  }
 
 }
 

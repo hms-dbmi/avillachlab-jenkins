@@ -1,5 +1,14 @@
+# uniq name for security group.  
+resource "random_string" "random" {
+   length  = 6
+   special = false
+}
+locals {
+   uniq_name = random_string.random.result
+}
+
 resource "aws_security_group" "inbound-jenkins" {
-  name        = "allow_inbound_to_jenkins_${var.stack_id}_${var.git_commit}"
+  name        = "allow_inbound_to_jenkins_${var.stack_id}_${local.uniq_name}"
   description = "Allow inbound traffic on Port 443"
   vpc_id      = var.jenkins_vpc_id
 
@@ -20,7 +29,7 @@ resource "aws_security_group" "inbound-jenkins" {
 }
 
 resource "aws_security_group" "outbound-jenkins-to-internet" {
-  name        = "allow_jenkins_outbound_to_internet_${var.stack_id}_${var.git_commit}"
+  name        = "allow_jenkins_outbound_to_internet_${var.stack_id}_${local.uniq_name}"
   description = "Allow outbound traffic from Jenkins"
   vpc_id      = var.jenkins_vpc_id
 

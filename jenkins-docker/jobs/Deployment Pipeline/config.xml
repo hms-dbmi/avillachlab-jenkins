@@ -1,8 +1,8 @@
 <?xml version='1.1' encoding='UTF-8'?>
-<flow-definition plugin="workflow-job@1295.v395eb_7400005">
+<flow-definition plugin="workflow-job@1348.v32a_a_f150910e">
   <actions>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2131.vb_9788088fdb_5"/>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2131.vb_9788088fdb_5">
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2144.v077a_d1928a_40"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2144.v077a_d1928a_40">
       <jobProperties/>
       <triggers/>
       <parameters/>
@@ -12,6 +12,10 @@
   <description></description>
   <keepDependencies>false</keepDependencies>
   <properties>
+    <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@320.v5a_0933a_e7d61">
+      <autoRebuild>false</autoRebuild>
+      <rebuildDisabled>false</rebuildDisabled>
+    </com.sonyericsson.rebuild.RebuildSettings>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
@@ -33,7 +37,7 @@
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3659.v582dc37621d8">
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3793.v65dec41c3a_c3">
     <script>import groovy.json.JsonSlurper;
 
 def retrieveDepStateId
@@ -79,13 +83,6 @@ pipeline {
                 script {
                     target_stack = new JsonSlurper().parseText(stacksJson).environments.next_prod
                     def result = build job: &apos;Teardown and Rebuild Stage Environment&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack], [$class: &apos;StringParameterValue&apos;, name: &apos;dataset_s3_object_key&apos;, value: env.dataset_s3_object_key], [$class: &apos;StringParameterValue&apos;, name: &apos;destigmatized_dataset_s3_object_key&apos;, value: env.destigmatized_dataset_s3_object_key], [$class: &apos;StringParameterValue&apos;, name: &apos;genomic_dataset_s3_object_key&apos;, value: env.genomic_dataset_s3_object_key], [$class: &apos;StringParameterValue&apos;, name: &apos;deployment_git_hash&apos;, value: env.deployment_git_hash], [$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash]]
-                }
-            }
-        }
-        stage(&apos;Update bucket policy&apos;) {
-            steps {
-                script {
-                    def result = build job: &apos;Update Bucket Policy&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack],[$class: &apos;StringParameterValue&apos;, name: &apos;stack_githash&apos;, value: env.deployment_git_hash]]
                 }
             }
         }

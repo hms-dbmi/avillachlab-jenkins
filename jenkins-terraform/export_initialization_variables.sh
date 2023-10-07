@@ -3,7 +3,7 @@
 export GIT_COMMIT=<Git hash for Jenkins Repo> \
 export jenkins_tf_state_region=<AWS Region> \
 export jenkins_tf_state_bucket=<TF state bucket> \
-export stack_s3_bucket=<s3 bucket created in prerequisites> \
+export jenkins_tf_state_bucket=<s3 bucket created in prerequisites> \
 export stack_id=<environment short name ( dev or prod )> \
 export jenkins_subnet_id=<aws subnet_id used for jenkins> \
 export jenkins_vpc_id=<aws vpc_id for Jenkins> \

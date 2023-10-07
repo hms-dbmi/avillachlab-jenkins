@@ -27,7 +27,7 @@ terraform init \
 
 terraform apply -auto-approve \
 -var "git_commit=`echo ${GIT_COMMIT} |cut -c1-7`" \
--var "stack_s3_bucket=${stack_s3_bucket}" \
+-var "jenkins_tf_state_bucket=${jenkins_tf_state_bucket}" \
 -var "stack_id=${stack_id}" \
 -var "jenkins_subnet_id=${jenkins_subnet_id}" \
 -var "jenkins_vpc_id=${jenkins_vpc_id}" \

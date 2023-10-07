@@ -1,16 +1,27 @@
 FROM jenkins/jenkins:lts
 
-ARG JENKINS_DOCKER_MAVEN_DISTRO
-
 ARG JENKINS_DOCKER_TERRAFORM_DISTRO
+ARG PLUGINS_FILE
+ARG CONFIG_XML_FILE
+ARG SCRIPT_APPROVAL_FILE
+ARG HUDSON_TASKS_FILE
+ARG JENKINS_JOBS_DIR
+ARG PKCS12_FILE
+ARG PKCS12_PASS
 
-COPY plugins.txt /usr/share/jenkins/ref/plugins.txt
+COPY $PLUGINS_FILE /usr/share/jenkins/ref/plugins.txt
 
-COPY config.xml /var/jenkins_home/config.xml
+COPY $CONFIG_XML_FILE /var/jenkins_home/config.xml
 
-COPY scriptApproval.xml /var/jenkins_home/scriptApproval.xml
+COPY $SCRIPT_APPROVAL_FILE /var/jenkins_home/scriptApproval.xml
 
-COPY hudson.tasks.Maven.xml /var/jenkins_home/hudson.tasks.Maven.xml
+COPY $HUDSON_TASKS_FILE /var/jenkins_home/hudson.tasks.Maven.xml
+
+COPY $JENKINS_JOBS_DIR /var/jenkins_home/jobs
+
+COPY $PKCS12_FILE /var/jenkins_home/jenkins.p12
+
+ENV JENKINS_OPTS="--httpPort=-1 --httpsPort=8443 --httpsKeyStore=/var/jenkins_home/jenkins.p12 --httpsKeyStorePassword=$PKCS12_PASS"
 
 USER root
 
@@ -40,7 +51,6 @@ RUN apt-get install jq -y
 
 RUN /bin/jenkins-plugin-cli -f /usr/share/jenkins/ref/plugins.txt || echo "Some errors occurred during plugin installation."
 
-# Should look at using the jenkins terraform plugin instead of what we are doing
 RUN wget -c $JENKINS_DOCKER_TERRAFORM_DISTRO -O /opt/terraform.zip 
 
 RUN unzip /opt/terraform.zip -d /usr/local/bin/

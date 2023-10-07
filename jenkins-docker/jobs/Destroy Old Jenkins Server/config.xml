@@ -6,11 +6,6 @@
   <properties>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
-        <hudson.model.StringParameterDefinition>
-          <name>jenkins_githash_to_destroy</name>
-          <description>This should be the short git hash that is in the name of the server and the tag</description>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
           <name>Destroy</name>
           <description>Uncheck to only view destroy plan</description>
@@ -44,16 +39,15 @@
   <builders>
     <hudson.tasks.Shell>
       <command>cd jenkins-terraform
-aws s3 --sse=AES256 cp s3://${stack_s3_bucket}/jenkins_state/jenkins_${jenkins_githash_to_destroy}/terraform.tfstate terraform.tfstate
-#env &gt; env.txt
+
 terraform init \
 -backend-config=&quot;bucket=${jenkins_tf_state_bucket}&quot; \
--backend-config=&quot;key=jenkins_state/jenkins_${jenkins_githash_to_destroy}/terraform.tfstate&quot; \
+-backend-config=&quot;key=jenkins_state/green/terraform.tfstate&quot; \
 -backend-config=&quot;region=${jenkins_tf_state_region}&quot;
 
 terraform plan -destroy -out jenkins.tfplan \
 -var &quot;git_commit=${jenkins_githash_to_destroy}&quot; \
--var &quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
+-var &quot;jenkins_tf_state_bucket=${jenkins_tf_state_bucket}&quot; \
 -var &quot;stack_id=${stack_id}&quot; \
 -var &quot;environment_name=${environment_name}&quot; \
 -var &quot;env_is_open_access=${env_is_open_access}&quot; \
