@@ -158,6 +158,7 @@ if $isDestroyOnly; then
      -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
      -var=&quot;env_hosted_zone_id=${env_hosted_zone_id}&quot; \
      -var=&quot;analytics_id=${analytics_id}&quot; \
+     -var=&quot;tag_manager_id=${tag_manager_id}&quot; \
      -var=&quot;env_is_open_access=${env_is_open_access}&quot; \
      -var=&quot;include_auth_hpds=${include_auth_hpds}&quot; \
      -var=&quot;include_open_hpds=${include_open_hpds}&quot; \
@@ -192,6 +193,7 @@ else
      -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
      -var=&quot;env_hosted_zone_id=${env_hosted_zone_id}&quot; \
      -var=&quot;analytics_id=${analytics_id}&quot; \
+     -var=&quot;tag_manager_id=${tag_manager_id}&quot; \
      -var=&quot;env_is_open_access=${env_is_open_access}&quot; \
      -var=&quot;include_auth_hpds=${include_auth_hpds}&quot; \
      -var=&quot;include_open_hpds=${include_open_hpds}&quot; \
@@ -220,6 +222,7 @@ else
      -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
      -var=&quot;env_hosted_zone_id=${env_hosted_zone_id}&quot; \
      -var=&quot;analytics_id=${analytics_id}&quot; \
+     -var=&quot;tag_manager_id=${tag_manager_id}&quot; \
      -var=&quot;env_is_open_access=${env_is_open_access}&quot; \
      -var=&quot;include_auth_hpds=${include_auth_hpds}&quot; \
      -var=&quot;include_open_hpds=${include_open_hpds}&quot; \
