@@ -4,10 +4,6 @@
   <description>This would be cleaner and more portable if it was a python script that check for initialization.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
-    <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@320.v5a_0933a_e7d61">
-      <autoRebuild>false</autoRebuild>
-      <rebuildDisabled>false</rebuildDisabled>
-    </com.sonyericsson.rebuild.RebuildSettings>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
@@ -137,7 +133,7 @@ assume_role
 echo &quot;registering new deployment to staging ( register green )&quot;
 target_group_vpc=$(get_target_group_vpc_by_tg_name $staging_tg_name)
 staging_target_group_arn=$(get_target_group_arn_by_name &quot;$staging_tg_name&quot;)
-staging_httpd_instance_prv_ips=$(get_private_ip_by_tags &quot;staging_httpd_tags_file.json&quot;)
+staging_httpd_instance_prv_ips=($(get_private_ip_by_tags &quot;staging_httpd_tags_file.json&quot;))
 
 if [ -z &quot;${staging_httpd_instance_prv_ips}&quot; ]; then
    echo &quot;No private IPs found when registering target groups.&quot;

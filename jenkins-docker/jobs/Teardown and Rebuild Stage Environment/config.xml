@@ -107,7 +107,7 @@ assume_role
 # Deregister previous staging from staging TG (remove green from green)
 target_group_vpc=$(get_target_group_vpc_by_tg_name $staging_tg_name)
 staging_target_group_arn=$(get_target_group_arn_by_name &quot;$staging_tg_name&quot;)
-staging_httpd_instance_prv_ips=$(get_private_ip_by_tags &quot;staging_httpd_tags_file.json&quot;) # json generated in previous build step.
+staging_httpd_instance_prv_ips=($(get_private_ip_by_tags &quot;staging_httpd_tags_file.json&quot;)) # json generated in previous build step.
 
 if [ -z &quot;${staging_httpd_instance_prv_ips}&quot; ]; then
    echo &quot;No private IPs found. No Staging Ips to deregister&quot;
@@ -158,6 +158,7 @@ if $isDestroyOnly; then
      -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
      -var=&quot;env_hosted_zone_id=${env_hosted_zone_id}&quot; \
      -var=&quot;analytics_id=${analytics_id}&quot; \
+     -var=&quot;tag_manager_id=${tag_manager_id}&quot; \
      -var=&quot;env_is_open_access=${env_is_open_access}&quot; \
      -var=&quot;include_auth_hpds=${include_auth_hpds}&quot; \
      -var=&quot;include_open_hpds=${include_open_hpds}&quot; \
@@ -192,6 +193,7 @@ else
      -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
      -var=&quot;env_hosted_zone_id=${env_hosted_zone_id}&quot; \
      -var=&quot;analytics_id=${analytics_id}&quot; \
+     -var=&quot;tag_manager_id=${tag_manager_id}&quot; \
      -var=&quot;env_is_open_access=${env_is_open_access}&quot; \
      -var=&quot;include_auth_hpds=${include_auth_hpds}&quot; \
      -var=&quot;include_open_hpds=${include_open_hpds}&quot; \
@@ -220,6 +222,7 @@ else
      -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
      -var=&quot;env_hosted_zone_id=${env_hosted_zone_id}&quot; \
      -var=&quot;analytics_id=${analytics_id}&quot; \
+     -var=&quot;tag_manager_id=${tag_manager_id}&quot; \
      -var=&quot;env_is_open_access=${env_is_open_access}&quot; \
      -var=&quot;include_auth_hpds=${include_auth_hpds}&quot; \
      -var=&quot;include_open_hpds=${include_open_hpds}&quot; \

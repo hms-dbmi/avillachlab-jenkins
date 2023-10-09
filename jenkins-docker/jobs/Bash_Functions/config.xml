@@ -191,8 +191,8 @@ swap_stacks() {
   local local_target_group_vpc=$(get_target_group_vpc_by_tg_name &quot;$live_tg_name&quot;)
 
   # Get private IPs using the function with tags from files
-  local local_staging_httpd_instance_prv_ips=$(get_private_ip_by_tags &quot;$staging_httpd_tags_file&quot;)
-  local local_live_httpd_instance_prv_ips=$(get_private_ip_by_tags &quot;$live_httpd_tags_file&quot;)
+  local local_staging_httpd_instance_prv_ips=($(get_private_ip_by_tags &quot;$staging_httpd_tags_file&quot;))
+  local local_live_httpd_instance_prv_ips=($(get_private_ip_by_tags &quot;$live_httpd_tags_file&quot;))
 
   # Promote Staging to Live (green to blue)
   echo &quot;Promote Staging to Live (green to blue)&quot;
