@@ -24,6 +24,12 @@
           <defaultValue>${stack_s3_bucket}</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>is_open_access</name>
+          <description></description>
+          <defaultValue>false</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -58,7 +64,16 @@ docker tag hms-dbmi/pic-sure-core-frontend:${PIC_SURE_HPDS_UI_VERSION} hms-dbmi/
 GIT_BRANCH_SHORT=`echo ${GIT_BRANCH} | cut -d &quot;/&quot; -f 2` 
 GIT_COMMIT_SHORT=`echo ${GIT_COMMIT} | cut -c1-7`
 cd biodatacatalyst-ui
-docker build --build-arg FILE_SUFFIX=${pipeline_build_id} -t hms-dbmi/pic-sure-bdc-frontend:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
+
+if [ ! -d open-pic-sure-bdc-frontend/ui/src/main/picsureui/ ]; then
+  mkdir -p open-pic-sure-bdc-frontend/ui/src/main/picsureui/
+fi
+
+if [ ! -d open-pic-sure-bdc-frontend/ui/src/main/psamaui/ ]; then
+  mkdir -p open-pic-sure-bdc-frontend/ui/src/main/psamaui/
+fi
+
+docker build --build-arg FILE_SUFFIX=${pipeline_build_id} --build-arg IS_OPEN_ACCESS=${is_open_access} -t hms-dbmi/pic-sure-bdc-frontend:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
 cd ../
 mkdir -p docker_image_output
 cd docker_image_output
