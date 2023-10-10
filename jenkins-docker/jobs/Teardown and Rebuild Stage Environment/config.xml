@@ -164,7 +164,6 @@ if $isDestroyOnly; then
      -var=&quot;include_open_hpds=${include_open_hpds}&quot; \
      -var=&quot;environment_name=${environment_name}&quot; \
      -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
-     -var=&quot;env_live_subdomain=${env_live_subdomain}&quot; \
      -var=&quot;application_id_for_base_query=${application_id_for_base_query}&quot; \
      -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
      -var=&quot;idp_provider=${idp_provider}&quot; \
@@ -199,7 +198,6 @@ else
      -var=&quot;include_open_hpds=${include_open_hpds}&quot; \
      -var=&quot;environment_name=${environment_name}&quot; \
      -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
-     -var=&quot;env_live_subdomain=${env_live_subdomain}&quot; \
      -var=&quot;application_id_for_base_query=${application_id_for_base_query}&quot; \
      -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
      -var=&quot;idp_provider=${idp_provider}&quot; \
@@ -228,7 +226,6 @@ else
      -var=&quot;include_open_hpds=${include_open_hpds}&quot; \
      -var=&quot;environment_name=${environment_name}&quot; \
      -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
-     -var=&quot;env_live_subdomain=${env_live_subdomain}&quot; \
      -var=&quot;application_id_for_base_query=${application_id_for_base_query}&quot; \
      -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
      -var=&quot;idp_provider=${idp_provider}&quot; \
