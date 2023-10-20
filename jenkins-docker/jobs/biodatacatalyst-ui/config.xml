@@ -58,12 +58,22 @@ GIT_COMMIT_SHORT=$(echo ${GIT_COMMIT} | cut -c1-7)
 # Clean the dir out first
 rm -rf biodatacatalyst-ui/open-pic-sure-bdc-frontend
 
-# Make the open UI dir if it doesn&apos;t exist, otherwise do nothing.
-#This is to prevent the build from failing if the dir doesn&apos;t exist
-mkdir -p ../open-pic-sure-bdc-frontend
+if [ "${env_is_open_access}" = &apos;true&apos; ]; then
+  # Move Open Access UI into BDC UI
+  echo &quot;Is open access: Copying repository to biodatacatalyst-ui/open-pic-sure-bdc-frontend&quot;
+  cp -r &quot;/var/jenkins_home/workspace/PIC-SURE Open Build&quot; &quot;biodatacatalyst-ui/open-pic-sure-bdc-frontend/&quot;
+else
+  # Create an empty directory structure if not open access
+  echo &quot;Is not open access: making empty dir structure&quot;
+  mkdir -p &quot;biodatacatalyst-ui/open-pic-sure-bdc-frontend/ui/src/main/psamaui/&quot;
+  mkdir -p &quot;biodatacatalyst-ui/open-pic-sure-bdc-frontend/ui/src/main/picsureui/&quot;
+fi
 
-# Move Open Access UI  into BDC UI
-mv ../open-pic-sure-bdc-frontend biodatacatalyst-ui/open-pic-sure-bdc-frontend
+# Check if &apos;psamaui&apos; directory exists at &apos;biodatacatalyst-ui/open-pic-sure-bdc-frontend/ui/src/main/&apos;
+if [ ! -d &quot;biodatacatalyst-ui/open-pic-sure-bdc-frontend/ui/src/main/psamaui/&quot; ]; then
+  mkdir -p &quot;biodatacatalyst-ui/open-pic-sure-bdc-frontend/ui/src/main/psamaui/&quot;
+fi
+
 
 # Move into workspace dir
 cd biodatacatalyst-ui
