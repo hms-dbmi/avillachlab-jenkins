@@ -62,6 +62,7 @@ if [ "${env_is_open_access}" = &apos;true&apos; ]; then
   # Move Open Access UI into BDC UI
   echo &quot;Is open access: Copying repository to biodatacatalyst-ui/open-pic-sure-bdc-frontend&quot;
   cp -r &quot;/var/jenkins_home/workspace/PIC-SURE Open Build&quot; &quot;biodatacatalyst-ui/open-pic-sure-bdc-frontend/&quot;
+  echo &quot;ls -la biodatacatalyst-ui/open-pic-sure-bdc-frontend&quot;
 else
   # Create an empty directory structure if not open access
   echo &quot;Is not open access: making empty dir structure&quot;

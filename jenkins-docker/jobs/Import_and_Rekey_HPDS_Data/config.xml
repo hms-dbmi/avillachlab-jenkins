@@ -109,13 +109,7 @@ tar -cvzf ${output_file_name}.tar.gz *.javabin encryption_key metadata.json
 
 aws s3 --sse=AES256 cp ${output_file_name}.tar.gz s3://${stack_s3_bucket}/data/${destination_bucket_hash}/${output_file_name}.tar.gz --quiet
 
-if [ -f metadata.json ]; then
-   if [ ${isDestigmatized} = &apos;false&apos; ]; then
-
-      aws s3 --sse=AES256 cp metadata.json s3://${stack_s3_bucket}/data/${destination_bucket_hash}/fence_mapping.json --quiet
-
-   fi
-fi
+aws s3 --sse=AES256 cp metadata.json s3://${stack_s3_bucket}/data/${destination_bucket_hash}/fence_mapping.json
                 </command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
