@@ -12,9 +12,17 @@ ARG JENKINS_HTTP_PORT=-1
 ARG JENKINS_HTTPS_PORT=8443
 ARG RUN_SETUP_WIZARD=false
 
+# Can use this to swap users back to jenkins user without hardcoding it.  Safe to hardcode swap to root user.
+ENV JENKINS_USERNAME=$USER
 ###### OS configs and package installations ########
 # We could run these commands and build an image then configure jenkins only in this dockerfile instead of directly using the jenkins stock image
+USER root
 RUN apt-get update
+
+RUN echo deb http://archive.debian.org/debian stretch-backports main >> /etc/apt/sources.list \
+    echo deb http://archive.debian.org/debian stretch main >> /etc/apt/sources.list
+
+RUN apt-get -y -t stretch-backports install openjdk-11-jdk-headless
 
 RUN apt-get -y install apt-transport-https \
     apt-get -y install python3-pip \
@@ -27,9 +35,7 @@ RUN pip3 install --no-input awscli --upgrade --break-system-packages
 RUN curl -fsSL https://get.docker.com | sh \
     && docker --version
 
-RUN apt-get -y -t stretch-backports install openjdk-11-jdk-headless
 # add customization to allow different versions of maven to be installed 
-
 RUN apt-get -y install maven
 
 RUN apt-get install jq -y
@@ -41,7 +47,7 @@ RUN if [ -n "$JENKINS_DOCKER_TERRAFORM_DISTRO" ]; then \
 fi
 
 ##### Configuration for jenkins ###########
-
+USER $JENKINS_USERNAME
 # Check if PLUGINS_FILE is provided and copy it, then run jenkins-plugin-cli
 RUN if [ -n "$PLUGINS_FILE" ]; then \
     COPY $PLUGINS_FILE /usr/share/jenkins/ref/plugins.txt && \
@@ -66,9 +72,3 @@ else \
     # If both are empty JENKINS_OPTS should not use 
     ENV JENKINS_OPTS="--httpPort=$JENKINS_HTTP_PORT --httpsPort=$JENKINS_HTTPS_PORT -Djenkins.install.runSetupWizard=$RUN_SETUP_WIZARD"; \
 fi
-USER root
-
-RUN echo deb http://archive.debian.org/debian stretch-backports main >> /etc/apt/sources.list \
-    echo deb http://archive.debian.org/debian stretch main >> /etc/apt/sources.list
-
-
