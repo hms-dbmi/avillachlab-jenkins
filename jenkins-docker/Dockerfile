@@ -17,10 +17,11 @@ ENV JENKINS_USERNAME=$USER
 ###### OS configs and package installations ########
 # We could run these commands and build an image then configure jenkins only in this dockerfile instead of directly using the jenkins stock image
 USER root
-RUN apt-get update
 
-RUN echo deb http://archive.debian.org/debian stretch-backports main >> /etc/apt/sources.list \
-    echo deb http://archive.debian.org/debian stretch main >> /etc/apt/sources.list
+RUN echo deb http://archive.debian.org/debian stretch-backports main >> /etc/apt/sources.list
+RUN echo deb http://archive.debian.org/debian stretch main >> /etc/apt/sources.list
+
+RUN apt-get update
 
 RUN apt-get -y -t stretch-backports install openjdk-11-jdk-headless
 
