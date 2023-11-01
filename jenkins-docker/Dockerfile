@@ -59,21 +59,19 @@ if [ -n "$PLUGINS_FILE" ]; then \
     /bin/jenkins-plugin-cli -f /usr/share/jenkins/ref/plugins.txt || echo "Some errors occurred during plugin installation."; \
 fi
 
-RUN if [ -n "$CONFIG_XML_FILE" ]; then COPY $CONFIG_XML_FILE /var/jenkins_home/config.xml; fi
-RUN if [ -n "$SCRIPT_APPROVAL_FILE" ]; then COPY $SCRIPT_APPROVAL_FILE /var/jenkins_home/scriptApproval.xml; fi
-RUN if [ -n "$HUDSON_TASKS_FILE" ]; then COPY $HUDSON_TASKS_FILE /var/jenkins_home/hudson.tasks.Maven.xml; fi
-RUN if [ -n "$JENKINS_JOBS_DIR" ]; then COPY $JENKINS_JOBS_DIR /var/jenkins_home/jobs; fi
+COPY $CONFIG_XML_FILE /var/jenkins_home/config.xml
+COPY $SCRIPT_APPROVAL_FILE /var/jenkins_home/scriptApproval.xml
+COPY $HUDSON_TASKS_FILE /var/jenkins_home/hudson.tasks.Maven.xml
+COPY $JENKINS_JOBS_DIR /var/jenkins_home/jobs
+
 
 # Check if either PKCS12_FILE or PKCS12_PASS is provided, and ensure both are provided if one is provided
+COPY $PKCS12_FILE /var/jenkins_home/$PKCS12_FILE; 
+
 RUN if [ -n "$PKCS12_FILE" ] || [ -n "$PKCS12_PASS" ]; then \
     if [ -z "$PKCS12_FILE" ] || [ -z "$PKCS12_PASS" ]; then \
         echo "Both PKCS12_FILE and PKCS12_PASS must be provided if either one is provided."; \
         exit 1; \
     fi; \
-    # If both are provided, copy the PKCS12_FILE and set the ENV variables
-    COPY $PKCS12_FILE /var/jenkins_home/$PKCS12_FILE; \
-    ENV JENKINS_OPTS="--httpPort=$JENKINS_HTTP_PORT --httpsPort=$JENKINS_HTTPS_PORT --httpsKeyStore=/var/jenkins_home/$PKCS12_FILE --httpsKeyStorePassword=$PKCS12_PASS -Djenkins.install.runSetupWizard=$RUN_SETUP_WIZARD"; \
-else \
-    # If both are empty JENKINS_OPTS should not use 
-    ENV JENKINS_OPTS="--httpPort=$JENKINS_HTTP_PORT --httpsPort=$JENKINS_HTTPS_PORT -Djenkins.install.runSetupWizard=$RUN_SETUP_WIZARD"; \
+    JENKINS_OPTS="$JENKINS_OPTS --httpsKeyStore=/var/jenkins_home/$PKCS12_FILE --httpsKeyStorePassword=$PKCS12_PASS"; \
 fi
