@@ -1,5 +1,5 @@
 FROM jenkins/jenkins:lts
-
+# user to swap easily between OS operations and jenkins configuration.
 ENV JENKINS_USERNAME=$USER
 
 ARG JENKINS_DOCKER_TERRAFORM_DISTRO
@@ -19,6 +19,8 @@ ARG RUN_SETUP_WIZARD=false
 # We could run these commands and build an image then configure jenkins only in this dockerfile instead of directly using the jenkins stock image
 USER root
 
+# debian repos to install openjdk headless? 
+# Jenkins must have a better way to manage JRE ....
 RUN echo deb http://archive.debian.org/debian stretch-backports main >> /etc/apt/sources.list
 RUN echo deb http://archive.debian.org/debian stretch main >> /etc/apt/sources.list
 
@@ -38,17 +40,16 @@ RUN set -e; \
     curl -fsSL https://get.docker.com | sh && \
     docker --version
 
-# add customization to allow different versions of maven to be installed 
+# maven
 RUN apt-get -y install maven
-
+# jq
 RUN apt-get install jq -y
+# terraform
+RUN wget -c $JENKINS_DOCKER_TERRAFORM_DISTRO -O /opt/terraform.zip && \
+    unzip /opt/terraform.zip -d /usr/local/bin/ 
 
-# Check if JENKINS_DOCKER_TERRAFORM_DISTRO is provided and download and unzip Terraform if it is
-RUN set -e; \
-    if [ -n "$JENKINS_DOCKER_TERRAFORM_DISTRO" ]; then \
-    wget -c $JENKINS_DOCKER_TERRAFORM_DISTRO -O /opt/terraform.zip && \
-    unzip /opt/terraform.zip -d /usr/local/bin/; \
-fi
+# Cleanup
+RUN apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /var/cache/apt/*
 
 ##### Configuration for jenkins ###########
 USER $JENKINS_USERNAME
@@ -61,6 +62,7 @@ COPY $CONFIG_XML_FILE /var/jenkins_home/config.xml
 COPY $SCRIPT_APPROVAL_FILE /var/jenkins_home/scriptApproval.xml
 COPY $HUDSON_TASKS_FILE /var/jenkins_home/hudson.tasks.Maven.xml
 COPY $JENKINS_JOBS_DIR /var/jenkins_home/jobs
-COPY $PKCS12_FILE /var/jenkins_home/$PKCS12_FILE; 
+COPY $PKCS12_FILE /var/jenkins_home/$PKCS12_FILE
 
+# Should set env var at runtime using an entrypoint.
 ENV JENKINS_OPTS="--httpPort=$JENKINS_HTTP_PORT --httpsPort=$JENKINS_HTTPS_PORT -Djenkins.install.runSetupWizard=$RUN_SETUP_WIZARD --httpsKeyStore=/var/jenkins_home/$PKCS12_FILE --httpsKeyStorePassword=$PKCS12_PASS"
