@@ -4,8 +4,16 @@
   <description></description>
   <keepDependencies>false</keepDependencies>
   <properties>
+    <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@320.v5a_0933a_e7d61">
+      <autoRebuild>false</autoRebuild>
+      <rebuildDisabled>false</rebuildDisabled>
+    </com.sonyericsson.rebuild.RebuildSettings>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>live_stack</name>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>target_stack</name>
           <trim>false</trim>
@@ -141,7 +149,14 @@ cd app-infrastructure
 # TODO - Needs backend state management.
 aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate . || echo &quot;bad state or doesnt exist, it will be created&quot;
 
+# Assume deployment role
 assume_role
+
+# Take rds Snapshot from live database to use for new stack
+echo &quot;Creating snapshot for picsure rds&quot;
+create_rds_snapshot_by_tag &quot;${live_stack}&quot; &quot;${env_project}&quot;
+picsure_rds_snapshot_id=$(get_latest_rds_snapshot_id &quot;${live_stack}&quot; &quot;${env_project}&quot;)
+echo &quot;$picsure_rds_snapshot_id&quot;
 
 terraform init
 if $isDestroyOnly; then
@@ -151,6 +166,7 @@ if $isDestroyOnly; then
      -var=&quot;destigmatized_dataset_s3_object_key=${destigmatized_dataset_s3_object_key}&quot;  \
      -var=&quot;genomic_dataset_s3_object_key=${genomic_dataset_s3_object_key}&quot; \
      -var=&quot;target_stack=${target_stack}&quot; \
+     -var=&quot;picsure_rds_snapshot_id=${picsure_rds_snapshot_id}&quot; \
      -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; \
      -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
      -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
@@ -173,7 +189,7 @@ if $isDestroyOnly; then
      -var=&quot;fence_client_id=${fence_client_id}&quot; \
      -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
      -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true
-
+  
   reset_role
 
   # Move to terraform backend
@@ -185,6 +201,7 @@ else
      -var=&quot;destigmatized_dataset_s3_object_key=${destigmatized_dataset_s3_object_key}&quot;  \
      -var=&quot;genomic_dataset_s3_object_key=${genomic_dataset_s3_object_key}&quot; \
      -var=&quot;target_stack=${target_stack}&quot; \
+     -var=&quot;picsure_rds_snapshot_id=${picsure_rds_snapshot_id}&quot; \
      -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; \
      -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
      -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
@@ -213,6 +230,7 @@ else
      -var=&quot;destigmatized_dataset_s3_object_key=${destigmatized_dataset_s3_object_key}&quot;  \
      -var=&quot;genomic_dataset_s3_object_key=${genomic_dataset_s3_object_key}&quot; \
      -var=&quot;target_stack=${target_stack}&quot; \
+     -var=&quot;picsure_rds_snapshot_id=${picsure_rds_snapshot_id}&quot; \
      -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; \
      -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
      -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \

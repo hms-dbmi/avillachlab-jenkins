@@ -19,9 +19,9 @@ def retrieveBuildSpecId;
 def pipelineBuildId;
 def build_hashes = {};
 pipeline {
-    agent any 
+    agent any
     stages {
-        stage(&apos;Retrieve Build Spec&apos;) { 
+        stage(&apos;Retrieve Build Spec&apos;) {
             steps {
                 script {
                     def result = build job: &apos;Retrieve Build Spec&apos;
@@ -40,7 +40,7 @@ pipeline {
                 }
             }
         }
-        stage(&apos;PIC-SURE API, PIC-SURE-HPDS UI&apos;) { 
+        stage(&apos;PIC-SURE API, PIC-SURE-HPDS UI&apos;) {
             steps {
                 parallel (
                     picsureapi:{
@@ -89,11 +89,11 @@ pipeline {
                         }
                     },
                     biodatacatalystui:{
-                        dir(&apos;../open-pic-sure-bdc-frontend&apos;) {
-                            git branch: build_hashes[&apos;OPENBDC&apos;], url: &apos;${pic_sure_open_access_biodatacatalyst_ui_repo}&apos;
-                        }
                         script {
-                            def result = build job: &apos;biodatacatalyst-ui&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;BDCU&apos;]]]
+                            if (env_is_open_access == &apos;true&apos;) {
+                                def result = build job: &apos;PIC-SURE Open Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId], [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;OPENBDC&apos;]]];
+                            }
+                            def result = build job: &apos;biodatacatalyst-ui&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId], [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;BDCU&apos;]]];
                         }
                     }
                )
