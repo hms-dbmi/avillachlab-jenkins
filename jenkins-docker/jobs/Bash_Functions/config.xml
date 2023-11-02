@@ -255,10 +255,73 @@ swap_stacks() {
 }&apos; &gt; target_group_attachment_functions.sh</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command>cat &lt;&lt;&apos;EOF&apos; &gt; pic_sure_rds_snapshot.sh
+
+# Funtion to return latest snapshot for rds instance
+get_latest_rds_snapshot_id() {
+  local stack=&quot;$1&quot;
+  local project=&quot;$2&quot;
+  db_instance_identifier=$(get_db_instance_identifier_by_tag &quot;$live_stack&quot; &quot;$env_project&quot;)
+  latest_snapshot=$(aws rds describe-db-snapshots \
+    --db-instance-identifier &quot;$db_instance_identifier&quot; \
+    --query &quot;DBSnapshots | sort_by(@, &amp;SnapshotCreateTime) | [-1].DBSnapshotIdentifier&quot; \
+    --output text)
+  
+  echo &quot;$latest_snapshot&quot;
+}
+
+# find db instance by stack and project tags
+get_db_instance_identifier_by_tag() {
+  local stack=&quot;$1&quot;
+  local project=&quot;$2&quot;
+  local identifier
+  identifier=$(aws rds describe-db-instances | jq --arg stack &quot;$stack&quot; --arg project &quot;$project&quot; -r &apos;.DBInstances[] | select(.TagList[] | .Key == &quot;Stack&quot; and .Value == $stack) | select(.TagList[] | .Key == &quot;Project&quot; and .Value == $project) | .DBInstanceIdentifier&apos;)
+  echo &quot;$identifier&quot;
+}
+
+create_rds_snapshot_by_tag() {
+  local live_stack=&quot;$1&quot;
+  local env_project=&quot;$2&quot;  
+
+  # Find the RDS instance based on the specified tag
+  local db_instance_identifier
+  db_instance_identifier=$(get_db_instance_identifier_by_tag &quot;$live_stack&quot; &quot;$env_project&quot;)
+  
+  if [ -z &quot;$db_instance_identifier&quot; ]; then
+    echo &quot;No RDS instance found with tag: $live_stack and $env_project&quot;
+    return 1
+  fi
+  local timestamp=$(date +&quot;%Y-%m-%d-%H-%M-%S&quot;)
+  local snapshot_identifier=&quot;${db_instance_identifier}-snapshot-${timestamp}&quot;
+
+  # Create a snapshot for the RDS instance
+  aws rds create-db-snapshot \
+    --db-instance-identifier &quot;$db_instance_identifier&quot; \
+    --db-snapshot-identifier &quot;$snapshot_identifier&quot;
+    
+  while true; do  
+    local status=$(aws rds describe-db-snapshots \
+      --db-instance-identifier &quot;$db_instance_identifier&quot; \
+      --db-snapshot-identifier &quot;$snapshot_identifier&quot; \
+      --query &quot;DBSnapshots[0].Status&quot; --output text)
+
+    if [ &quot;${status,,}&quot; = &quot;available&quot; ]; then
+      echo &quot;$snapshot_identifier&quot;
+      return 0
+    else
+      sleep 20
+    fi
+  done
+}
+EOF
+</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
   </builders>
   <publishers>
     <hudson.tasks.ArtifactArchiver>
-      <artifacts>target_group_attachment_functions.sh, role_functions.sh</artifacts>
+      <artifacts>target_group_attachment_functions.sh, role_functions.sh, pic_sure_rds_snapshot.sh</artifacts>
       <allowEmptyArchive>false</allowEmptyArchive>
       <onlyIfSuccessful>false</onlyIfSuccessful>
       <fingerprint>false</fingerprint>

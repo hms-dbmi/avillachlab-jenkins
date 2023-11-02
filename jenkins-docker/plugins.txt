@@ -21,3 +21,4 @@ ldap
 cloudbees-folder
 copyartifact
 saml
+role-strategy

@@ -9,7 +9,22 @@
       <rebuildDisabled>false</rebuildDisabled>
     </com.sonyericsson.rebuild.RebuildSettings>
   </properties>
-  <scm class="hudson.scm.NullSCM"/>
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.0">
+    <configVersion>2</configVersion>
+    <userRemoteConfigs>
+      <hudson.plugins.git.UserRemoteConfig>
+        <url>${jenkins_git_repo}</url>
+      </hudson.plugins.git.UserRemoteConfig>
+    </userRemoteConfigs>
+    <branches>
+      <hudson.plugins.git.BranchSpec>
+        <name>${jenkins_git_hash}</name>
+      </hudson.plugins.git.BranchSpec>
+    </branches>
+    <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+    <submoduleCfg class="empty-list"/>
+    <extensions/>
+  </scm>
   <canRoam>true</canRoam>
   <disabled>false</disabled>
   <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
@@ -19,6 +34,9 @@
   <builders>
     <hudson.tasks.Shell>
       <command>#!/bin/bash
+
+cd jenkins-terraform
+
 terraform init \
 -backend-config=&quot;bucket=${jenkins_tf_state_bucket}&quot; \
 -backend-config=&quot;key=jenkins_state/green/terraform.tfstate&quot; \
@@ -32,7 +50,9 @@ if [ -z $jenkins_green_ip ] || ! [[ $jenkins_green_ip =~ ^([0-9]{1,3}\.){3}[0-9]
    echo &quot;Jenkins Green server does not exist.  Nothing to rollback to.&quot;
    exit 1
 else
+  assume_role
   aws route53 change-resource-record-sets --hosted-zone-id ${env_hosted_zone_id} --change-batch &apos;{&quot;Changes&quot;:[{&quot;Action&quot;:&quot;UPSERT&quot;,&quot;ResourceRecordSet&quot;:{&quot;Name&quot;:&quot;jenkins.&apos;${env_private_dns_name}&apos;&quot;,&quot;Type&quot;:&quot;A&quot;,&quot;TTL&quot;:300,&quot;ResourceRecords&quot;:[{&quot;Value&quot;:&quot;&apos;$jenkins_green_ip&apos;&quot;}]}}]}&apos;
+  reset_role
   
   echo &quot;Moving states for green/blue&quot;
   echo &quot;Staging state swap&quot;

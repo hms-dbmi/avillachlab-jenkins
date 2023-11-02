@@ -29,8 +29,19 @@
   <builders>
     <hudson.tasks.Shell>
       <command>#!/bin/bash
-source &quot;/var/jenkins_home/workspace/Check For Updates/role_functions.sh&quot;
+set -e
+# Source folder containing the scripts
+source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+ls -la &quot;$source_scripts_folder&quot;
 
+# Iterate through the files in the folder and source them
+for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+    chmod +x &quot;$script_file&quot;
+    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+        echo &quot;sourcing $script_file&quot;
+        source &quot;$script_file&quot;
+    fi
+done
 SOURCE_FILE_S3_LINK=`grep source_genomic_dataset_s3_url build-spec.json | cut -d &apos;:&apos; -f 2,3 | sed &apos;s/&quot;//g&apos;`
 
 [ -d &apos;all&apos; ] || mkdir all/
