@@ -12,7 +12,6 @@ ARG PKCS12_FILE
 ARG PKCS12_PASS
 ARG JENKINS_HTTP_PORT=-1
 ARG JENKINS_HTTPS_PORT=8443
-ARG RUN_SETUP_WIZARD=false
 
 # Can use this to swap users back to jenkins user without hardcoding it.  Safe to hardcode swap to root user.
 ###### OS configs and package installations ########
@@ -46,7 +45,7 @@ RUN apt-get -y install maven
 RUN apt-get install jq -y
 # terraform
 RUN wget -c $JENKINS_DOCKER_TERRAFORM_DISTRO -O /opt/terraform.zip && \
-    unzip /opt/terraform.zip -d /usr/local/bin/ 
+    unzip /opt/terraform.zip -d /usr/local/bin/ && rm -f /opt/terraform.zip
 
 # Cleanup
 RUN apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /var/cache/apt/*
@@ -65,4 +64,4 @@ COPY $JENKINS_JOBS_DIR /var/jenkins_home/jobs
 COPY $PKCS12_FILE /var/jenkins_home/$PKCS12_FILE
 
 # Should set env var at runtime using an entrypoint.
-ENV JENKINS_OPTS="--httpPort=$JENKINS_HTTP_PORT --httpsPort=$JENKINS_HTTPS_PORT -Djenkins.install.runSetupWizard=$RUN_SETUP_WIZARD --httpsKeyStore=/var/jenkins_home/$PKCS12_FILE --httpsKeyStorePassword=$PKCS12_PASS"
+ENV JENKINS_OPTS="--httpPort=$JENKINS_HTTP_PORT --httpsPort=$JENKINS_HTTPS_PORT --httpsKeyStore=/var/jenkins_home/$PKCS12_FILE --httpsKeyStorePassword=$PKCS12_PASS"
