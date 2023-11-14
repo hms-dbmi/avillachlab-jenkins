@@ -2,7 +2,7 @@
 data "template_file" "jenkins-user_data" {
   template = file(local.user_script)
   vars = {
-    jenkins_tf_state_bucket                 = var.jenkins_tf_state_bucket
+    jenkins_tf_state_bucket         = var.jenkins_tf_state_bucket
     stack_id                        = var.stack_id
     jenkins_config_s3_location      = var.jenkins_config_s3_location
     jenkins_docker_maven_distro     = var.jenkins_docker_maven_distro
