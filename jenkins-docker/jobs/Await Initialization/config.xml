@@ -82,6 +82,9 @@ for output_name in $output_names; do
 
   aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot;
   while [ $(aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete | wc -l ) -eq 0 ]; do 
+    # avoid role timeout by assuming role continously
+    reset_role
+    assume_role
     echo &quot;${output_name} EC2 still initializing&quot;
     sleep 60
   done

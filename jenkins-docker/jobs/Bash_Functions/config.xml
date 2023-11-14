@@ -257,17 +257,73 @@ swap_stacks() {
     </hudson.tasks.Shell>
     <hudson.tasks.Shell>
       <command>cat &lt;&lt;&apos;EOF&apos; &gt; pic_sure_rds_snapshot.sh
+# Use feature toggle to the strategy to use for picsure RDS
+# Available strategies
+# * STANDALONE = Unmanaged RDS instance. No prebuild blue snapshot
+# * STANDALONE_W_SS = Unmanaged RDS instance. With prebuild blue snapshot
+# * STANDALONE_W_TAGGED_SS = Unmanaged RDS instance. Will use a specified tagged snapshot to build from. # Tags are being tricky.  But should work.
+# * MANAGED_EMPTY = Managed RDS instance. No prebuild blue snapshot
+# * MANAGED_USE_LATEST_SS = Managed RDS instance. Will take and use the latest snapshot of blue.
+
+do_picsure_rds_strategy() {
+  # variables
+  local picsure_rds_strategy=&quot;${1}&quot;
+  local live_stack=&quot;${2}&quot;
+  local env_project=&quot;${3}&quot;
+    
+  # picsure_rds_standalone_instance=
+  if [ -z ${picsure_rds_strategy} ]; then
+    picsure_rds_snapshot_id=
+  fi
+  if [ &quot;${picsure_rds_strategy}&quot; == &quot;STANDALONE&quot; ]; then
+    # placeholder. implement with persistent work
+    echo &quot;placeholder&quot;
+  fi
+  if [ &quot;${picsure_rds_strategy}&quot; == &quot;STANDALONE_W_SS&quot; ]; then
+    # placeholder. implement with persistent work
+    echo &quot;placeholder&quot;
+  fi
+  if [ &quot;${picsure_rds_strategy}&quot; == &quot;STANDALONE_W_TAGGED_SS&quot; ]; then
+    # placeholder. implement with persistent work
+    echo &quot;placeholder&quot;
+  fi
+  # RDS Strategy: Managed RDS. Empty Database.
+  if [ &quot;${picsure_rds_strategy}&quot; == &quot;MANAGED_EMPTY&quot; ]; then
+    echo &quot;initializing empty database.&quot;
+    exit 0
+  fi
+  # RDS Strategy: Managed RDS using latest SS of blue.
+  if [ &quot;${picsure_rds_strategy}&quot; == &quot;MANAGED_USE_LATEST_SS&quot; ]; then
+    echo &quot;Creating snapshot for picsure rds&quot;
+    create_rds_snapshot_by_tag &quot;${live_stack}&quot; &quot;${env_project}&quot;
+    picsure_rds_snapshot_id=$(get_latest_rds_snapshot_id &quot;${picsure_rds_strategy}&quot; &quot;${live_stack}&quot; &quot;${env_project}&quot;)
+    echo &quot;$picsure_rds_snapshot_id&quot;
+    # validate snapshot
+    if [ -z &quot;$picsure_rds_snapshot_id&quot; ]; then
+      echo &quot;Error: Error with RDS Snapshot. Snapshot empty.  Ensure a snapshot exists for the blue rds instance.&quot;
+      exit 1
+    fi
+    # validate snapshot id format
+    if [[ ! &quot;$picsure_rds_snapshot_id&quot; =~ ^[a-zA-Z0-9-]+$ ]]; then
+      echo &quot;Error: Error with RDS Snapshot. $picsure_rds_snapshot_id is not a valid snapshot id.&quot;
+      exit 1
+    fi
+  fi
+}
 
 # Funtion to return latest snapshot for rds instance
 get_latest_rds_snapshot_id() {
-  local stack=&quot;$1&quot;
-  local project=&quot;$2&quot;
-  db_instance_identifier=$(get_db_instance_identifier_by_tag &quot;$live_stack&quot; &quot;$env_project&quot;)
-  latest_snapshot=$(aws rds describe-db-snapshots \
-    --db-instance-identifier &quot;$db_instance_identifier&quot; \
-    --query &quot;DBSnapshots | sort_by(@, &amp;SnapshotCreateTime) | [-1].DBSnapshotIdentifier&quot; \
-    --output text)
+  local picsure_rds_strategy=&quot;$1&quot;
+  local stack=&quot;$2&quot;
+  local project=&quot;$3&quot;
   
+  if [ &quot;${picsure_rds_strategy}&quot; == &quot;MANAGED_USE_LATEST_SS&quot; ]; then
+    db_instance_identifier=$(get_db_instance_identifier_by_tag &quot;$live_stack&quot; &quot;$env_project&quot;)
+    latest_snapshot=$(aws rds describe-db-snapshots \
+      --db-instance-identifier &quot;$db_instance_identifier&quot; \
+      --query &quot;DBSnapshots | sort_by(@, &amp;SnapshotCreateTime) | [-1].DBSnapshotIdentifier&quot; \
+      --output text)
+  fi
   echo &quot;$latest_snapshot&quot;
 }
 

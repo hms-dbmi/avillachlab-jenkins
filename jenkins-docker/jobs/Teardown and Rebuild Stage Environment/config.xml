@@ -4,10 +4,6 @@
   <description></description>
   <keepDependencies>false</keepDependencies>
   <properties>
-    <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@320.v5a_0933a_e7d61">
-      <autoRebuild>false</autoRebuild>
-      <rebuildDisabled>false</rebuildDisabled>
-    </com.sonyericsson.rebuild.RebuildSettings>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
@@ -152,11 +148,9 @@ aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraf
 # Assume deployment role
 assume_role
 
-# Take rds Snapshot from live database to use for new stack
-echo &quot;Creating snapshot for picsure rds&quot;
-create_rds_snapshot_by_tag &quot;${live_stack}&quot; &quot;${env_project}&quot;
-picsure_rds_snapshot_id=$(get_latest_rds_snapshot_id &quot;${live_stack}&quot; &quot;${env_project}&quot;)
-echo &quot;$picsure_rds_snapshot_id&quot;
+# Perform RDS Strategy
+do_picsure_rds_strategy &quot;${picsure_rds_strategy}&quot; &quot;${live_stack}&quot; &quot;${env_project}&quot;
+picsure_rds_snapshot_id=$(get_latest_rds_snapshot_id &quot;${picsure_rds_strategy}&quot; &quot;${live_stack}&quot; &quot;${env_project}&quot;)
 
 terraform init
 if $isDestroyOnly; then
@@ -270,6 +264,7 @@ else
   aws s3 --sse=AES256 cp picsureui-settings.json s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/picsureui_settings.json
   aws s3 --sse=AES256 cp standalone.xml s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/standalone.xml
   aws s3 --sse=AES256 cp pic-sure-schema.sql s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/pic-sure-schema.sql
+  aws s3 --sse=AES256 cp resources-registration.sql s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/resources-registration.sql
   aws s3 --sse=AES256 cp httpd-vhosts.conf s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/httpd-vhosts.conf
   aws s3 --sse=AES256 cp aggregate-resource.properties s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/aggregate-resource.properties
   aws s3 --sse=AES256 cp visualization-resource.properties s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/visualization-resource.properties
