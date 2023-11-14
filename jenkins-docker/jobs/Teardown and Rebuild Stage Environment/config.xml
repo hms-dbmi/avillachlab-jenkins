@@ -123,7 +123,7 @@ else
    echo &quot;Deregistering staging target(s) before teardown.&quot;
    deregister_targets &quot;$target_group_vpc&quot; &quot;$staging_target_group_arn&quot; &quot;${staging_httpd_instance_prv_ips[@]}&quot;
    wait_for_target_group_health &quot;$staging_target_group_arn&quot; &quot;UNUSED&quot; &quot;${staging_httpd_instance_prv_ips[@]}&quot;
-fi 
+fi
 
 reset_role</command>
       <configuredLocalRules/>
@@ -189,7 +189,7 @@ if $isDestroyOnly; then
      -var=&quot;fence_client_id=${fence_client_id}&quot; \
      -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
      -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true
-  
+
   reset_role
 
   # Move to terraform backend
@@ -268,6 +268,8 @@ else
   # so this is a race condition at this point as terraform has been applied
   #  have terraform provision these to the ec2 and remove the aws cli stuff from the user-scripts and here
   aws s3 --sse=AES256 cp picsureui-settings.json s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/picsureui_settings.json
+  # banner_config.json isn't managed by terraform, so we need to access it from the source folder
+  aws s3 --sse=AES256 cp config/banner_config.json s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/banner_config.json
   aws s3 --sse=AES256 cp standalone.xml s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/standalone.xml
   aws s3 --sse=AES256 cp pic-sure-schema.sql s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/pic-sure-schema.sql
   aws s3 --sse=AES256 cp httpd-vhosts.conf s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/httpd-vhosts.conf
