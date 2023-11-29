@@ -121,6 +121,7 @@ aws s3 cp terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${ta
 # so this is a race condition at this point as terraform has been applied
 # Just have terraform provision these and remove the aws cli stuff from the user-scripts and here
 aws s3 --sse=AES256 cp picsureui-settings.json s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/picsureui_settings.json
+aws s3 --sse=AES256 cp configs/banner_config.json s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/banner_config.json
 aws s3 --sse=AES256 cp standalone.xml s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/standalone.xml
 aws s3 --sse=AES256 cp pic-sure-schema.sql s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/pic-sure-schema.sql
 aws s3 --sse=AES256 cp httpd-vhosts.conf s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/httpd-vhosts.conf
