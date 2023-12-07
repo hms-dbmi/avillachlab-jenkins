@@ -4,34 +4,35 @@
   <description></description>
   <keepDependencies>false</keepDependencies>
   <properties>
+    <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@320.v5a_0933a_e7d61">
+      <autoRebuild>false</autoRebuild>
+      <rebuildDisabled>false</rebuildDisabled>
+    </com.sonyericsson.rebuild.RebuildSettings>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
           <name>pipeline_build_id</name>
-          <description></description>
           <defaultValue>MANUAL_RUN</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>git_hash</name>
-          <description></description>
           <defaultValue>*/master</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>S3_BUCKET_NAME</name>
-          <description></description>
           <defaultValue>${stack_s3_bucket}</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.0.0">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.1.0">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
-        <url>https://${git_base_url}/pic-sure-auth-microapp.git</url>
+        <url>${pic_sure_auth_microapp_repo}</url>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
@@ -40,7 +41,7 @@
       </hudson.plugins.git.BranchSpec>
     </branches>
     <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
-    <submoduleCfg class="list"/>
+    <submoduleCfg class="empty-list"/>
     <extensions/>
   </scm>
   <canRoam>true</canRoam>
@@ -52,7 +53,7 @@
   <builders>
     <hudson.tasks.Maven>
       <targets>clean install -DskipTests</targets>
-      <mavenName>Maven Home</mavenName>
+      <mavenName>Maven</mavenName>
       <usePrivateRepository>false</usePrivateRepository>
       <settings class="jenkins.mvn.DefaultSettingsProvider"/>
       <globalSettings class="jenkins.mvn.DefaultGlobalSettingsProvider"/>
@@ -66,6 +67,7 @@ docker build -t hms-dbmi/pic-sure-auth-microapp:${GIT_BRANCH_SHORT}_${GIT_COMMIT
 docker save hms-dbmi/pic-sure-auth-microapp:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-auth-microapp.tar.gz
 aws s3 --sse=AES256 cp pic-sure-auth-microapp.tar.gz s3://$S3_BUCKET_NAME/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-auth-microapp.tar.gz
 </command>
+      <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
   <publishers/>

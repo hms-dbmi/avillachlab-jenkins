@@ -131,6 +131,7 @@
         <string>PIC-SURE-API Build</string>
         <string>PIC-SURE-HPDS Build</string>
         <string>PIC-SURE-HPDS-UI Docker Build</string>
+        <string>PIC-SURE-VISUALIZATION Build</string>
         <string>Retrieve Build Spec</string>
         <string>Retrieve Deployment State</string>
         <string>Teardown and Rebuild Stage Environment</string>
@@ -165,7 +166,7 @@
           <default>
             <comparator class="hudson.util.CaseInsensitiveComparator"/>
           </default>
-          <int>4</int>
+          <int>6</int>
           <string>stack_s3_bucket</string>
           <string>avillach-biodatacatalyst-deployments-b7rwpwv</string>
           <string>git_base_url</string>

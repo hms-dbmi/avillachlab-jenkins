@@ -4,6 +4,10 @@
   <description>Builds docker image to run RawDataImporter-jar-with-dependencies.jar for dictionary loading.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
+    <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@320.v5a_0933a_e7d61">
+      <autoRebuild>false</autoRebuild>
+      <rebuildDisabled>false</rebuildDisabled>
+    </com.sonyericsson.rebuild.RebuildSettings>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
@@ -24,11 +28,11 @@
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.10.3">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.1.0">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
-        <url>https://${git_base_url}/pic-sure-search-prototype.git</url>
+        <url>${pic_sure_hpds_dictionary_repo}</url>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
@@ -49,7 +53,7 @@
   <builders>
     <hudson.tasks.Maven>
       <targets>clean install -DskipTests</targets>
-      <mavenName>Maven Home</mavenName>
+      <mavenName>Maven</mavenName>
       <pom>tagging/pom.xml</pom>
       <usePrivateRepository>false</usePrivateRepository>
       <settings class="jenkins.mvn.DefaultSettingsProvider"/>

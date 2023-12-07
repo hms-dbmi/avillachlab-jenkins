@@ -4,20 +4,20 @@
   <description></description>
   <keepDependencies>false</keepDependencies>
   <properties/>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.0.0">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.0">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
-        <url>https://${git_base_url}/jwt-creator.git</url>
+        <url>${pic_sure_introspection_token_repo}</url>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
       <hudson.plugins.git.BranchSpec>
-        <name>*/master</name>
+        <name>${pic_sure_introspection_token_hash}</name>
       </hudson.plugins.git.BranchSpec>
     </branches>
     <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
-    <submoduleCfg class="list"/>
+    <submoduleCfg class="empty-list"/>
     <extensions/>
   </scm>
   <canRoam>true</canRoam>
@@ -36,13 +36,24 @@
       <injectBuildVariables>false</injectBuildVariables>
     </hudson.tasks.Maven>
     <hudson.tasks.Shell>
-      <command>cd target
+      <command>#!/bin/bash
+set -e
+# Source folder containing the scripts
+source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+ls -la &quot;$source_scripts_folder&quot;
 
-aws sts assume-role --duration-seconds 900 --role-arn &quot;arn:aws:iam::${cnc_acct_id}:role/system/jenkins-s3-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
+# Iterate through the files in the folder and source them
+for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+    chmod +x &quot;$script_file&quot;
+    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+        echo &quot;sourcing $script_file&quot;
+        source &quot;$script_file&quot;
+    fi
+done
 
-export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+cd target
+
+reset_role
 
 aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/a/stack_variables.tf .
 
@@ -61,20 +72,24 @@ aws s3 cp stack_variables.tf s3://$stack_s3_bucket/deployment_state_metadata/a/s
 
 mv stack_variables.tf stack_variables_a.tf
 
-aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/b/stack_variables.tf .
+echo &quot;New token:&quot;
+echo &quot;${new_token_introspection_token}&quot;
+# only one stack at the moment
+#aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/b/stack_variables.tf .
 
-export old_token_introspection_token=`cat stack_variables.tf | grep -A3 picsure_token_introspection_token | head -n 3 | tail -1 | cut -d &apos; &apos; -f 5 | sed &apos;s/&quot;//g&apos;`
+#export old_token_introspection_token=`cat stack_variables.tf | grep -A3 picsure_token_introspection_token | head -n 3 | tail -1 | cut -d &apos; &apos; -f 5 | sed &apos;s/&quot;//g&apos;`
 
-sed -i &quot;s/$old_token_introspection_token/$new_token_introspection_token/g&quot; stack_variables.tf
+#sed -i &quot;s/$old_token_introspection_token/$new_token_introspection_token/g&quot; stack_variables.tf
 
-aws s3 cp stack_variables.tf s3://$stack_s3_bucket/deployment_state_metadata/b/stack_variables.tf 
+#aws s3 cp stack_variables.tf s3://$stack_s3_bucket/deployment_state_metadata/b/stack_variables.tf 
 
-mv stack_variables.tf stack_variables_b.tf
+#mv stack_variables.tf stack_variables_b.tf
 
-unset AWS_ACCESS_KEY_ID
-unset AWS_SECRET_ACCESS_KEY
-unset AWS_SESSION_TOKEN
+#unset AWS_ACCESS_KEY_ID
+#unset AWS_SECRET_ACCESS_KEY
+#unset AWS_SESSION_TOKEN
 </command>
+      <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
   <publishers/>

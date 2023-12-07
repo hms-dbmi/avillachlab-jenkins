@@ -1,0 +1,26 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description>This job will sync the current jenkins config.xml to the s3 location described in the global parameter &quot;jenkins_config_s3_location&quot;</description>
+  <keepDependencies>false</keepDependencies>
+  <properties/>
+  <scm class="hudson.scm.NullSCM"/>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+# Different environments should set the config.xml name in jenkins_config_s3_location configuration to a unique name such as config_auth_dev.xml
+
+echo &quot;aws s3 cp ${JENKINS_HOME}/config.xml ${jenkins_config_s3_location}&quot;
+aws s3 cp ${JENKINS_HOME}/config.xml ${jenkins_config_s3_location}</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers/>
+</project>

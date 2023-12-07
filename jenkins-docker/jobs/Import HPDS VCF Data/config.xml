@@ -4,20 +4,20 @@
   <description></description>
   <keepDependencies>false</keepDependencies>
   <properties/>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.1.1">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.0">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
-        <url>https://${git_base_url}/pic-sure-bdc-release-control</url>
+        <url>${release_control_git_repo}</url>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
       <hudson.plugins.git.BranchSpec>
-        <name>*/master</name>
+        <name>${release_control_git_hash}</name>
       </hudson.plugins.git.BranchSpec>
     </branches>
     <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
-    <submoduleCfg class="list"/>
+    <submoduleCfg class="empty-list"/>
     <extensions/>
   </scm>
   <canRoam>true</canRoam>
@@ -28,19 +28,30 @@
   <concurrentBuild>false</concurrentBuild>
   <builders>
     <hudson.tasks.Shell>
-      <command>SOURCE_FILE_S3_LINK=`grep source_genomic_dataset_s3_url build-spec.json | cut -d &apos;:&apos; -f 2,3 | sed &apos;s/&quot;//g&apos;`
+      <command>#!/bin/bash
+set -e
+# Source folder containing the scripts
+source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+ls -la &quot;$source_scripts_folder&quot;
 
-[ -d 'all' ] || mkdir all/
-aws sts assume-role --duration-seconds 1800 --role-arn arn:aws:iam::736265540791:role/curated-datasets-s3-role --role-session-name &quot;s3-test&quot; &gt; assume-role-output.txt
-export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+# Iterate through the files in the folder and source them
+for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+    chmod +x &quot;$script_file&quot;
+    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+        echo &quot;sourcing $script_file&quot;
+        source &quot;$script_file&quot;
+    fi
+done
+SOURCE_FILE_S3_LINK=`grep source_genomic_dataset_s3_url build-spec.json | cut -d &apos;:&apos; -f 2,3 | sed &apos;s/&quot;//g&apos;`
+
+[ -d &apos;all&apos; ] || mkdir all/
+assume_role &quot;arn:aws:iam::736265540791:role/curated-datasets-s3-role&quot;
 aws s3 cp --recursive $SOURCE_FILE_S3_LINK all/
-unset AWS_ACCESS_KEY_ID
-unset AWS_SECRET_ACCESS_KEY
-unset AWS_SESSION_TOKEN
+
+reset_role
 aws s3 --sse=AES256 cp --recursive all/ s3://${stack_s3_bucket}/data/`git blame --abbrev=39 build-spec.json | grep source_genomic_dataset_s3_url | cut -f 1 -d &apos; &apos;`/all/
 </command>
+      <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
   <publishers/>

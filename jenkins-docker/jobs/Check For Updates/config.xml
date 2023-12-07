@@ -4,17 +4,17 @@
   <description></description>
   <keepDependencies>false</keepDependencies>
   <properties/>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.7.1">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.0">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
-        <url>https://${git_base_url}/pic-sure-bdc-release-control</url>
+        <url>${release_control_git_repo}</url>
         <credentialsId>c1cbb1df-9da8-4f3f-85b9-8de0b9685008</credentialsId>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
       <hudson.plugins.git.BranchSpec>
-        <name>*/master</name>
+        <name>${release_control_git_hash}</name>
       </hudson.plugins.git.BranchSpec>
     </branches>
     <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
@@ -28,9 +28,9 @@
   <triggers/>
   <concurrentBuild>false</concurrentBuild>
   <builders>
-    <hudson.plugins.groovy.SystemGroovy plugin="groovy@2.3">
+    <hudson.plugins.groovy.SystemGroovy plugin="groovy@453.vcdb_a_c5c99890">
       <source class="hudson.plugins.groovy.StringSystemScriptSource">
-        <script plugin="script-security@1.76">
+        <script plugin="script-security@1275.v23895f409fb_d">
           <script>import jenkins.*
 import jenkins.model.*
 import hudson.*
@@ -41,13 +41,16 @@ def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspa
 
 def envVars= Hudson.instance.getItem(&quot;Check For Updates&quot;).lastBuild.properties.get(&quot;envVars&quot;);
 
+Jenkins.instance.getItemByFullName(&quot;Bash_Functions&quot;)
+.scheduleBuild2(0).get()
+
 Jenkins.instance.getItemByFullName(&quot;Import_HPDS_Dictionary_File&quot;)
 .scheduleBuild2(0, new ParametersAction([
     new StringParameterValue(&quot;dictionary_s3_key&quot;, buildSpec.source_dictionary_s3_object_key.trim()),
     new StringParameterValue(&quot;pipeline_build_id&quot;,  envVars[&quot;GIT_COMMIT&quot;].trim())
     ])).get()
-    
-    
+
+
 Jenkins.instance.getItemByFullName(&quot;PIC-SURE Pipeline&quot;)
     .scheduleBuild2(0).get()
 
@@ -57,9 +60,11 @@ Jenkins.instance.getItemByFullName(&quot;PIC-SURE Pipeline&quot;)
       </source>
     </hudson.plugins.groovy.SystemGroovy>
     <hudson.tasks.Shell>
-      <command>LAST_DATASET_MODIFICATION_COMMIT=`git blame --abbrev=39 build-spec.json | grep source_dataset_s3_url | cut -f 1 -d &apos; &apos;`
+      <command>#!/bin/bash
 
-docker exec jenkins /usr/local/bin/aws s3api head-object --bucket $stack_s3_bucket --key &quot;data/${LAST_DATASET_MODIFICATION_COMMIT}/javabins_rekeyed.tar.gz&quot; || not_exist=true
+LAST_DATASET_MODIFICATION_COMMIT=`git blame --abbrev=39 build-spec.json | grep source_dataset_s3_url | cut -f 1 -d &apos; &apos;`
+
+aws s3api head-object --bucket $stack_s3_bucket --key &quot;data/${LAST_DATASET_MODIFICATION_COMMIT}/javabins_rekeyed.tar.gz&quot; || not_exist=true
 if [ $not_exist ]; then
   echo $LAST_DATASET_MODIFICATION_COMMIT &gt; toBeRekeyed.txt
   echo &quot;Will rekey new dataset.&quot;
@@ -71,7 +76,7 @@ fi
 
 LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT=`git blame --abbrev=39 build-spec.json | grep source_destigmatized_dataset_s3_url | cut -f 1 -d &apos; &apos;`
 
-docker exec jenkins /usr/local/bin/aws s3api head-object --bucket $stack_s3_bucket --key &quot;data/${LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT}/destigmatized_javabins_rekeyed.tar.gz&quot; || not_exist_destig=false
+aws s3api head-object --bucket $stack_s3_bucket --key &quot;data/${LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT}/destigmatized_javabins_rekeyed.tar.gz&quot; || not_exist_destig=false
 
 if [ $not_exist_destig ]; then
   echo $LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT &gt; destigmatized_toBeRekeyed.txt
@@ -81,15 +86,15 @@ else
   echo &quot;Using existing destigmatized dataset (Skipping rekey).&quot;
 fi
 
-
 LAST_GENOMIC_DATASET_MODIFICATION_COMMIT=`git blame --abbrev=39 build-spec.json | grep source_genomic_dataset_s3_url | cut -f 1 -d &apos; &apos;`
 echo $LAST_GENOMIC_DATASET_MODIFICATION_COMMIT &gt; genomicDatasetKey.txt
+
 </command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
-    <hudson.plugins.groovy.SystemGroovy plugin="groovy@2.3">
+    <hudson.plugins.groovy.SystemGroovy plugin="groovy@453.vcdb_a_c5c99890">
       <source class="hudson.plugins.groovy.StringSystemScriptSource">
-        <script plugin="script-security@1.76">
+        <script plugin="script-security@1275.v23895f409fb_d">
           <script>import jenkins.*
 import jenkins.model.*
 import hudson.*
@@ -149,7 +154,7 @@ Jenkins.instance.getItemByFullName(&quot;Deployment Pipeline&quot;)
   </builders>
   <publishers/>
   <buildWrappers>
-    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.39">
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.45">
       <deleteDirs>false</deleteDirs>
       <cleanupParameter></cleanupParameter>
       <externalDelete></externalDelete>

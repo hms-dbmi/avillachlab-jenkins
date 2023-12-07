@@ -1,40 +1,36 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
   <actions/>
-  <description></description>
+  <description>This would be cleaner and more portable if it was a python script that check for initialization.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
           <name>target_stack</name>
-          <description></description>
-          <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>infrastructure_git_hash</name>
-          <description></description>
-          <defaultValue></defaultValue>
+          <name>git_hash</name>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@4.1.1">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.0">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
-        <url>https://${git_base_url}/pic-sure-bdc-infrastructure</url>
+        <url>${infrastructure_git_repo}</url>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
       <hudson.plugins.git.BranchSpec>
-        <name>${infrastructure_git_hash}</name>
+        <name>${git_hash}</name>
       </hudson.plugins.git.BranchSpec>
     </branches>
     <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
-    <submoduleCfg class="list"/>
+    <submoduleCfg class="empty-list"/>
     <extensions/>
   </scm>
   <canRoam>true</canRoam>
@@ -45,93 +41,130 @@
   <concurrentBuild>false</concurrentBuild>
   <builders>
     <hudson.tasks.Shell>
-      <command>cd app-infrastructure
-wget https://releases.hashicorp.com/terraform/0.12.31/terraform_0.12.31_linux_amd64.zip &amp;&amp; unzip terraform_0.12.31_linux_amd64.zip &amp;&amp; mv terraform /usr/local/bin/
-terraform init
+      <command>#!/bin/bash
+set -e
+# Source folder containing the scripts
+source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+ls -la &quot;$source_scripts_folder&quot;
 
-aws sts assume-role --duration-seconds 3600 --role-arn &quot;arn:aws:iam::${cnc_acct_id}:role/system/jenkins-s3-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
+# Iterate through the files in the folder and source them
+for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+    chmod +x &quot;$script_file&quot;
+    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+        echo &quot;sourcing $script_file&quot;
+        source &quot;$script_file&quot;
+    fi
+done
 
-export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+cd app-infrastructure
 
 aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate .
-aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/stack_variables.tf .
-cp stack_variables.tf ../s3-deployment-roles/
-aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate_roles ../s3-deployment-roles/terraform.tfstate || echo &quot;role state doesnt exist, it will be created&quot;
 
-unset AWS_ACCESS_KEY_ID
-unset AWS_SECRET_ACCESS_KEY
-unset AWS_SESSION_TOKEN
+terraform init
 
-aws sts assume-role --duration-seconds 3600 --role-arn &quot;arn:aws:iam::${app_acct_id}:role/hms-dbmi-cnc-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
+output_names=$(terraform output -json | jq -r &apos;keys[]&apos;)
+echo &quot;Output names: $output_names&quot;
 
-export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+for output_name in $output_names; do
+  reset_role
+  assume_role
+  	
+  echo &quot;Current instance: ${output_name}.&quot;
+  INSTANCE_ID=`terraform output &quot;${output_name}&quot;`
+  
+  # Skip if the instance ID is empty or is not a valid instance-id
+  if [ -z &quot;$INSTANCE_ID&quot; ] || ! [[ &quot;$INSTANCE_ID&quot; =~ ^i-[a-fA-F0-9]{17}$ ]]; then
+    echo &quot;No instance ID for output ${output_name}. Skipping...&quot;
+    continue
+  fi
+  
+  echo &quot;Instance-id is $INSTANCE_ID&quot;
 
-INSTANCE_ID=`terraform state show aws_instance.wildfly-ec2 | grep &quot;\&quot;i-[a-f0-9]&quot; | cut -f 2 -d &quot;=&quot; | sed &apos;s/&quot;//g&apos;`
-while [ -z $(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do echo &quot;still initializing&quot;;sleep 10;done
-echo &quot;Wildfly EC2 Initialization Complete&quot;
+  aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot;
+  while [ $(aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete | wc -l ) -eq 0 ]; do 
+    # avoid role timeout by assuming role continously
+    reset_role
+    assume_role
+    echo &quot;${output_name} EC2 still initializing&quot;
+    sleep 60
+  done
+  
+  echo &quot;${output_name} EC2 Initialization Complete&quot;
+done
+</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command># json tag schema.  Used to uniquely identify a projects staging instances.
+cat &lt;&lt;EOF &gt; staging_httpd_tags_file.json
+[
+  {
+    &quot;Name&quot;: &quot;tag:Stack&quot;,
+    &quot;Values&quot;: [&quot;$target_stack&quot;]
+  },
+  {
+    &quot;Name&quot;: &quot;tag:Node&quot;,
+    &quot;Values&quot;: [&quot;HTTPD&quot;]
+  },
+  {
+    &quot;Name&quot;: &quot;tag:Project&quot;,
+    &quot;Values&quot;: [&quot;$env_project&quot;]
+  }
+]
+EOF</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+# Source folder containing the scripts
+source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+ls -la &quot;$source_scripts_folder&quot;
 
-aws sts assume-role --duration-seconds 3600 --role-arn &quot;arn:aws:iam::${app_acct_id}:role/hms-dbmi-cnc-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
+# Iterate through the files in the folder and source them
+for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+    chmod +x &quot;$script_file&quot;
+    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+        echo &quot;sourcing $script_file&quot;
+        source &quot;$script_file&quot;
+    fi
+done
 
-export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+cd &quot;$WORKSPACE&quot;
 
-INSTANCE_ID=`terraform state show aws_instance.httpd-ec2 | grep &quot;\&quot;i-[a-f0-9]&quot; | cut -f 2 -d &quot;=&quot; | sed &apos;s/&quot;//g&apos;`
-while [ -z $(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do echo &quot;still initializing&quot;;sleep 10;done
-echo &quot;HTTPD EC2 Initialization Complete&quot;
+assume_role
+# register new deployment to staging ( register green )
+echo &quot;registering new deployment to staging ( register green )&quot;
+target_group_vpc=$(get_target_group_vpc_by_tg_name $staging_tg_name)
+staging_target_group_arn=$(get_target_group_arn_by_name &quot;$staging_tg_name&quot;)
+staging_httpd_instance_prv_ips=($(get_private_ip_by_tags &quot;staging_httpd_tags_file.json&quot;))
 
-aws sts assume-role --duration-seconds 3600 --role-arn &quot;arn:aws:iam::${app_acct_id}:role/hms-dbmi-cnc-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
-
-export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-
-INSTANCE_ID=`terraform state show aws_instance.open-hpds-ec2 | grep &quot;\&quot;i-[a-f0-9]&quot; | cut -f 2 -d &quot;=&quot; | sed &apos;s/&quot;//g&apos;`
-while [ -z $(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do echo &quot;still initializing&quot;;sleep 10;done
-echo &quot;Open HPDS EC2 Initialization Complete&quot;
-
-aws sts assume-role --duration-seconds 3600 --role-arn &quot;arn:aws:iam::${app_acct_id}:role/hms-dbmi-cnc-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
-
-export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-
-INSTANCE_ID=`terraform state show aws_instance.dictionary-ec2 | grep &quot;\&quot;i-[a-f0-9]&quot; | cut -f 2 -d &quot;=&quot; | sed &apos;s/&quot;//g&apos;`
-while [ -z $(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do echo &quot;still initializing&quot;;sleep 10;done
-echo &quot;Dictionary EC2 Initialization Complete&quot;
-
-aws sts assume-role --duration-seconds 3600 --role-arn &quot;arn:aws:iam::${app_acct_id}:role/hms-dbmi-cnc-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
-
-export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-
-aws sts assume-role --duration-seconds 3600 --role-arn &quot;arn:aws:iam::${app_acct_id}:role/hms-dbmi-cnc-role&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
-
-export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-
-INSTANCE_ID=`terraform state show aws_instance.auth-hpds-ec2 | grep &quot;\&quot;i-[a-f0-9]&quot; | cut -f 2 -d &quot;=&quot; | sed &apos;s/&quot;//g&apos;`
-while [ -z $(/usr/local/bin/aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete) ];do echo &quot;still initializing&quot;;sleep 10;done
-echo &quot;Auth HPDS EC2 Initialization Complete&quot;
-
-unset AWS_ACCESS_KEY_ID
-unset AWS_SECRET_ACCESS_KEY
-unset AWS_SESSION_TOKEN</command>
+if [ -z &quot;${staging_httpd_instance_prv_ips}&quot; ]; then
+   echo &quot;No private IPs found when registering target groups.&quot;
+   echo &quot;Ensure nodes have been created with proper tags for Node,Project and Stack keys.&quot;
+   exit 1
+else
+  register_targets &quot;$target_group_vpc&quot; &quot;$staging_target_group_arn&quot; &quot;${staging_httpd_instance_prv_ips[@]}&quot;
+  
+  # Wait for draining
+  wait_for_target_group_health &quot;$staging_target_group_arn&quot; &quot;HEALTHY&quot; &quot;${staging_httpd_instance_prv_ips[@]}&quot;
+fi
+reset_role</command>
+      <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
   <publishers/>
   <buildWrappers>
-    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.38">
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.45">
       <deleteDirs>false</deleteDirs>
       <cleanupParameter></cleanupParameter>
       <externalDelete></externalDelete>
       <disableDeferredWipeout>false</disableDeferredWipeout>
     </hudson.plugins.ws__cleanup.PreBuildCleanup>
+    <hudson.plugins.build__timeout.BuildTimeoutWrapper plugin="build-timeout@1.31">
+      <strategy class="hudson.plugins.build_timeout.impl.AbsoluteTimeOutStrategy">
+        <timeoutMinutes>240</timeoutMinutes>
+      </strategy>
+      <operationList/>
+    </hudson.plugins.build__timeout.BuildTimeoutWrapper>
   </buildWrappers>
 </project>
