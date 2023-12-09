@@ -24,12 +24,6 @@ resource "aws_s3_bucket" "root" {
     object_lock_enabled = var.object_lock_enabled
   }
 
-  tags = merge(
-    {
-      Name = var.bucket_name
-    },
-    var.additional_tags
-  )
 }
 
 resource "aws_s3_bucket_policy" "root_ac" {
