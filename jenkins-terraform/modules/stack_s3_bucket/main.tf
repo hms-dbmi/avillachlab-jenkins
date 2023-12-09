@@ -27,6 +27,6 @@ resource "aws_s3_bucket" "root" {
 }
 
 resource "aws_s3_bucket_policy" "root_ac" {
-  bucket = aws_s3_bucket.example.bucket
+  bucket = aws_s3_bucket.root.bucket
   policy = var.bucket_policy_json
 }
