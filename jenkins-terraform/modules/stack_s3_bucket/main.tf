@@ -1,5 +1,6 @@
 provider "aws" {
   region = var.region
+  version = "3.74"
 }
 
 resource "aws_s3_bucket" "root" {
