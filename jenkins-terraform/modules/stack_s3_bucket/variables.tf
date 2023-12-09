@@ -21,12 +21,6 @@ variable "object_lock_enabled" {
   default     = true
 }
 
-variable "additional_tags" {
-  description = "Additional tags to apply to the S3 bucket."
-  type        = map(string)
-  default     = {}
-}
-
 variable "bucket_policy_json" {
   description = "The JSON representation of the S3 bucket policy. Pass an empty string if not using a bucket policy."
   type        = string
