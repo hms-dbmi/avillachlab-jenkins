@@ -1,4 +1,4 @@
-FROM jenkins/jenkins:lts
+FROM jenkins/jenkins:2.436-jdk11
 # user to swap easily between OS operations and jenkins configuration.
 ENV JENKINS_USERNAME=$USER
 
@@ -24,8 +24,6 @@ RUN echo deb http://archive.debian.org/debian stretch-backports main >> /etc/apt
 RUN echo deb http://archive.debian.org/debian stretch main >> /etc/apt/sources.list
 
 RUN apt-get update
-
-RUN apt-get install -y ca-certificates-java
 
 RUN apt-get -y -t stretch-backports install openjdk-11-jdk-headless
 
