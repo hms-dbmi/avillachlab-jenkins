@@ -1,4 +1,5 @@
-FROM jenkins/jenkins:2.436-jdk11
+FROM jenkins/jenkins:2.426.1-lts-jdk11
+
 # user to swap easily between OS operations and jenkins configuration.
 ENV JENKINS_USERNAME=$USER
 
@@ -25,7 +26,7 @@ RUN echo deb http://archive.debian.org/debian stretch main >> /etc/apt/sources.l
 
 RUN apt-get update
 
-RUN apt-get -y -t stretch-backports install openjdk-11-jdk-headless
+#RUN apt-get -y -t stretch-backports install openjdk-11-jdk-headless
 
 RUN apt-get -y install apt-transport-https \
     python3-pip \
