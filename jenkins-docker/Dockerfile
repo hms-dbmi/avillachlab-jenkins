@@ -25,6 +25,8 @@ RUN echo deb http://archive.debian.org/debian stretch main >> /etc/apt/sources.l
 
 RUN apt-get update
 
+RUN apt-get install -y -t stretch-backports ca-certificates-java
+
 RUN apt-get -y -t stretch-backports install openjdk-11-jdk-headless
 
 RUN apt-get -y install apt-transport-https \
