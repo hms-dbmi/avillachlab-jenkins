@@ -374,10 +374,45 @@ EOF
 </command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command>cat &lt;&lt;&apos;EOF&apos; &gt; jwt_token.sh
+# Create JWT token
+# Clones a Git repository, generates a valid token, and exports it to an environment variable
+# Parameters:
+#   $1: Path to the secrets file
+#   $2: Git repository URL for jwt-creator
+#   $3: Token subject
+#   $4: Token duration (integer)
+#   $5: Token duration unit (default is &quot;day&quot;)
+create_jwt_token() {
+  local secret=&quot;${1}&quot;
+  local jwt_creator_repo=&quot;${2}&quot;
+  local subject=${3}
+  local duration_int=${4}
+  local duration_unit=${5:-day}
+  
+  # Clone the Git repository
+  git clone ${jwt_creator_repo} jwt_creator
+  
+  # Change to the cloned directory
+  cd jwt_creator
+  mvn clean install
+  
+  cd target
+  echo $secret &gt; secrets.txt
+  # Generate the JWT token and export it as an environment variable
+  # Currently uses the jwt generator @ https://github.com/hms-dbmi/jwt-creator 
+  # should look for something that can be better supported
+  export CREATE_JWT_TOKEN_OUTPUT=$(java -jar generateJwt.jar &quot;secrets.txt&quot; sub &quot;$subject&quot; &quot;$duration_int&quot; &quot;$duration_unit&quot; | grep -v &quot;Generating&quot;)
+  cd &quot;${WORKSPACE}&quot;
+}
+EOF</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
   </builders>
   <publishers>
     <hudson.tasks.ArtifactArchiver>
-      <artifacts>target_group_attachment_functions.sh, role_functions.sh, pic_sure_rds_snapshot.sh</artifacts>
+      <artifacts>target_group_attachment_functions.sh, role_functions.sh, pic_sure_rds_snapshot.sh, jwt_token.sh</artifacts>
       <allowEmptyArchive>false</allowEmptyArchive>
       <onlyIfSuccessful>false</onlyIfSuccessful>
       <fingerprint>false</fingerprint>

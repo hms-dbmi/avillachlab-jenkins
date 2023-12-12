@@ -46,7 +46,7 @@
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.0">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.1">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
@@ -139,6 +139,18 @@ for script_file in &quot;$source_scripts_folder&quot;*.sh; do
         source &quot;$script_file&quot;
     fi
 done
+
+echo &quot;pic-sure introspection token&quot; 
+# if picsure_token_introspection_token is not defined already create one
+if [ -z $picsure_token_introspection_token ]; then
+   echo &quot;No introspection given.  Generating new one.&quot;
+   create_jwt_token $picsure_client_secret &quot;$pic_sure_introspection_token_repo&quot; &quot;PSAMA_APPLICATION|$application_id_for_base_query&quot; &quot;${duration_int:-365}&quot; &quot;${duration_unit:-day}&quot;
+   picsure_token_introspection_token=&quot;${CREATE_JWT_TOKEN_OUTPUT}&quot;
+   echo &quot;introspection token generated.&quot;
+else
+  echo &quot;Using introspection token defined by global properties&quot;
+fi
+
 # Destroy and Build resources
 cd app-infrastructure
 
