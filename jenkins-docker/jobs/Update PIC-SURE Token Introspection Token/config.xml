@@ -1,10 +1,10 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
   <actions/>
-  <description></description>
+  <description><This job will output a valid long-term jwt token./description>
   <keepDependencies>false</keepDependencies>
   <properties/>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.0">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.1">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
@@ -51,47 +51,26 @@ for script_file in &quot;$source_scripts_folder&quot;*.sh; do
     fi
 done
 
-cd target
-
-reset_role
-
-aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/a/stack_variables.tf .
-
-export client_secret=`cat stack_variables.tf | grep -A3 picsure_client_secret | head -n 3 | tail -1 | cut -d &apos; &apos; -f 5 | sed &apos;s/&quot;//g&apos;`
-
-echo $client_secret &gt; secret.txt
-
-# This UUID is currently a magic number of sorts, this will need to be parameterized to make this job portable
-export new_token_introspection_token=`java -jar generateJwt.jar secret.txt sub &quot;PSAMA_APPLICATION|8b5722c9-62fd-48d6-b0bf-4f67e53efb2b&quot; 365 day | grep -v &quot;Generating&quot;`
-
-export old_token_introspection_token=`cat stack_variables.tf | grep -A3 picsure_token_introspection_token | head -n 3 | tail -1 | cut -d &apos; &apos; -f 5 | sed &apos;s/&quot;//g&apos;`
-
-sed -i &quot;s/$old_token_introspection_token/$new_token_introspection_token/g&quot; stack_variables.tf
-
-aws s3 cp stack_variables.tf s3://$stack_s3_bucket/deployment_state_metadata/a/stack_variables.tf 
-
-mv stack_variables.tf stack_variables_a.tf
-
-echo &quot;New token:&quot;
-echo &quot;${new_token_introspection_token}&quot;
-# only one stack at the moment
-#aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/b/stack_variables.tf .
-
-#export old_token_introspection_token=`cat stack_variables.tf | grep -A3 picsure_token_introspection_token | head -n 3 | tail -1 | cut -d &apos; &apos; -f 5 | sed &apos;s/&quot;//g&apos;`
-
-#sed -i &quot;s/$old_token_introspection_token/$new_token_introspection_token/g&quot; stack_variables.tf
-
-#aws s3 cp stack_variables.tf s3://$stack_s3_bucket/deployment_state_metadata/b/stack_variables.tf 
-
-#mv stack_variables.tf stack_variables_b.tf
-
-#unset AWS_ACCESS_KEY_ID
-#unset AWS_SECRET_ACCESS_KEY
-#unset AWS_SESSION_TOKEN
-</command>
+create_jwt_token $picsure_client_secret &quot;$pic_sure_introspection_token_repo&quot; &quot;PSAMA_APPLICATION|$application_id_for_base_query&quot; &quot;${duration_int:-365}&quot; &quot;${duration_unit:-day}&quot;
+if [ -n ${CREATE_JWT_TOKEN_OUTPUT} ]; then
+  echo &quot;New jwt generated update successfully.&quot;
+  echo &quot;Update the picsure_introspection_token configuration with the following:&quot;
+  echo &quot;${CREATE_JWT_TOKEN_OUTPUT}&quot;
+  echo &quot;${CREATE_JWT_TOKEN_OUTPUT}&quot; &gt; new_token
+else
+  echo &quot;Token was not generated successfully check that picsure_client_secret, pic_sure_introspection_token_repo, application_id_for_base_query configurations are a valid value.&quot;
+  exit 1
+fi</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
   <publishers/>
-  <buildWrappers/>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.45">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
 </project>
