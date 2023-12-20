@@ -2,28 +2,33 @@
 <project>
   <actions/>
   <description>This job will destroy a terraform state for the specified stack passed in. &#xd;
-&#xd;
-Deprecated - Use the teardown and rebuild job as destroy only.</description>
+</description>
   <keepDependencies>false</keepDependencies>
   <properties>
-    <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@320.v5a_0933a_e7d61">
-      <autoRebuild>false</autoRebuild>
-      <rebuildDisabled>false</rebuildDisabled>
-    </com.sonyericsson.rebuild.RebuildSettings>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
-          <name>target_stack</name>
+          <name>stack_1</name>
+          <defaultValue>a</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>infrastructure_git_hash</name>
+          <name>stack_2</name>
+          <defaultValue>b</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>destroy_green</name>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>destroy_blue</name>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.1.0">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.1">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
@@ -32,7 +37,7 @@ Deprecated - Use the teardown and rebuild job as destroy only.</description>
     </userRemoteConfigs>
     <branches>
       <hudson.plugins.git.BranchSpec>
-        <name>${infrastructure_git_hash}</name>
+        <name>*/master</name>
       </hudson.plugins.git.BranchSpec>
     </branches>
     <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
@@ -40,97 +45,244 @@ Deprecated - Use the teardown and rebuild job as destroy only.</description>
     <extensions/>
   </scm>
   <canRoam>true</canRoam>
-  <disabled>true</disabled>
+  <disabled>false</disabled>
   <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
   <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
-  <triggers/>
+  <triggers>
+    <hudson.triggers.TimerTrigger>
+      <spec>H 0 * * *</spec>
+    </hudson.triggers.TimerTrigger>
+  </triggers>
   <concurrentBuild>false</concurrentBuild>
   <builders>
     <hudson.tasks.Shell>
-      <command>cd app-infrastructure
+      <command>#!/bin/bash
 
-# Terraform provider can assume role
-# Should move this to terraform once we can have multiple providers
-# https://registry.terraform.io/providers/hashicorp/aws/latest/docs#assuming-an-iam-role
-aws sts assume-role --duration-seconds ${jenkins_provisioning_assume_role_duration} --role-arn &quot;arn:aws:iam::${cnc_acct_id}:role/system/${jenkins_s3_role_name}&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
+# Source folder containing the scripts
+source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+ls -la &quot;$source_scripts_folder&quot;
 
-export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
+# Iterate through the files in the folder and source them
+for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+    chmod +x &quot;$script_file&quot;
+    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+        echo &quot;sourcing $script_file&quot;
+        source &quot;$script_file&quot;
+    fi
+done
+cd app-infrastructure
 
-# Just use a backend to store s3 no reason to store this state
-aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate . || echo &quot;bad state or doesnt exist, it will be created&quot;
-
-# work on eliminating these external vars
-aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/stack_variables.tf .
-aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/subnet_variables.tf .
-
-# why are the roles and the rest of everything for the nodes in differenet tf states?
-#aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate_roles ../s3-deployment-roles/terraform.tfstate || echo &quot;role state doesnt exist, it will be created&quot;
-
-unset AWS_ACCESS_KEY_ID
-unset AWS_SECRET_ACCESS_KEY
-unset AWS_SESSION_TOKEN
-
-aws sts assume-role --duration-seconds ${jenkins_provisioning_assume_role_duration} --role-arn &quot;arn:aws:iam::${app_acct_id}:role/${jenkins_provisioning_assume_role_name}&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
-
-export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-
-#  why? move the roles in the app-infrastructure and have a flat(ish) model
-#cd ../s3-deployment-roles
-#terraform init
-#terraform destroy -auto-approve -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot; -var=&quot;destigmatized_dataset_s3_object_key=${destigmatized_dataset_s3_object_key}&quot; -var=&quot;genomic_dataset_s3_object_key=${genomic_dataset_s3_object_key}&quot;  -var=&quot;target_stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
-#terraform apply -auto-approve -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot;  -var=&quot;destigmatized_dataset_s3_object_key=${destigmatized_dataset_s3_object_key}&quot; -var=&quot;genomic_dataset_s3_object_key=${genomic_dataset_s3_object_key}&quot; -var=&quot;target_stack=${target_stack}&quot; -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; -var=&quot;stack_githash_long=${deployment_git_hash}&quot; || true
-
-#cd ../app-infrastructure
-
+ Destroy the green stack. 
+aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${stack_1}/terraform.tfstate terraform.tfstate
 terraform init
+private_ips_from_state_1=$(terraform show -json terraform.tfstate | jq -r &apos;.values.root_module.resources[] | select(.type == &quot;aws_instance&quot;).values.private_ip&apos;)
+echo &quot;private ip for $stack_1: $private_ips_from_state_1&quot; 
 
-terraform destroy -auto-approve \
-   -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot;  \
-   -var=&quot;destigmatized_dataset_s3_object_key=${destigmatized_dataset_s3_object_key}&quot;  \
-   -var=&quot;genomic_dataset_s3_object_key=${genomic_dataset_s3_object_key}&quot; \
-   -var=&quot;target_stack=${target_stack}&quot; \
-   -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; \
-   -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
-   -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
-   -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
-   || true
+echo &quot;checking Stack: $stack_2&quot;
+aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${stack_2}/terraform.tfstate terraform.tfstate
+terraform init
+private_ips_from_state_2=$(terraform show -json terraform.tfstate | jq -r &apos;.values.root_module.resources[] | select(.type == &quot;aws_instance&quot;).values.private_ip&apos;)
+echo &quot;private ip for $stack_2: $private_ips_from_state_2&quot; 
 
-unset AWS_ACCESS_KEY_ID
-unset AWS_SECRET_ACCESS_KEY
-unset AWS_SESSION_TOKEN
+# local vars
+assume_role
+staging_target_group_arn=$(get_target_group_arn_by_name &quot;$staging_tg_name&quot;)
+live_target_group_arn=$(get_target_group_arn_by_name &quot;$live_tg_name&quot;)
 
-aws sts assume-role --duration-seconds ${jenkins_provisioning_assume_role_duration} --role-arn &quot;arn:aws:iam::${cnc_acct_id}:role/system/${jenkins_s3_role_name}&quot; --role-session-name &quot;teardown-rebuild&quot; &gt; assume-role-output.txt
+staging_private_ips=$(aws elbv2 describe-target-health --target-group-arn $staging_target_group_arn --query &apos;TargetHealthDescriptions[*].Target.Id&apos; --output text)
+live_private_ips=$(aws elbv2 describe-target-health --target-group-arn $live_target_group_arn --query &apos;TargetHealthDescriptions[*].Target.Id&apos; --output text)
+reset_role
 
-export AWS_ACCESS_KEY_ID=`grep AccessKeyId assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SECRET_ACCESS_KEY=`grep SecretAccessKey assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
-export AWS_SESSION_TOKEN=`grep SessionToken assume-role-output.txt | cut -d &apos;:&apos; -f 2 | sed &quot;s/[ ,\&quot;]//g&quot;`
 
-# Move to terraform backend
-# If script fails before state file is uploaded to s3 state will be lost for created objects \
-# terraform destroy will not destroy anything as it points to old state and apply will fail as objects may already exist
-# that the old state does not control.  Will have to manually destroy and delete roles, ec2s, etc. in that scenario
-aws s3 cp terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate
-# roles are now in the same state as their related resources..
-#aws s3 cp ../s3-deployment-roles/terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate_roles
-
-# These files are uploaded to s3 because user-scripts download them.  The user scripts are already running
-# so this is a race condition at this point as terraform has been applied
-# Just have terraform provision these and remove the aws cli stuff from the user-scripts and here
-aws s3 --sse=AES256 cp picsureui-settings.json s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/picsureui_settings.json
-aws s3 --sse=AES256 cp configs/banner_config.json s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/banner_config.json
-aws s3 --sse=AES256 cp standalone.xml s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/standalone.xml
-aws s3 --sse=AES256 cp pic-sure-schema.sql s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/pic-sure-schema.sql
-aws s3 --sse=AES256 cp httpd-vhosts.conf s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/httpd-vhosts.conf
-aws s3 --sse=AES256 cp aggregate-resource.properties s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/aggregate-resource.properties
-aws s3 --sse=AES256 cp visualization-resource.properties s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/visualization-resource.properties
-
-unset AWS_ACCESS_KEY_ID
-unset AWS_SECRET_ACCESS_KEY
-unset AWS_SESSION_TOKEN
+if [[ &quot;$destroy_green&quot; == &quot;true&quot; ]]; then
+   echo &quot;Destroying green stack&quot;
+   assume_role
+   targets=$(aws elbv2 describe-target-health --target-group-arn $staging_target_group_arn --query &apos;TargetHealthDescriptions[*].Target.Id&apos; --output text)
+   reset_role
+   
+   echo &quot;green targets: $targets&quot;
+   echo &quot;checking Stack: $stack_1&quot;
+   
+   for private_ip_from_state in $private_ips_from_state_1; do
+      if [[ $targets =~ $private_ip_from_state ]]; then       
+        echo &quot;Stack $stack_1 - Destroying&quot;
+        aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${stack_1}/terraform.tfstate terraform.tfstate
+        terraform init
+        
+        assume_role
+        terraform destroy -auto-approve \
+         -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot;  \
+         -var=&quot;destigmatized_dataset_s3_object_key=${destigmatized_dataset_s3_object_key}&quot;  \
+         -var=&quot;genomic_dataset_s3_object_key=${genomic_dataset_s3_object_key}&quot; \
+         -var=&quot;target_stack=$stack_1&quot; \
+         -var=&quot;picsure_rds_snapshot_id=${picsure_rds_snapshot_id}&quot; \
+         -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; \
+         -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
+         -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
+         -var=&quot;env_public_dns_name_staging=${env_public_dns_name_staging}&quot; \
+         -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
+         -var=&quot;env_hosted_zone_id=${env_hosted_zone_id}&quot; \
+         -var=&quot;analytics_id=${analytics_id}&quot; \
+         -var=&quot;tag_manager_id=${tag_manager_id}&quot; \
+         -var=&quot;env_is_open_access=${env_is_open_access}&quot; \
+         -var=&quot;include_auth_hpds=${include_auth_hpds}&quot; \
+         -var=&quot;include_open_hpds=${include_open_hpds}&quot; \
+         -var=&quot;environment_name=${environment_name}&quot; \
+         -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
+         -var=&quot;application_id_for_base_query=${application_id_for_base_query}&quot; \
+         -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
+         -var=&quot;idp_provider=${idp_provider}&quot; \
+         -var=&quot;env_project=${env_project}&quot; \
+         -var=&quot;picsure_token_introspection_token=${picsure_token_introspection_token}&quot; \
+         -var=&quot;picsure_client_secret=${picsure_client_secret}&quot; \
+         -var=&quot;fence_client_id=${fence_client_id}&quot; \
+         -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
+         -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true        
+     
+        reset_role
+        
+        aws s3 cp terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${stack_1}/terraform.tfstate
+      fi   
+   done
+   
+   echo &quot;checking Stack: $stack_2&quot;
+   for private_ip_from_state in $private_ips_from_state_2; do
+      if [[ $targets =~ $private_ip_from_state ]]; then
+        echo &quot;Stack $stack_2 - Destroying&quot;
+        aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${stack_2}/terraform.tfstate terraform.tfstate
+        terraform init
+        
+        assume_role
+        terraform destroy -auto-approve \
+         -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot;  \
+         -var=&quot;destigmatized_dataset_s3_object_key=${destigmatized_dataset_s3_object_key}&quot;  \
+         -var=&quot;genomic_dataset_s3_object_key=${genomic_dataset_s3_object_key}&quot; \
+         -var=&quot;target_stack=$stack_2&quot; \
+         -var=&quot;picsure_rds_snapshot_id=${picsure_rds_snapshot_id}&quot; \
+         -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; \
+         -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
+         -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
+         -var=&quot;env_public_dns_name_staging=${env_public_dns_name_staging}&quot; \
+         -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
+         -var=&quot;env_hosted_zone_id=${env_hosted_zone_id}&quot; \
+         -var=&quot;analytics_id=${analytics_id}&quot; \
+         -var=&quot;tag_manager_id=${tag_manager_id}&quot; \
+         -var=&quot;env_is_open_access=${env_is_open_access}&quot; \
+         -var=&quot;include_auth_hpds=${include_auth_hpds}&quot; \
+         -var=&quot;include_open_hpds=${include_open_hpds}&quot; \
+         -var=&quot;environment_name=${environment_name}&quot; \
+         -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
+         -var=&quot;application_id_for_base_query=${application_id_for_base_query}&quot; \
+         -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
+         -var=&quot;idp_provider=${idp_provider}&quot; \
+         -var=&quot;env_project=${env_project}&quot; \
+         -var=&quot;picsure_token_introspection_token=${picsure_token_introspection_token}&quot; \
+         -var=&quot;picsure_client_secret=${picsure_client_secret}&quot; \
+         -var=&quot;fence_client_id=${fence_client_id}&quot; \
+         -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
+         -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true           
+        reset_role
+        
+        aws s3 cp terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${stack_2}/terraform.tfstate
+      fi
+   done
+   reset_role
+fi
+# Destroy the blue stack.
+if [[ &quot;$destroy_blue&quot; == &quot;true&quot; ]]; then
+   echo &quot;Destroying blue stack&quot;
+   
+   assume_role
+   targets=$(aws elbv2 describe-target-health --target-group-arn $live_target_group_arn --query &apos;TargetHealthDescriptions[*].Target.Id&apos; --output text)
+   reset_role
+   
+   echo &quot;blue targets: $targets&quot;
+   echo &quot;checking Stack: $stack_1&quot;
+  
+  for private_ip_from_state in $private_ips_from_state_1; do
+      if [[ $targets =~ $private_ip_from_state ]]; then
+        echo &quot;Stack $stack_1 - Destroying&quot;
+        aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${stack_1}/terraform.tfstate terraform.tfstate
+        terraform init
+        
+        assume_role
+        terraform destroy -auto-approve \
+         -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot;  \
+         -var=&quot;destigmatized_dataset_s3_object_key=${destigmatized_dataset_s3_object_key}&quot;  \
+         -var=&quot;genomic_dataset_s3_object_key=${genomic_dataset_s3_object_key}&quot; \
+         -var=&quot;target_stack=$stack_1&quot; \
+         -var=&quot;picsure_rds_snapshot_id=${picsure_rds_snapshot_id}&quot; \
+         -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; \
+         -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
+         -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
+         -var=&quot;env_public_dns_name_staging=${env_public_dns_name_staging}&quot; \
+         -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
+         -var=&quot;env_hosted_zone_id=${env_hosted_zone_id}&quot; \
+         -var=&quot;analytics_id=${analytics_id}&quot; \
+         -var=&quot;tag_manager_id=${tag_manager_id}&quot; \
+         -var=&quot;env_is_open_access=${env_is_open_access}&quot; \
+         -var=&quot;include_auth_hpds=${include_auth_hpds}&quot; \
+         -var=&quot;include_open_hpds=${include_open_hpds}&quot; \
+         -var=&quot;environment_name=${environment_name}&quot; \
+         -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
+         -var=&quot;application_id_for_base_query=${application_id_for_base_query}&quot; \
+         -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
+         -var=&quot;idp_provider=${idp_provider}&quot; \
+         -var=&quot;env_project=${env_project}&quot; \
+         -var=&quot;picsure_token_introspection_token=${picsure_token_introspection_token}&quot; \
+         -var=&quot;picsure_client_secret=${picsure_client_secret}&quot; \
+         -var=&quot;fence_client_id=${fence_client_id}&quot; \
+         -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
+         -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true   
+         reset_role
+        
+        aws s3 cp terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${stack_1}/terraform.tfstate
+      fi
+   done
+   
+   echo &quot;checking Stack: $stack_2&quot;
+   for private_ip_from_state in $private_ips_from_state_2; do
+      if [[ $targets =~ $private_ip_from_state ]]; then
+        echo &quot;Stack $stack_2 - Destroying&quot;
+        aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${stack_2}/terraform.tfstate terraform.tfstate
+        terraform init
+        
+        assume_role
+        terraform destroy -auto-approve \
+         -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot;  \
+         -var=&quot;destigmatized_dataset_s3_object_key=${destigmatized_dataset_s3_object_key}&quot;  \
+         -var=&quot;genomic_dataset_s3_object_key=${genomic_dataset_s3_object_key}&quot; \
+         -var=&quot;target_stack=$stack_2&quot; \
+         -var=&quot;picsure_rds_snapshot_id=${picsure_rds_snapshot_id}&quot; \
+         -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; \
+         -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
+         -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
+         -var=&quot;env_public_dns_name_staging=${env_public_dns_name_staging}&quot; \
+         -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
+         -var=&quot;env_hosted_zone_id=${env_hosted_zone_id}&quot; \
+         -var=&quot;analytics_id=${analytics_id}&quot; \
+         -var=&quot;tag_manager_id=${tag_manager_id}&quot; \
+         -var=&quot;env_is_open_access=${env_is_open_access}&quot; \
+         -var=&quot;include_auth_hpds=${include_auth_hpds}&quot; \
+         -var=&quot;include_open_hpds=${include_open_hpds}&quot; \
+         -var=&quot;environment_name=${environment_name}&quot; \
+         -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
+         -var=&quot;application_id_for_base_query=${application_id_for_base_query}&quot; \
+         -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
+         -var=&quot;idp_provider=${idp_provider}&quot; \
+         -var=&quot;env_project=${env_project}&quot; \
+         -var=&quot;picsure_token_introspection_token=${picsure_token_introspection_token}&quot; \
+         -var=&quot;picsure_client_secret=${picsure_client_secret}&quot; \
+         -var=&quot;fence_client_id=${fence_client_id}&quot; \
+         -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
+         -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true   
+         reset_role
+        
+        aws s3 cp terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${stack_2}/terraform.tfstate
+      fi
+   done
+   reset_role
+fi
 </command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
