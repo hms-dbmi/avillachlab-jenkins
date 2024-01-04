@@ -1,7 +1,8 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
     <actions/>
-    <description></description>
+    <description>This build is used to override the default BDC UI. At the time of creating this build it is used by
+    Aim-Ahead PIC-SURE and Open PIC-SURE.</description>
     <keepDependencies>false</keepDependencies>
     <properties>
         <hudson.model.ParametersDefinitionProperty>
@@ -21,6 +22,16 @@
                     <defaultValue>${stack_s3_bucket}</defaultValue>
                     <trim>false</trim>
                 </hudson.model.StringParameterDefinition>
+                <hudson.model.StringParameterDefinition>
+                    <name>S3_BUCKET_NAME</name>
+                    <defaultValue>${stack_s3_bucket}</defaultValue>
+                    <trim>false</trim>
+                </hudson.model.StringParameterDefinition>
+                <hudson.model.StringParameterDefinition>
+                    <name>bdc_ui_docker_tag</name>
+                    <defaultValue/>
+                    <trim>false</trim>
+                </hudson.model.StringParameterDefinition>
             </parameterDefinitions>
         </hudson.model.ParametersDefinitionProperty>
     </properties>
@@ -28,7 +39,7 @@
         <configVersion>2</configVersion>
         <userRemoteConfigs>
             <hudson.plugins.git.UserRemoteConfig>
-                <url>${pic_sure_open_access_biodatacatalyst_ui_repo}</url>
+                <url>${pic_sure_override_biodatacatalyst_ui_repo}</url>
             </hudson.plugins.git.UserRemoteConfig>
         </userRemoteConfigs>
         <branches>
@@ -48,7 +59,17 @@
     <concurrentBuild>false</concurrentBuild>
     <builders>
         <hudson.tasks.Shell>
-            <command>ls -la
+            <command>
+                # Echo the bdc_ui_docker_tag parameter value.
+                echo &quot;bdc_ui_docker_tag: ${bdc_ui_docker_tag}&quot;
+
+                # Print directory for debugging.
+                ls -la
+
+                # Build the image and overwrite the existing tag
+                docker build --build-arg BDC_UI_TAG=${bdc_ui_docker_tag} -t hms-dbmi/pic-sure-biodatacatalyst-ui:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
+
+                echo "BDC_UI_OVERRIDE_DOCKER_TAG=${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}" &gt; envVars.properties
             </command>
             <configuredLocalRules/>
         </hudson.tasks.Shell>

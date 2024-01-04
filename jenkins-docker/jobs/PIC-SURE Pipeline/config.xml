@@ -9,11 +9,12 @@
       <options/>
     </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
   </actions>
-  <description></description>
+  <description/>
   <keepDependencies>false</keepDependencies>
   <properties/>
   <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3740.v6d35b_4ed5f9f">
     <script>import groovy.json.JsonSlurper;
+def bdc_ui_docker_tag;
 
 def retrieveBuildSpecId;
 def pipelineBuildId;
@@ -80,7 +81,7 @@ pipeline {
                 }
             }
         }
-        stage(&apos;Wildfly Build and UI Customization&apos;){
+        stage(&apos;Wildfly Build and BDC UI&apos;){
             steps {
                 parallel (
                     wildfly:{
@@ -90,13 +91,49 @@ pipeline {
                     },
                     biodatacatalystui:{
                         script {
-                            if (env_is_open_access == &apos;true&apos;) {
-                                def result = build job: &apos;PIC-SURE Open Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId], [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;OPENBDC&apos;]]];
-                            }
                             def result = build job: &apos;biodatacatalyst-ui&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId], [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;BDCU&apos;]]];
+
+                            // Get the artifact from the build
+                            copyArtifacts(
+                                filter: &apos;envVars.properties&apos;,
+                                projectName: &apos;biodatacatalyst-ui&apos;,
+                                selector: specific(&quot;&quot;+result.number)
+                            )
+
+                            <!-- Read the variables from the file -->
+                            def props = readProperties file: &apos;envVars.properties&apos;
+
+                            <!-- Set the global pipeline variable -->
+                            bdc_ui_docker_tag = props[&apos;BDC_UI_DOCKER_TAG&apos;]
                         }
                     }
                )
+            }
+        }
+        stage(&apos;UI Overrides&apos;) {
+            steps {
+                script {
+                    <!-- Check if there is an OVERRIDE hash -->
+                    if (build_hashes[&apos;OVERRIDE&apos;]) {
+                        def result = build job: &apos;PIC-SURE Override Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId], [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;OVERRIDE&apos;]], [$class: &apos;StringParameterValue&apos;, name: &apos;bdc_ui_docker_tag&apos;, value: bdc_ui_docker_tag]];
+
+                        // Get the artifact from the build
+                        copyArtifacts(
+                        filter: &apos;envVars.properties&apos;,
+                        projectName: &apos;biodatacatalyst-ui&apos;,
+                        selector: specific(&quot;&quot;+result.number)
+                        )
+
+                        <!-- Read the variables from the file -->
+                        def props = readProperties file: &apos;envVars.properties&apos;
+
+                        <!-- Set the global pipeline variable -->
+                        bdc_ui_docker_tag = props[&apos;BDC_UI_OVERRIDE_DOCKER_TAG&apos;]
+                    }
+                }
+                script {
+                    def result = build job: &apos;PIC-SURE-UI Upload&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId], [$class: &apos;StringParameterValue&apos;, name: &apos;bdc_ui_docker_tag&apos;, value: bdc_ui_docker_tag]];
+                }
             }
         }
     }
