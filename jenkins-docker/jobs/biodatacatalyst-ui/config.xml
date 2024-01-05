@@ -4,6 +4,15 @@
   <description></description>
   <keepDependencies>false</keepDependencies>
   <properties>
+    <hudson.plugins.copyartifact.CopyArtifactPermissionProperty plugin="copyartifact@722.v0662a_9b_e22a_c">
+      <projectNameList>
+        <string>*</string>
+      </projectNameList>
+    </hudson.plugins.copyartifact.CopyArtifactPermissionProperty>
+    <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@330.v645b_7df10e2a_">
+      <autoRebuild>false</autoRebuild>
+      <rebuildDisabled>false</rebuildDisabled>
+    </com.sonyericsson.rebuild.RebuildSettings>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
@@ -24,7 +33,7 @@
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.0">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.1">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
@@ -49,22 +58,32 @@
   <builders>
     <hudson.tasks.Shell>
       <command>aws s3 --sse=AES256 cp s3://$S3_BUCKET_NAME/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds-ui.tar.gz .
-PIC_SURE_HPDS_UI_VERSION=$(docker load -i pic-sure-hpds-ui.tar.gz | cut -d &apos;:&apos; -f 3)
-docker tag hms-dbmi/pic-sure-hpds-ui:${PIC_SURE_HPDS_UI_VERSION} hms-dbmi/pic-sure-hpds-ui:TARGET_BUILD_VERSION
+        PIC_SURE_HPDS_UI_VERSION=$(docker load -i pic-sure-hpds-ui.tar.gz | cut -d &apos;:&apos; -f 3)
+        docker tag hms-dbmi/pic-sure-hpds-ui:${PIC_SURE_HPDS_UI_VERSION} hms-dbmi/pic-sure-hpds-ui:TARGET_BUILD_VERSION
 
-GIT_BRANCH_SHORT=$(echo ${GIT_BRANCH} | cut -d &quot;/&quot; -f 2)
-GIT_COMMIT_SHORT=$(echo ${GIT_COMMIT} | cut -c1-7)
+        GIT_BRANCH_SHORT=$(echo ${GIT_BRANCH} | cut -d &quot;/&quot; -f 2)
+        GIT_COMMIT_SHORT=$(echo ${GIT_COMMIT} | cut -c1-7)
 
-# Move into workspace dir
-cd biodatacatalyst-ui
-docker build --build-arg FILE_SUFFIX=${pipeline_build_id} -t hms-dbmi/pic-sure-biodatacatalyst-ui:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
+        # Move into workspace dir
+        cd biodatacatalyst-ui
+        docker build --build-arg FILE_SUFFIX=${pipeline_build_id} -t hms-dbmi/pic-sure-biodatacatalyst-ui:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
 
-# Create envVars.properties artifact for downstream jobs
-echo "BDC_UI_DOCKER_TAG=${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}" &gt; envVars.properties
-</command>
+        cd ..
+        # Create envVars.properties artifact for downstream jobs
+        echo &quot;BDC_UI_DOCKER_TAG=${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}&quot; &gt; bdcVars.properties</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
-  <publishers/>
+  <publishers>
+    <hudson.tasks.ArtifactArchiver>
+      <artifacts>bdcVars.properties</artifacts>
+      <allowEmptyArchive>false</allowEmptyArchive>
+      <onlyIfSuccessful>false</onlyIfSuccessful>
+      <fingerprint>false</fingerprint>
+      <defaultExcludes>true</defaultExcludes>
+      <caseSensitive>true</caseSensitive>
+      <followSymlinks>false</followSymlinks>
+    </hudson.tasks.ArtifactArchiver>
+  </publishers>
   <buildWrappers/>
 </project>
