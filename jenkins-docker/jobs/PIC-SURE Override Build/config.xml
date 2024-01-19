@@ -44,6 +44,7 @@
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
         <url>${infrastructure_git_repo}</url>
+        <credentialsId>gitlab_token</credentialsId>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <userRemoteConfigs>
@@ -81,8 +82,7 @@
         docker build --build-arg BDC_UI_TAG=${bdc_ui_docker_tag} -t hms-dbmi/pic-sure-biodatacatalyst-ui:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
 
         echo &quot;BDC_UI_OVERRIDE_DOCKER_TAG=${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}&quot;
-        echo &quot;BDC_UI_OVERRIDE_DOCKER_TAG=${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}&quot; &gt;
-        overrideVars.properties
+        echo &quot;BDC_UI_OVERRIDE_DOCKER_TAG=${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}&quot; &gt; overrideVars.properties
       </command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
