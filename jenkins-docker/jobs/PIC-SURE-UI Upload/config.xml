@@ -32,8 +32,8 @@
                 # Use the bdc_ui_docker_tag parameter to set the Docker tag for the BDC UI image.
                 # If the parameter is not set the build should fail.
                 if [ -z &quot;${bdc_ui_docker_tag}&quot; ]; then
-                    echo &quot;ERROR: bdc_ui_docker_tag parameter is not set&quot;
-                    exit 1
+                echo &quot;ERROR: bdc_ui_docker_tag parameter is not set&quot;
+                exit 1
                 fi
 
 

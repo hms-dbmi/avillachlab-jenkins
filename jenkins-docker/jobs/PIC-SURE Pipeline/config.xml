@@ -17,10 +17,6 @@
         <string>*</string>
       </projectNameList>
     </hudson.plugins.copyartifact.CopyArtifactPermissionProperty>
-    <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@330.v645b_7df10e2a_">
-      <autoRebuild>false</autoRebuild>
-      <rebuildDisabled>false</rebuildDisabled>
-    </com.sonyericsson.rebuild.RebuildSettings>
   </properties>
   <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3832.vc43e04d6d68c">
     <script>import groovy.json.JsonSlurper;
@@ -31,6 +27,7 @@ def bdcUIBuildSpecId;
 def overrideUiBuildSpec;
 def pipelineBuildId;
 def build_hashes = {};
+def hasOverrideUI;
 pipeline {
     agent any
     stages {
@@ -49,6 +46,11 @@ pipeline {
                     pipelineBuildId = new File(&apos;/var/jenkins_home/workspace/PIC-SURE Pipeline/pipeline_git_commit.txt&apos;).text.trim()
                     for(def build : buildSpec.application){
                         build_hashes[build.project_job_git_key] = build.git_hash
+
+                        if(build.project_job_git_key == &quot;OVERRIDE_UI&quot;) {
+                            hasOverrideUI = true;
+                                echo &quot;Hex Code: ${build.project_job_git_key} = Color Name: ${build.git_hash}&quot;
+                        }
                     }
                 }
             }
@@ -114,15 +116,14 @@ pipeline {
         stage(&apos;UI Overrides and UI Upload&apos;) {
             steps {
                 script {
-                    if (build_hashes[&apos;OVERRIDE_UI&apos;]) {
-                        // Get the artifact from the build
-                        copyArtifacts filter: &apos;bdcVars.properties&apos;, projectName: &apos;biodatacatalyst-ui&apos;, selector: specific(&quot;&quot;+bdcUIBuildSpecId)
+                    copyArtifacts filter: &apos;bdcVars.properties&apos;, projectName: &apos;biodatacatalyst-ui&apos;, selector: specific(&quot;&quot;+bdcUIBuildSpecId)
 
-                        Properties properties = new Properties()
-                        File propertiesFile = new File(&apos;/var/jenkins_home/workspace/PIC-SURE Pipeline/bdcVars.properties&apos;)
-                        properties.load(new FileInputStream(propertiesFile))
-                        bdc_ui_docker_tag = properties[&apos;BDC_UI_DOCKER_TAG&apos;]
+                    Properties properties = new Properties()
+                    File propertiesFile = new File(&apos;/var/jenkins_home/workspace/PIC-SURE Pipeline/bdcVars.properties&apos;)
+                    properties.load(new FileInputStream(propertiesFile))
+                    bdc_ui_docker_tag = properties[&apos;BDC_UI_DOCKER_TAG&apos;]
 
+                    if (hasOverrideUI) {
                         // Code for building and handling OVERRIDE_UI
                         def overrideResult = build job: &apos;PIC-SURE Override Build&apos;, parameters: [
                             [$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],
@@ -134,7 +135,8 @@ pipeline {
                     }
                 }
                 script {
-                    if (build_hashes[&apos;OVERRIDE_UI&apos;]){
+
+                    if (hasOverrideUI){
                         // Copy artifacts and read properties
                         copyArtifacts filter: &apos;overrideVars.properties&apos;, projectName: &apos;PIC-SURE Override Build&apos;, selector: specific(&quot;&quot; + overrideUiBuildSpec)
                         Properties overrideUiProps = new Properties()
