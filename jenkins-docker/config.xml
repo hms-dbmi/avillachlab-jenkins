@@ -22,6 +22,11 @@
       <home>/usr/lib/jvm/java-11-openjdk-amd64/</home>
       <properties/>
     </jdk>
+    <jdk>
+      <name>JDK-21</name>
+      <home>/opt/java/jdk-21.0.1/</home>
+      <properties/>
+    </jdk>
   </jdks>
   <viewsTabBar class="hudson.views.DefaultViewsTabBar"/>
   <myViewsTabBar class="hudson.views.DefaultMyViewsTabBar"/>
