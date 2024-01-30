@@ -1,0 +1,105 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>EMAIL</name>
+          <description>Enter the user&apos;s email or username. The user must exist in the Database.</description>
+          <defaultValue>george_colon@hms.harvard.edu</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.PasswordParameterDefinition>
+          <name>DB_PASSWORD</name>
+          <description>Find it in the standalone xml in the teardown job or in the wildfly container.</description>
+          <defaultValue>{AQAAABAAAAAgIMM9zgMVyUymy7iuKJJ/f05kJ7BiyVHeC647ITiaVl0hMVOg7+pG2HwBBS83T2ho}</defaultValue>
+        </hudson.model.PasswordParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>CONNECTION_ID_LOCAL</name>
+          <description>connection id from the connection table for the user&apos;s connection. </description>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.scm.NullSCM"/>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+        set -e
+        # Source folder containing the scripts
+        source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+        ls -la &quot;$source_scripts_folder&quot;
+
+        # Iterate through the files in the folder and source them
+        for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+        chmod +x &quot;$script_file&quot;
+        if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+        echo &quot;sourcing $script_file&quot;
+        source &quot;$script_file&quot;
+        fi
+        done
+
+        reset_role
+        assume_role
+
+        CONNECTION_ID=&quot;${connection_id:-$CONNECTION_ID_LOCAL}&quot;
+
+        echo &quot;Connection ID: $CONNECTION_ID&quot;
+        echo &quot;Email: $EMAIL&quot;
+
+        target_stack=$(cat &apos;/var/jenkins_home/workspace/Deployment Pipeline/stacks.json&apos; | jq -r &apos;.environments.next_prod&apos;)
+        INSTANCE_NAME_SUFFIX=&quot;Wildfly - $target_stack&quot;
+        INSTANCE_ID=$(aws ec2 --region us-east-1 describe-instances --filters &quot;Name=tag:Name,Values=*$INSTANCE_NAME_SUFFIX*&quot; &quot;Name=instance-state-name,Values=running&quot; --query &apos;Reservations[*].Instances[*].InstanceId&apos; --output text)
+
+        echo $INSTANCE_ID
+
+        if [ -z &quot;$INSTANCE_ID&quot; ] || [[ &quot;$INSTANCE_ID&quot; == &quot;None&quot; ]]; then
+        echo &quot;No instances found matching the specified criteria.&quot;
+        exit 1
+        fi
+
+        aws ssm --region us-east-1 send-command --instance-id $INSTANCE_ID --document-name &quot;AWS-RunShellScript&quot; --parameters &quot;commands=[\&quot;docker stop schema-init || true\&quot;]&quot;
+        start_docker_cmd_id=$(aws ssm --region us-east-1 send-command --instance-id $INSTANCE_ID --document-name &quot;AWS-RunShellScript&quot; --parameters &quot;commands=[\&quot;docker run -d --name schema-init -e \\\&quot;MYSQL_RANDOM_ROOT_PASSWORD=yes\\\&quot; --rm mysql\&quot;]&quot; | jq -r &apos;.Command.CommandId&apos;)
+        script_cmd_id=$(aws ssm --region us-east-1 send-command --instance-id $INSTANCE_ID --document-name &quot;AWS-RunShellScript&quot; --parameters &quot;commands=[\&quot;docker exec -i schema-init mysql -hpicsure-db.${target_stack}.pic-sure.aim-ahead-dev.host -uroot -p$DB_PASSWORD auth -e &apos;CALL CreateSuperUser(\\\&quot;$EMAIL\\\&quot;, \\\&quot;$CONNECTION_ID\\\&quot;);&apos;\&quot;]&quot; | jq -r &apos;.Command.CommandId&apos;)
+        stop_cmd_id=$(aws ssm --region us-east-1 send-command --instance-id $INSTANCE_ID --document-name &quot;AWS-RunShellScript&quot; --parameters &quot;commands=[\&quot;docker stop schema-init\&quot;]&quot; | jq -r &apos;.Command.CommandId&apos;)
+
+        count=0
+        while [ $count -lt 20 ]; do
+        script_response=$(aws ssm get-command-invocation --region us-east-1 --instance-id $INSTANCE_ID --command-id &quot;$script_cmd_id&quot;)
+        cleaned_response=$(echo &quot;$script_response&quot; | tr -d &apos;\000-\031&apos;)
+        status=$(echo &quot;$cleaned_response&quot; | jq -r .Status)
+        if [ &quot;$status&quot; == &quot;InProgress&quot; ]; then
+        echo &quot;Status is InProgress. Waiting for the status to change...&quot;
+        sleep 1;
+        elif [[ &quot;$status&quot; == &quot;Failed&quot; ]]; then
+        errorContent=$(echo &quot;$script_response&quot; | jq -r .StandardErrorContent)
+        reset_role
+        echo &quot;$errorContent&quot;
+        exit 1
+        else
+        break
+        fi
+        count=$((count+1))
+        if [[ $count -eq 20 ]] &amp;&amp; [[ &quot;$status&quot; == &quot;InProgress&quot; ]]; then
+        echo &quot;Command is still in progress after waiting. Exiting...&quot;
+        break
+        fi
+        done
+
+        reset_role</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers/>
+</project>
