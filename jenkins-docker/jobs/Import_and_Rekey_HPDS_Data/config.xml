@@ -46,6 +46,7 @@
   <disabled>false</disabled>
   <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
   <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <jdk>JDK-21</jdk>
   <triggers/>
   <concurrentBuild>false</concurrentBuild>
   <builders>
