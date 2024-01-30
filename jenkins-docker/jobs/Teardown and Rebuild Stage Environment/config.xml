@@ -51,7 +51,6 @@
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
         <url>${infrastructure_git_repo}</url>
-        <credentialsId>gitlab_token</credentialsId>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
@@ -127,170 +126,182 @@ reset_role</command>
     </hudson.tasks.Shell>
     <hudson.tasks.Shell>
       <command>#!/bin/bash
-set -e
-# Source folder containing the scripts
-source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
-ls -la &quot;$source_scripts_folder&quot;
+          set -e
+          # Source folder containing the scripts
+          source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+          ls -la &quot;$source_scripts_folder&quot;
 
-# Iterate through the files in the folder and source them
-for script_file in &quot;$source_scripts_folder&quot;*.sh; do
-    chmod +x &quot;$script_file&quot;
-    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
-        echo &quot;sourcing $script_file&quot;
-        source &quot;$script_file&quot;
-    fi
-done
+          # Iterate through the files in the folder and source them
+          for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+          chmod +x &quot;$script_file&quot;
+          if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+          echo &quot;sourcing $script_file&quot;
+          source &quot;$script_file&quot;
+          fi
+          done
 
-echo &quot;pic-sure introspection token&quot;
-# if picsure_token_introspection_token is not defined already create one
-if [ -z $picsure_token_introspection_token ]; then
-   echo &quot;No introspection given.  Generating new one.&quot;
-   create_jwt_token $picsure_client_secret &quot;$pic_sure_introspection_token_repo&quot; &quot;PSAMA_APPLICATION|$application_id_for_base_query&quot; &quot;${duration_int:-365}&quot; &quot;${duration_unit:-day}&quot;
-   picsure_token_introspection_token=&quot;${CREATE_JWT_TOKEN_OUTPUT}&quot;
-   echo &quot;introspection token generated.&quot;
-else
-  echo &quot;Using introspection token defined by global properties&quot;
-fi
+          echo &quot;pic-sure introspection token&quot;
+          # if picsure_token_introspection_token is not defined already create one
+          if [ -z $picsure_token_introspection_token ]; then
+          echo &quot;No introspection given.  Generating new one.&quot;
+          create_jwt_token $picsure_client_secret &quot;$pic_sure_introspection_token_repo&quot; &quot;PSAMA_APPLICATION|$application_id_for_base_query&quot; &quot;${duration_int:-365}&quot; &quot;${duration_unit:-day}&quot;
+          picsure_token_introspection_token=&quot;${CREATE_JWT_TOKEN_OUTPUT}&quot;
+          echo &quot;introspection token generated.&quot;
+          else
+          echo &quot;Using introspection token defined by global properties&quot;
+          fi
 
-# Destroy and Build resources
-cd app-infrastructure
+          # Destroy and Build resources
+          cd app-infrastructure
 
-# TODO - Needs backend state management.
-aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate . || echo &quot;bad state or doesnt exist, it will be created&quot;
+          # TODO - Needs backend state management.
+          aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate . || echo &quot;bad state or doesnt exist, it will be created&quot;
 
-# Assume deployment role
-assume_role
+          # Assume deployment role
+          assume_role
 
-# Perform RDS Strategy
-do_picsure_rds_strategy &quot;${picsure_rds_strategy}&quot; &quot;${live_stack}&quot; &quot;${env_project}&quot;
-picsure_rds_snapshot_id=$(get_latest_rds_snapshot_id &quot;${picsure_rds_strategy}&quot; &quot;${live_stack}&quot; &quot;${env_project}&quot;)
+          # Perform RDS Strategy
+          do_picsure_rds_strategy &quot;${picsure_rds_strategy}&quot; &quot;${live_stack}&quot; &quot;${env_project}&quot;
+          picsure_rds_snapshot_id=$(get_latest_rds_snapshot_id &quot;${picsure_rds_strategy}&quot; &quot;${live_stack}&quot; &quot;${env_project}&quot;)
 
-terraform init
-if $isDestroyOnly; then
+          terraform init
+          if $isDestroyOnly; then
 
-  terraform destroy -auto-approve \
-     -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot;  \
-     -var=&quot;destigmatized_dataset_s3_object_key=${destigmatized_dataset_s3_object_key}&quot;  \
-     -var=&quot;genomic_dataset_s3_object_key=${genomic_dataset_s3_object_key}&quot; \
-     -var=&quot;target_stack=${target_stack}&quot; \
-     -var=&quot;picsure_rds_snapshot_id=${picsure_rds_snapshot_id}&quot; \
-     -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; \
-     -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
-     -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
-     -var=&quot;env_public_dns_name_staging=${env_public_dns_name_staging}&quot; \
-     -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
-     -var=&quot;env_hosted_zone_id=${env_hosted_zone_id}&quot; \
-     -var=&quot;analytics_id=${analytics_id}&quot; \
-     -var=&quot;tag_manager_id=${tag_manager_id}&quot; \
-     -var=&quot;env_is_open_access=${env_is_open_access}&quot; \
-     -var=&quot;include_auth_hpds=${include_auth_hpds}&quot; \
-     -var=&quot;include_open_hpds=${include_open_hpds}&quot; \
-     -var=&quot;environment_name=${environment_name}&quot; \
-     -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
-     -var=&quot;application_id_for_base_query=${application_id_for_base_query}&quot; \
-     -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
-     -var=&quot;idp_provider=${idp_provider}&quot; \
-     -var=&quot;env_project=${env_project}&quot; \
-     -var=&quot;picsure_token_introspection_token=${picsure_token_introspection_token}&quot; \
-     -var=&quot;picsure_client_secret=${picsure_client_secret}&quot; \
-     -var=&quot;fence_client_id=${fence_client_id}&quot; \
-     -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
-     -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; \
-     -var=&quot;client_id=${client_id}&quot; \
-     -var=&quot;sp_client_secret=${sp_client_secret}&quot; || true
+          terraform destroy -auto-approve \
+          -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot;  \
+          -var=&quot;destigmatized_dataset_s3_object_key=${destigmatized_dataset_s3_object_key}&quot;  \
+          -var=&quot;genomic_dataset_s3_object_key=${genomic_dataset_s3_object_key}&quot; \
+          -var=&quot;target_stack=${target_stack}&quot; \
+          -var=&quot;picsure_rds_snapshot_id=${picsure_rds_snapshot_id}&quot; \
+          -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; \
+          -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
+          -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
+          -var=&quot;env_public_dns_name_staging=${env_public_dns_name_staging}&quot; \
+          -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
+          -var=&quot;env_hosted_zone_id=${env_hosted_zone_id}&quot; \
+          -var=&quot;analytics_id=${analytics_id}&quot; \
+          -var=&quot;tag_manager_id=${tag_manager_id}&quot; \
+          -var=&quot;env_is_open_access=${env_is_open_access}&quot; \
+          -var=&quot;include_auth_hpds=${include_auth_hpds}&quot; \
+          -var=&quot;include_open_hpds=${include_open_hpds}&quot; \
+          -var=&quot;environment_name=${environment_name}&quot; \
+          -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
+          -var=&quot;application_id_for_base_query=${application_id_for_base_query}&quot; \
+          -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
+          -var=&quot;idp_provider=${idp_provider}&quot; \
+          -var=&quot;env_project=${env_project}&quot; \
+          -var=&quot;picsure_token_introspection_token=${picsure_token_introspection_token}&quot; \
+          -var=&quot;picsure_client_secret=${picsure_client_secret}&quot; \
+          -var=&quot;fence_client_id=${fence_client_id}&quot; \
+          -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
+          -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; \
+          -var=&quot;client_id=${client_id}&quot; \
+          -var=&quot;sp_client_secret=${sp_client_secret}&quot; \
+          -var=&quot;swb_login_url=${swb_login_url}&quot; \
+          -var=&quot;connection_id=${connection_id}&quot; \
+          -var=&quot;connection_label=${connection_label}&quot; \
+          -var=&quot;connection_sub_prefix=${connection_sub_prefix}&quot; || true
 
-  reset_role
+          reset_role
 
-  # Move to terraform backend
-  aws s3 cp terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate
+          # Move to terraform backend
+          aws s3 cp terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate
 
-else
-  terraform destroy -auto-approve \
-     -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot;  \
-     -var=&quot;destigmatized_dataset_s3_object_key=${destigmatized_dataset_s3_object_key}&quot;  \
-     -var=&quot;genomic_dataset_s3_object_key=${genomic_dataset_s3_object_key}&quot; \
-     -var=&quot;target_stack=${target_stack}&quot; \
-     -var=&quot;picsure_rds_snapshot_id=${picsure_rds_snapshot_id}&quot; \
-     -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; \
-     -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
-     -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
-     -var=&quot;env_public_dns_name_staging=${env_public_dns_name_staging}&quot; \
-     -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
-     -var=&quot;env_hosted_zone_id=${env_hosted_zone_id}&quot; \
-     -var=&quot;analytics_id=${analytics_id}&quot; \
-     -var=&quot;tag_manager_id=${tag_manager_id}&quot; \
-     -var=&quot;env_is_open_access=${env_is_open_access}&quot; \
-     -var=&quot;include_auth_hpds=${include_auth_hpds}&quot; \
-     -var=&quot;include_open_hpds=${include_open_hpds}&quot; \
-     -var=&quot;environment_name=${environment_name}&quot; \
-     -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
-     -var=&quot;application_id_for_base_query=${application_id_for_base_query}&quot; \
-     -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
-     -var=&quot;idp_provider=${idp_provider}&quot; \
-     -var=&quot;env_project=${env_project}&quot; \
-     -var=&quot;picsure_token_introspection_token=${picsure_token_introspection_token}&quot; \
-     -var=&quot;picsure_client_secret=${picsure_client_secret}&quot; \
-     -var=&quot;fence_client_id=${fence_client_id}&quot; \
-     -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
-     -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; \
-     -var=&quot;client_secret=${client_id}&quot; \
-     -var=&quot;sp_client_secret=${sp_client_secret}&quot; || true
+          else
+          terraform destroy -auto-approve \
+          -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot;  \
+          -var=&quot;destigmatized_dataset_s3_object_key=${destigmatized_dataset_s3_object_key}&quot;  \
+          -var=&quot;genomic_dataset_s3_object_key=${genomic_dataset_s3_object_key}&quot; \
+          -var=&quot;target_stack=${target_stack}&quot; \
+          -var=&quot;picsure_rds_snapshot_id=${picsure_rds_snapshot_id}&quot; \
+          -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; \
+          -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
+          -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
+          -var=&quot;env_public_dns_name_staging=${env_public_dns_name_staging}&quot; \
+          -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
+          -var=&quot;env_hosted_zone_id=${env_hosted_zone_id}&quot; \
+          -var=&quot;analytics_id=${analytics_id}&quot; \
+          -var=&quot;tag_manager_id=${tag_manager_id}&quot; \
+          -var=&quot;env_is_open_access=${env_is_open_access}&quot; \
+          -var=&quot;include_auth_hpds=${include_auth_hpds}&quot; \
+          -var=&quot;include_open_hpds=${include_open_hpds}&quot; \
+          -var=&quot;environment_name=${environment_name}&quot; \
+          -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
+          -var=&quot;application_id_for_base_query=${application_id_for_base_query}&quot; \
+          -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
+          -var=&quot;idp_provider=${idp_provider}&quot; \
+          -var=&quot;env_project=${env_project}&quot; \
+          -var=&quot;picsure_token_introspection_token=${picsure_token_introspection_token}&quot; \
+          -var=&quot;picsure_client_secret=${picsure_client_secret}&quot; \
+          -var=&quot;fence_client_id=${fence_client_id}&quot; \
+          -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
+          -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; \
+          -var=&quot;client_id=${client_id}&quot; \
+          -var=&quot;sp_client_secret=${sp_client_secret}&quot; \
+          -var=&quot;swb_login_url=${swb_login_url}&quot; \
+          -var=&quot;connection_id=${connection_id}&quot; \
+          -var=&quot;connection_label=${connection_label}&quot; \
+          -var=&quot;connection_sub_prefix=${connection_sub_prefix}&quot; || true
 
-  terraform apply -auto-approve \
-     -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot;  \
-     -var=&quot;destigmatized_dataset_s3_object_key=${destigmatized_dataset_s3_object_key}&quot;  \
-     -var=&quot;genomic_dataset_s3_object_key=${genomic_dataset_s3_object_key}&quot; \
-     -var=&quot;target_stack=${target_stack}&quot; \
-     -var=&quot;picsure_rds_snapshot_id=${picsure_rds_snapshot_id}&quot; \
-     -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; \
-     -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
-     -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
-     -var=&quot;env_public_dns_name_staging=${env_public_dns_name_staging}&quot; \
-     -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
-     -var=&quot;env_hosted_zone_id=${env_hosted_zone_id}&quot; \
-     -var=&quot;analytics_id=${analytics_id}&quot; \
-     -var=&quot;tag_manager_id=${tag_manager_id}&quot; \
-     -var=&quot;env_is_open_access=${env_is_open_access}&quot; \
-     -var=&quot;include_auth_hpds=${include_auth_hpds}&quot; \
-     -var=&quot;include_open_hpds=${include_open_hpds}&quot; \
-     -var=&quot;environment_name=${environment_name}&quot; \
-     -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
-     -var=&quot;application_id_for_base_query=${application_id_for_base_query}&quot; \
-     -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
-     -var=&quot;idp_provider=${idp_provider}&quot; \
-     -var=&quot;env_project=${env_project}&quot; \
-     -var=&quot;picsure_token_introspection_token=${picsure_token_introspection_token}&quot; \
-     -var=&quot;picsure_client_secret=${picsure_client_secret}&quot; \
-     -var=&quot;fence_client_id=${fence_client_id}&quot; \
-     -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
-     -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; \
-     -var=&quot;client_id=${client_id}&quot; \
-     -var=&quot;sp_client_secret=${sp_client_secret}&quot; || true
+          terraform apply -auto-approve \
+          -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot;  \
+          -var=&quot;destigmatized_dataset_s3_object_key=${destigmatized_dataset_s3_object_key}&quot;  \
+          -var=&quot;genomic_dataset_s3_object_key=${genomic_dataset_s3_object_key}&quot; \
+          -var=&quot;target_stack=${target_stack}&quot; \
+          -var=&quot;picsure_rds_snapshot_id=${picsure_rds_snapshot_id}&quot; \
+          -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; \
+          -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
+          -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
+          -var=&quot;env_public_dns_name_staging=${env_public_dns_name_staging}&quot; \
+          -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
+          -var=&quot;env_hosted_zone_id=${env_hosted_zone_id}&quot; \
+          -var=&quot;analytics_id=${analytics_id}&quot; \
+          -var=&quot;tag_manager_id=${tag_manager_id}&quot; \
+          -var=&quot;env_is_open_access=${env_is_open_access}&quot; \
+          -var=&quot;include_auth_hpds=${include_auth_hpds}&quot; \
+          -var=&quot;include_open_hpds=${include_open_hpds}&quot; \
+          -var=&quot;environment_name=${environment_name}&quot; \
+          -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
+          -var=&quot;application_id_for_base_query=${application_id_for_base_query}&quot; \
+          -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
+          -var=&quot;idp_provider=${idp_provider}&quot; \
+          -var=&quot;env_project=${env_project}&quot; \
+          -var=&quot;picsure_token_introspection_token=${picsure_token_introspection_token}&quot; \
+          -var=&quot;picsure_client_secret=${picsure_client_secret}&quot; \
+          -var=&quot;fence_client_id=${fence_client_id}&quot; \
+          -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
+          -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; \
+          -var=&quot;client_id=${client_id}&quot; \
+          -var=&quot;sp_client_secret=${sp_client_secret}&quot; \
+          -var=&quot;swb_login_url=${swb_login_url}&quot; \
+          -var=&quot;connection_id=${connection_id}&quot; \
+          -var=&quot;connection_label=${connection_label}&quot; \
+          -var=&quot;connection_sub_prefix=${connection_sub_prefix}&quot; || true
 
-  reset_role
+          reset_role
 
-  # Move to terraform backend
-  # If script fails before state file is uploaded to s3 state will be lost for created objects \
-  # terraform destroy will not destroy anything as it points to old state and apply will fail as objects may already exist
-  # Will have to manually destroy and delete roles, ec2s, etc. in that scenario
-  aws s3 cp terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate
-  # roles are now in the same state as their related resources..
-  #aws s3 cp ../s3-deployment-roles/terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate_roles
+          # Move to terraform backend
+          # If script fails before state file is uploaded to s3 state will be lost for created objects \
+          # terraform destroy will not destroy anything as it points to old state and apply will fail as objects may already exist
+          # Will have to manually destroy and delete roles, ec2s, etc. in that scenario
+          aws s3 cp terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate
+          # roles are now in the same state as their related resources..
+          #aws s3 cp ../s3-deployment-roles/terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate_roles
 
-  # These files are uploaded to s3 because user-scripts download them.  The user scripts are already running
-  # so this is a race condition at this point as terraform has been applied
-  #  have terraform provision these to the ec2 and remove the aws cli stuff from the user-scripts and here
-  aws s3 --sse=AES256 cp picsureui-settings.json s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/picsureui_settings.json
-  aws s3 --sse=AES256 cp configs/banner_config.json s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/banner_config.json
-  aws s3 --sse=AES256 cp standalone.xml s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/standalone.xml
-  aws s3 --sse=AES256 cp pic-sure-schema.sql s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/pic-sure-schema.sql
-  aws s3 --sse=AES256 cp resources-registration.sql s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/resources-registration.sql
-  aws s3 --sse=AES256 cp httpd-vhosts.conf s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/httpd-vhosts.conf
-  aws s3 --sse=AES256 cp aggregate-resource.properties s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/aggregate-resource.properties
-  aws s3 --sse=AES256 cp visualization-resource.properties s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/visualization-resource.properties
+          # These files are uploaded to s3 because user-scripts download them.  The user scripts are already running
+          # so this is a race condition at this point as terraform has been applied
+          #  have terraform provision these to the ec2 and remove the aws cli stuff from the user-scripts and here
+          aws s3 --sse=AES256 cp picsureui-settings.json s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/picsureui_settings.json
+          aws s3 --sse=AES256 cp configs/banner_config.json s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/banner_config.json
+          aws s3 --sse=AES256 cp standalone.xml s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/standalone.xml
+          aws s3 --sse=AES256 cp pic-sure-schema.sql s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/pic-sure-schema.sql
+          aws s3 --sse=AES256 cp resources-registration.sql s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/resources-registration.sql
+          aws s3 --sse=AES256 cp httpd-vhosts.conf s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/httpd-vhosts.conf
+          aws s3 --sse=AES256 cp aggregate-resource.properties s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/aggregate-resource.properties
+          aws s3 --sse=AES256 cp visualization-resource.properties s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/visualization-resource.properties
 
 
-fi</command>
+          fi</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>

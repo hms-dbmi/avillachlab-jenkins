@@ -9,7 +9,6 @@
                 <hudson.model.StringParameterDefinition>
                     <name>bdc_ui_docker_tag</name>
                     <description>Docker tag for the BDC UI image</description>
-                    <defaultValue/>
                     <trim>true</trim>
                 </hudson.model.StringParameterDefinition>
                 <hudson.model.StringParameterDefinition>
@@ -53,8 +52,16 @@
                 docker save hms-dbmi/pic-sure-biodatacatalyst-ui:${bdc_ui_docker_tag} | gzip &gt; pic-sure-ui.tar.gz
                 aws s3 --sse=AES256 cp pic-sure-ui.tar.gz s3://$S3_BUCKET_NAME/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-ui.tar.gz
             </command>
+            <configuredLocalRules/>
         </hudson.tasks.Shell>
     </builders>
     <publishers/>
-    <buildWrappers/>
+    <buildWrappers>
+        <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.45">
+            <deleteDirs>false</deleteDirs>
+            <cleanupParameter></cleanupParameter>
+            <externalDelete></externalDelete>
+            <disableDeferredWipeout>false</disableDeferredWipeout>
+        </hudson.plugins.ws__cleanup.PreBuildCleanup>
+    </buildWrappers>
 </project>

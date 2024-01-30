@@ -2,7 +2,7 @@
 <project>
   <actions/>
   <description>This build is used to override the default BDC UI. At the time of creating this build it is used by&#xd;
-    Aim-Ahead PIC-SURE and Open PIC-SURE.
+    Aim-Ahead PIC-SURE and Open PIC-SURE.&#xd;
   </description>
   <keepDependencies>false</keepDependencies>
   <properties>
@@ -11,10 +11,6 @@
         <string>*</string>
       </projectNameList>
     </hudson.plugins.copyartifact.CopyArtifactPermissionProperty>
-    <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@330.v645b_7df10e2a_">
-      <autoRebuild>false</autoRebuild>
-      <rebuildDisabled>false</rebuildDisabled>
-    </com.sonyericsson.rebuild.RebuildSettings>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
@@ -41,12 +37,6 @@
   </properties>
   <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.1">
     <configVersion>2</configVersion>
-    <userRemoteConfigs>
-      <hudson.plugins.git.UserRemoteConfig>
-        <url>${infrastructure_git_repo}</url>
-        <credentialsId>gitlab_token</credentialsId>
-      </hudson.plugins.git.UserRemoteConfig>
-    </userRemoteConfigs>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
         <url>${pic_sure_override_biodatacatalyst_ui_repo}</url>
@@ -82,8 +72,7 @@
         docker build --build-arg BDC_UI_TAG=${bdc_ui_docker_tag} -t hms-dbmi/pic-sure-biodatacatalyst-ui:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
 
         echo &quot;BDC_UI_OVERRIDE_DOCKER_TAG=${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}&quot;
-        echo &quot;BDC_UI_OVERRIDE_DOCKER_TAG=${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}&quot; &gt; overrideVars.properties
-      </command>
+        echo &quot;BDC_UI_OVERRIDE_DOCKER_TAG=${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}&quot; &gt; overrideVars.properties</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
@@ -98,5 +87,12 @@
       <followSymlinks>false</followSymlinks>
     </hudson.tasks.ArtifactArchiver>
   </publishers>
-  <buildWrappers/>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.45">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
 </project>
