@@ -1,0 +1,50 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job@1385.vb_58b_86ea_fff1">
+  <actions>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2175.v76a_fff0a_2618"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2175.v76a_fff0a_2618">
+      <jobProperties/>
+      <triggers/>
+      <parameters/>
+      <options/>
+    </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
+  </actions>
+  <description>This pipeline will be used to run nightly jobs. It is disabled by default and should only be enabled on development servers.</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
+      <triggers>
+        <hudson.triggers.TimerTrigger>
+          <spec>H 21 * * *</spec>
+        </hudson.triggers.TimerTrigger>
+      </triggers>
+    </org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3837.v305192405b_c0">
+    <script>pipeline { 
+    agent any
+    
+    stages {
+        stage(&apos;Nightly Task&apos;) {
+            steps {
+                
+                script{
+                    // If you would like to keep a stack you can change these values
+                    def destroyGreen = true
+                    def destroyBlue = false // TODO: Change to true after testing
+
+                    // Triggering the job with boolean parameters
+                    build job: &apos;Terraform Destroy Stack - Standalone&apos;, 
+                          parameters: [booleanParam(name: &apos;destroy_green&apos;, value: destroyGreen),
+                                       booleanParam(name: &apos;destroy_blue&apos;, value: destroyBlue)]
+                }
+                
+            }
+        }
+    }
+}</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>
