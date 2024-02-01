@@ -237,7 +237,7 @@
                 -var=&quot;fence_client_id=${fence_client_id}&quot; \
                 -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
                 -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true
-                deregister_targets &quot;$live_group_vpc&quot; &quot;$live_target_group_arn&quot; &quot;$httpd_private_ip_from_state_1&quot;
+                deregister_targets &quot;$live_group_vpc&quot; &quot;$live_target_group_arn&quot; &quot;$httpd_private_ip_from_state_2&quot;
 
                 reset_role
 
@@ -281,7 +281,7 @@
                 -var=&quot;fence_client_id=${fence_client_id}&quot; \
                 -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
                 -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true
-                deregister_targets &quot;$live_group_vpc&quot; &quot;$live_target_group_arn&quot; &quot;$httpd_private_ip_from_state_1&quot;
+                deregister_targets &quot;$live_group_vpc&quot; &quot;$live_target_group_arn&quot; &quot;$httpd_private_ip_from_state_2&quot;
 
                 reset_role
 
