@@ -12,11 +12,6 @@
           <defaultValue>george_colon@hms.harvard.edu</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
-        <hudson.model.PasswordParameterDefinition>
-          <name>DB_PASSWORD</name>
-          <description>Find it in the standalone xml in the teardown job or in the wildfly container.</description>
-          <defaultValue>{AQAAABAAAAAgIMM9zgMVyUymy7iuKJJ/f05kJ7BiyVHeC647ITiaVl0hMVOg7+pG2HwBBS83T2ho}</defaultValue>
-        </hudson.model.PasswordParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>CONNECTION_ID_LOCAL</name>
           <description>connection id from the connection table for the user&apos;s connection. </description>
@@ -69,8 +64,13 @@
         fi
 
         aws ssm --region us-east-1 send-command --instance-id $INSTANCE_ID --document-name &quot;AWS-RunShellScript&quot; --parameters &quot;commands=[\&quot;docker stop schema-init || true\&quot;]&quot;
+
+        pass_command_id=$(aws ssm send-command --document-name &quot;AWS-RunShellScript&quot; --targets &quot;Key=instanceids,Values=${INSTANCE_ID}&quot; --parameters &quot;commands=[\&quot;grep -oP &apos;&lt;password&gt;\\K.*?(?=&lt;/password&gt;)&apos; /home/centos/standalone.xml\&quot;]&quot; --output text --query &quot;Command.CommandId&quot;)
+        passwords=$(aws ssm get-command-invocation --command-id &quot;$pass_command_id&quot; --instance-id $INSTANCE_ID --output text --query &quot;StandardOutputContent&quot;)
+        second_password=$(echo &quot;$passwords&quot; | awk &apos;NR==2&apos;)
+
         start_docker_cmd_id=$(aws ssm --region us-east-1 send-command --instance-id $INSTANCE_ID --document-name &quot;AWS-RunShellScript&quot; --parameters &quot;commands=[\&quot;docker run -d --name schema-init -e \\\&quot;MYSQL_RANDOM_ROOT_PASSWORD=yes\\\&quot; --rm mysql\&quot;]&quot; | jq -r &apos;.Command.CommandId&apos;)
-        script_cmd_id=$(aws ssm --region us-east-1 send-command --instance-id $INSTANCE_ID --document-name &quot;AWS-RunShellScript&quot; --parameters &quot;commands=[\&quot;docker exec -i schema-init mysql -hpicsure-db.${target_stack}.pic-sure.aim-ahead-dev.host -uroot -p$DB_PASSWORD auth -e &apos;CALL CreateSuperUser(\\\&quot;$EMAIL\\\&quot;, \\\&quot;$CONNECTION_ID\\\&quot;);&apos;\&quot;]&quot; | jq -r &apos;.Command.CommandId&apos;)
+        script_cmd_id=$(aws ssm --region us-east-1 send-command --instance-id $INSTANCE_ID --document-name &quot;AWS-RunShellScript&quot; --parameters &quot;commands=[\&quot;docker exec -i schema-init mysql -hpicsure-db.${target_stack}.pic-sure.aim-ahead-dev.host -uroot -p$second_password auth -e &apos;CALL CreateSuperUser(\\\&quot;$EMAIL\\\&quot;, \\\&quot;$CONNECTION_ID\\\&quot;);&apos;\&quot;]&quot; | jq -r &apos;.Command.CommandId&apos;)
         stop_cmd_id=$(aws ssm --region us-east-1 send-command --instance-id $INSTANCE_ID --document-name &quot;AWS-RunShellScript&quot; --parameters &quot;commands=[\&quot;docker stop schema-init\&quot;]&quot; | jq -r &apos;.Command.CommandId&apos;)
 
         count=0
