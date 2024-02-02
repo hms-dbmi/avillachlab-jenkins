@@ -119,7 +119,7 @@ else
    echo &quot;Deregistering staging target(s) before teardown.&quot;
    deregister_targets &quot;$target_group_vpc&quot; &quot;$staging_target_group_arn&quot; &quot;${staging_httpd_instance_prv_ips[@]}&quot;
    wait_for_target_group_health &quot;$staging_target_group_arn&quot; &quot;UNUSED&quot; &quot;${staging_httpd_instance_prv_ips[@]}&quot;
-fi 
+fi
 
 reset_role</command>
       <configuredLocalRules/>
@@ -140,7 +140,7 @@ for script_file in &quot;$source_scripts_folder&quot;*.sh; do
     fi
 done
 
-echo &quot;pic-sure introspection token&quot; 
+echo &quot;pic-sure introspection token&quot;
 # if picsure_token_introspection_token is not defined already create one
 if [ -z $picsure_token_introspection_token ]; then
    echo &quot;No introspection given.  Generating new one.&quot;
@@ -194,8 +194,16 @@ if $isDestroyOnly; then
      -var=&quot;picsure_client_secret=${picsure_client_secret}&quot; \
      -var=&quot;fence_client_id=${fence_client_id}&quot; \
      -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
-     -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true
-  
+     -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; \
+     -var=&quot;client_id=${client_id}&quot; \
+     -var=&quot;sp_client_secret=${sp_client_secret}&quot; \
+     -var=&quot;login_link=${login_link}&quot; \
+     -var=&quot;connection_id=${connection_id}&quot; \
+     -var=&quot;connection_label=${connection_label}&quot; \
+     -var=&quot;connection_sub_prefix=${connection_sub_prefix}&quot; \
+     -var=&quot;pdf_link=${pdf_link}&quot; \
+     -var=&quot;help_link=${help_link}&quot; || true
+
   reset_role
 
   # Move to terraform backend
@@ -229,7 +237,15 @@ else
      -var=&quot;picsure_client_secret=${picsure_client_secret}&quot; \
      -var=&quot;fence_client_id=${fence_client_id}&quot; \
      -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
-     -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true
+     -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; \
+     -var=&quot;client_id=${client_id}&quot; \
+     -var=&quot;sp_client_secret=${sp_client_secret}&quot; \
+     -var=&quot;login_link=${login_link}&quot; \
+     -var=&quot;connection_id=${connection_id}&quot; \
+     -var=&quot;connection_label=${connection_label}&quot; \
+     -var=&quot;connection_sub_prefix=${connection_sub_prefix}&quot; \
+     -var=&quot;pdf_link=${pdf_link}&quot; \
+     -var=&quot;help_link=${help_link}&quot; || true
 
   terraform apply -auto-approve \
      -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot;  \
@@ -258,7 +274,15 @@ else
      -var=&quot;picsure_client_secret=${picsure_client_secret}&quot; \
      -var=&quot;fence_client_id=${fence_client_id}&quot; \
      -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
-     -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true
+     -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; \
+     -var=&quot;client_id=${client_id}&quot; \
+     -var=&quot;sp_client_secret=${sp_client_secret}&quot; \
+     -var=&quot;login_link=${login_link}&quot; \
+     -var=&quot;connection_id=${connection_id}&quot; \
+     -var=&quot;connection_label=${connection_label}&quot; \
+     -var=&quot;connection_sub_prefix=${connection_sub_prefix}&quot; \
+     -var=&quot;pdf_link=${pdf_link}&quot; \
+     -var=&quot;help_link=${help_link}&quot; || true
 
   reset_role
 
@@ -274,6 +298,7 @@ else
   # so this is a race condition at this point as terraform has been applied
   #  have terraform provision these to the ec2 and remove the aws cli stuff from the user-scripts and here
   aws s3 --sse=AES256 cp picsureui-settings.json s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/picsureui_settings.json
+  aws s3 --sse=AES256 cp configs/banner_config.json s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/banner_config.json
   aws s3 --sse=AES256 cp standalone.xml s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/standalone.xml
   aws s3 --sse=AES256 cp pic-sure-schema.sql s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/pic-sure-schema.sql
   aws s3 --sse=AES256 cp resources-registration.sql s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/resources-registration.sql
