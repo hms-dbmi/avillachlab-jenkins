@@ -200,7 +200,9 @@ if $isDestroyOnly; then
      -var=&quot;login_link=${login_link}&quot; \
      -var=&quot;connection_id=${connection_id}&quot; \
      -var=&quot;connection_label=${connection_label}&quot; \
-     -var=&quot;connection_sub_prefix=${connection_sub_prefix}&quot; || true
+     -var=&quot;connection_sub_prefix=${connection_sub_prefix}&quot; \
+     -var=&quot;pdf_link=${pdf_link}&quot; \
+     -var="help_link=${help_link}" || true
 
   reset_role
 
@@ -241,7 +243,9 @@ else
      -var=&quot;login_link=${login_link}&quot; \
      -var=&quot;connection_id=${connection_id}&quot; \
      -var=&quot;connection_label=${connection_label}&quot; \
-     -var=&quot;connection_sub_prefix=${connection_sub_prefix}&quot; || true
+     -var=&quot;connection_sub_prefix=${connection_sub_prefix}&quot; \
+     -var=&quot;pdf_link=${pdf_link}&quot; \
+     -var="help_link=${help_link}" || true
 
   terraform apply -auto-approve \
      -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot;  \
@@ -276,7 +280,9 @@ else
      -var=&quot;login_link=${login_link}&quot; \
      -var=&quot;connection_id=${connection_id}&quot; \
      -var=&quot;connection_label=${connection_label}&quot; \
-     -var=&quot;connection_sub_prefix=${connection_sub_prefix}&quot; || true
+     -var=&quot;connection_sub_prefix=${connection_sub_prefix}&quot; \
+     -var=&quot;pdf_link=${pdf_link}&quot; \
+     -var="help_link=${help_link}" || true
 
   reset_role
 
