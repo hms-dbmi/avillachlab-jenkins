@@ -202,7 +202,7 @@ if $isDestroyOnly; then
      -var=&quot;connection_label=${connection_label}&quot; \
      -var=&quot;connection_sub_prefix=${connection_sub_prefix}&quot; \
      -var=&quot;pdf_link=${pdf_link}&quot; \
-     -var="help_link=${help_link}" || true
+     -var=&quot;help_link=${help_link}&quot; || true
 
   reset_role
 
@@ -245,7 +245,7 @@ else
      -var=&quot;connection_label=${connection_label}&quot; \
      -var=&quot;connection_sub_prefix=${connection_sub_prefix}&quot; \
      -var=&quot;pdf_link=${pdf_link}&quot; \
-     -var="help_link=${help_link}" || true
+     -var=&quot;help_link=${help_link}&quot; || true
 
   terraform apply -auto-approve \
      -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot;  \
@@ -282,7 +282,7 @@ else
      -var=&quot;connection_label=${connection_label}&quot; \
      -var=&quot;connection_sub_prefix=${connection_sub_prefix}&quot; \
      -var=&quot;pdf_link=${pdf_link}&quot; \
-     -var="help_link=${help_link}" || true
+     -var=&quot;help_link=${help_link}&quot; || true
 
   reset_role
 
