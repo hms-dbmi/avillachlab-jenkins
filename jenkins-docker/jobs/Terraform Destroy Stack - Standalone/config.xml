@@ -281,7 +281,7 @@ if [[ &quot;$destroy_blue&quot; == &quot;true&quot; ]]; then
          -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true
           deregister_targets &quot;$live_group_vpc&quot; &quot;$live_target_group_arn&quot; &quot;$httpd_private_ip_from_state_2&quot;
          reset_role
-        
+       
         aws s3 cp terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${stack_2}/terraform.tfstate
       fi
    done

@@ -1,8 +1,8 @@
 <?xml version='1.1' encoding='UTF-8'?>
-<flow-definition plugin="workflow-job@1316.vd2290d3341a_f">
+<flow-definition plugin="workflow-job@1385.vb_58b_86ea_fff1">
   <actions>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2144.v077a_d1928a_40"/>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2144.v077a_d1928a_40">
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2168.vf921b_4e72c73"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2168.vf921b_4e72c73">
       <jobProperties/>
       <triggers/>
       <parameters/>
@@ -11,13 +11,23 @@
   </actions>
   <description></description>
   <keepDependencies>false</keepDependencies>
-  <properties/>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3740.v6d35b_4ed5f9f">
+  <properties>
+    <hudson.plugins.copyartifact.CopyArtifactPermissionProperty plugin="copyartifact@722.v0662a_9b_e22a_c">
+      <projectNameList>
+        <string>*</string>
+      </projectNameList>
+    </hudson.plugins.copyartifact.CopyArtifactPermissionProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3832.vc43e04d6d68c">
     <script>import groovy.json.JsonSlurper;
+def bdc_ui_docker_tag;
 
 def retrieveBuildSpecId;
+def bdcUIBuildSpecId;
+def overrideUiBuildSpec;
 def pipelineBuildId;
 def build_hashes = {};
+def hasOverrideUI;
 pipeline {
     agent any
     stages {
@@ -36,6 +46,11 @@ pipeline {
                     pipelineBuildId = new File(&apos;/var/jenkins_home/workspace/PIC-SURE Pipeline/pipeline_git_commit.txt&apos;).text.trim()
                     for(def build : buildSpec.application){
                         build_hashes[build.project_job_git_key] = build.git_hash
+
+                        if(build.project_job_git_key == &quot;OVERRIDE_UI&quot;) {
+                            hasOverrideUI = true;
+                                echo &quot;Hex Code: ${build.project_job_git_key} = Color Name: ${build.git_hash}&quot;
+                        }
                     }
                 }
             }
@@ -80,7 +95,7 @@ pipeline {
                 }
             }
         }
-        stage(&apos;Wildfly Build and UI Customization&apos;){
+        stage(&apos;Wildfly Build and BDC UI&apos;){
             steps {
                 parallel (
                     wildfly:{
@@ -90,13 +105,52 @@ pipeline {
                     },
                     biodatacatalystui:{
                         script {
-                            if (env_is_open_access == &apos;true&apos;) {
-                                def result = build job: &apos;PIC-SURE Open Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId], [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;OPENBDC&apos;]]];
-                            }
                             def result = build job: &apos;biodatacatalyst-ui&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId], [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;BDCU&apos;]]];
+
+                            bdcUIBuildSpecId = result.number
                         }
                     }
                )
+            }
+        }
+        stage(&apos;UI Overrides and UI Upload&apos;) {
+            steps {
+                script {
+                    copyArtifacts filter: &apos;bdcVars.properties&apos;, projectName: &apos;biodatacatalyst-ui&apos;, selector: specific(&quot;&quot;+bdcUIBuildSpecId)
+
+                    Properties properties = new Properties()
+                    File propertiesFile = new File(&apos;/var/jenkins_home/workspace/PIC-SURE Pipeline/bdcVars.properties&apos;)
+                    properties.load(new FileInputStream(propertiesFile))
+                    bdc_ui_docker_tag = properties[&apos;BDC_UI_DOCKER_TAG&apos;]
+
+                    if (hasOverrideUI) {
+                        // Code for building and handling OVERRIDE_UI
+                        def overrideResult = build job: &apos;PIC-SURE Override Build&apos;, parameters: [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;OVERRIDE_UI&apos;]],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;bdc_ui_docker_tag&apos;, value: bdc_ui_docker_tag]
+                        ]
+
+                        overrideUiBuildSpec = overrideResult.number
+                    }
+                }
+                script {
+
+                    if (hasOverrideUI){
+                        // Copy artifacts and read properties
+                        copyArtifacts filter: &apos;overrideVars.properties&apos;, projectName: &apos;PIC-SURE Override Build&apos;, selector: specific(&quot;&quot; + overrideUiBuildSpec)
+                        Properties overrideUiProps = new Properties()
+                        File propertiesFile = new File(&apos;/var/jenkins_home/workspace/PIC-SURE Pipeline/overrideVars.properties&apos;)
+                        overrideUiProps.load(new FileInputStream(propertiesFile))
+                        bdc_ui_docker_tag = overrideUiProps[&apos;BDC_UI_OVERRIDE_DOCKER_TAG&apos;]
+                    }
+
+                    // Code for UI upload
+                    def uploadResult = build job: &apos;PIC-SURE-UI Upload&apos;, parameters: [
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;bdc_ui_docker_tag&apos;, value: bdc_ui_docker_tag]
+                    ]
+                }
             }
         }
     }
