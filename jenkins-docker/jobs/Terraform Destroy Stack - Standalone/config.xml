@@ -71,13 +71,15 @@ cd app-infrastructure
 aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${stack_1}/terraform.tfstate terraform.tfstate
 terraform init
 private_ips_from_state_1=$(terraform show -json terraform.tfstate | jq -r &apos;.values.root_module.resources[] | select(.type == &quot;aws_instance&quot;).values.private_ip&apos;)
-echo &quot;private ip for $stack_1: $private_ips_from_state_1&quot; 
+httpd_private_ip_from_state_1=$(terraform show -json terraform.tfstate | jq -r &apos;.values.root_module.resources[] | select(.type == &quot;aws_instance&quot; and .values.tags.Node == &quot;HTTPD&quot;).values.private_ip&apos;)
+echo &quot;private ip for $stack_1: $private_ips_from_state_1&quot;
 
 echo &quot;checking Stack: $stack_2&quot;
 aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${stack_2}/terraform.tfstate terraform.tfstate
 terraform init
 private_ips_from_state_2=$(terraform show -json terraform.tfstate | jq -r &apos;.values.root_module.resources[] | select(.type == &quot;aws_instance&quot;).values.private_ip&apos;)
-echo &quot;private ip for $stack_2: $private_ips_from_state_2&quot; 
+httpd_private_ip_from_state_2=$(terraform show -json terraform.tfstate | jq -r &apos;.values.root_module.resources[] | select(.type == &quot;aws_instance&quot; and .values.tags.Node == &quot;HTTPD&quot;).values.private_ip&apos;)
+echo &quot;private ip for $stack_2: $private_ips_from_state_2&quot;
 
 # local vars
 assume_role
