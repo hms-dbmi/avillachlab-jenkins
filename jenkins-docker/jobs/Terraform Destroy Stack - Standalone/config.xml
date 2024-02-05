@@ -67,7 +67,7 @@ for script_file in &quot;$source_scripts_folder&quot;*.sh; do
 done
 cd app-infrastructure
 
- Destroy the green stack. 
+# Destroy the green stack.
 aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${stack_1}/terraform.tfstate terraform.tfstate
 terraform init
 private_ips_from_state_1=$(terraform show -json terraform.tfstate | jq -r &apos;.values.root_module.resources[] | select(.type == &quot;aws_instance&quot;).values.private_ip&apos;)
@@ -83,6 +83,9 @@ echo &quot;private ip for $stack_2: $private_ips_from_state_2&quot;
 assume_role
 staging_target_group_arn=$(get_target_group_arn_by_name &quot;$staging_tg_name&quot;)
 live_target_group_arn=$(get_target_group_arn_by_name &quot;$live_tg_name&quot;)
+
+staging_group_vpc=$(get_target_group_vpc_by_tg_name $staging_tg_name)
+live_group_vpc=$(get_target_group_vpc_by_tg_name $staging_tg_name)
 
 staging_private_ips=$(aws elbv2 describe-target-health --target-group-arn $staging_target_group_arn --query &apos;TargetHealthDescriptions[*].Target.Id&apos; --output text)
 live_private_ips=$(aws elbv2 describe-target-health --target-group-arn $live_target_group_arn --query &apos;TargetHealthDescriptions[*].Target.Id&apos; --output text)
@@ -132,9 +135,10 @@ if [[ &quot;$destroy_green&quot; == &quot;true&quot; ]]; then
          -var=&quot;picsure_client_secret=${picsure_client_secret}&quot; \
          -var=&quot;fence_client_id=${fence_client_id}&quot; \
          -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
-         -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true        
-     
-        reset_role
+         -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true
+          deregister_targets &quot;$staging_group_vpc&quot; &quot;$staging_target_group_arn&quot; &quot;$httpd_private_ip_from_state_1&quot;
+
+          reset_role
         
         aws s3 cp terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${stack_1}/terraform.tfstate
       fi   
@@ -175,8 +179,9 @@ if [[ &quot;$destroy_green&quot; == &quot;true&quot; ]]; then
          -var=&quot;picsure_client_secret=${picsure_client_secret}&quot; \
          -var=&quot;fence_client_id=${fence_client_id}&quot; \
          -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
-         -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true           
-        reset_role
+         -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true
+          deregister_targets &quot;$staging_group_vpc&quot; &quot;$staging_target_group_arn&quot; &quot;$httpd_private_ip_from_state_2&quot;
+          reset_role
         
         aws s3 cp terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${stack_2}/terraform.tfstate
       fi
@@ -228,8 +233,9 @@ if [[ &quot;$destroy_blue&quot; == &quot;true&quot; ]]; then
          -var=&quot;picsure_client_secret=${picsure_client_secret}&quot; \
          -var=&quot;fence_client_id=${fence_client_id}&quot; \
          -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
-         -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true   
-         reset_role
+         -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true
+          deregister_targets &quot;$live_group_vpc&quot; &quot;$live_target_group_arn&quot; &quot;$httpd_private_ip_from_state_1&quot;
+          reset_role
         
         aws s3 cp terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${stack_1}/terraform.tfstate
       fi
@@ -270,7 +276,8 @@ if [[ &quot;$destroy_blue&quot; == &quot;true&quot; ]]; then
          -var=&quot;picsure_client_secret=${picsure_client_secret}&quot; \
          -var=&quot;fence_client_id=${fence_client_id}&quot; \
          -var=&quot;fence_client_secret=${fence_client_secret}&quot; \
-         -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true   
+         -var=&quot;idp_provider_uri=${idp_provider_uri}&quot; || true
+          deregister_targets &quot;$live_group_vpc&quot; &quot;$live_target_group_arn&quot; &quot;$httpd_private_ip_from_state_2&quot;
          reset_role
         
         aws s3 cp terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${stack_2}/terraform.tfstate
