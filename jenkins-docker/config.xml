@@ -155,6 +155,18 @@
       </columns>
       <recurse>false</recurse>
     </listView>
+    <listView>
+      <owner class="hudson" reference="../../.."/>
+      <name>Daily Dev Jobs</name>
+        <filterExecutors>false</filterExecutors>
+        <filterQueue>false</filterQueue>
+        <properties class="hudson.model.View$PropertyList"/>
+        <jobNames>
+          <comparator class="hudson.util.CaseInsensitiveComparator"/>
+          <string>Run Morning Jobs</string>
+          <string>Run Nightly Jobs</string>
+        </jobNames>
+    </listView>
   </views>
   <primaryView>Deployment</primaryView>
   <slaveAgentPort>50000</slaveAgentPort>

@@ -1,7 +1,9 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
   <actions/>
-  <description></description>
+  <description>This build is used to override the default BDC UI. At the time of creating this build it is used by&#xd;
+    Aim-Ahead PIC-SURE and Open PIC-SURE.&#xd;
+  </description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.plugins.copyartifact.CopyArtifactPermissionProperty plugin="copyartifact@722.v0662a_9b_e22a_c">
@@ -26,6 +28,10 @@
           <defaultValue>${stack_s3_bucket}</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>bdc_ui_docker_tag</name>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -33,7 +39,7 @@
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
-        <url>${pic_sure_biodatacatalyst_ui_repo}</url>
+        <url>${pic_sure_override_biodatacatalyst_ui_repo}</url>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
@@ -53,26 +59,26 @@
   <concurrentBuild>false</concurrentBuild>
   <builders>
     <hudson.tasks.Shell>
-      <command>aws s3 --sse=AES256 cp s3://$S3_BUCKET_NAME/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds-ui.tar.gz .
-        PIC_SURE_HPDS_UI_VERSION=$(docker load -i pic-sure-hpds-ui.tar.gz | cut -d &apos;:&apos; -f 3)
-        docker tag hms-dbmi/pic-sure-hpds-ui:${PIC_SURE_HPDS_UI_VERSION} hms-dbmi/pic-sure-hpds-ui:TARGET_BUILD_VERSION
+      <command># Echo the bdc_ui_docker_tag parameter value.
+        echo &quot;bdc_ui_docker_tag: ${bdc_ui_docker_tag}&quot;
 
         GIT_BRANCH_SHORT=$(echo ${GIT_BRANCH} | cut -d &quot;/&quot; -f 2)
         GIT_COMMIT_SHORT=$(echo ${GIT_COMMIT} | cut -c1-7)
 
-        # Move into workspace dir
-        cd biodatacatalyst-ui
-        docker build --build-arg FILE_SUFFIX=${pipeline_build_id} -t hms-dbmi/pic-sure-biodatacatalyst-ui:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
+        # Print directory for debugging.
+        ls -la
 
-        cd ..
-        # Create envVars.properties artifact for downstream jobs
-        echo &quot;BDC_UI_DOCKER_TAG=${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}&quot; &gt; bdcVars.properties</command>
+        # Build the image and overwrite the existing tag
+        docker build --build-arg BDC_UI_TAG=${bdc_ui_docker_tag} -t hms-dbmi/pic-sure-biodatacatalyst-ui:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
+
+        echo &quot;BDC_UI_OVERRIDE_DOCKER_TAG=${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}&quot;
+        echo &quot;BDC_UI_OVERRIDE_DOCKER_TAG=${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}&quot; &gt; overrideVars.properties</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
   <publishers>
     <hudson.tasks.ArtifactArchiver>
-      <artifacts>bdcVars.properties</artifacts>
+      <artifacts>overrideVars.properties</artifacts>
       <allowEmptyArchive>false</allowEmptyArchive>
       <onlyIfSuccessful>false</onlyIfSuccessful>
       <fingerprint>false</fingerprint>
