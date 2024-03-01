@@ -54,7 +54,7 @@ echo &quot;Email: $EMAIL&quot;
 
 target_stack=$(cat &apos;/var/jenkins_home/workspace/Deployment Pipeline/stacks.json&apos; | jq -r &apos;.environments.next_prod&apos;)
 INSTANCE_NAME_SUFFIX=&quot;Wildfly - $target_stack&quot;
-INSTANCE_ID=$(aws ec2 --region us-east-1 describe-instances --filters &quot;Name=tag:Name,Values=*$INSTANCE_NAME_SUFFIX*&quot; &quot;Name=instance-state-name,Values=running&quot; --query &apos;Reservations[*].Instances[*].InstanceId&apos; --output text)
+INSTANCE_ID=$(aws ec2 --region us-east-1 describe-instances --filters &quot;Name=tag:Name,Values=*$INSTANCE_NAME_SUFFIX*&quot; &quot;Name=instance-state-name,Values=running&quot; &quot;Name=tag:Project,Values=*${env_project}*&quot; --query &apos;Reservations[*].Instances[*].InstanceId&apos; --output text)
 
 echo $INSTANCE_ID
 
@@ -70,7 +70,7 @@ passwords=$(aws ssm get-command-invocation --command-id &quot;$pass_command_id&q
 second_password=$(echo &quot;$passwords&quot; | awk &apos;NR==2&apos;)
 
 start_docker_cmd_id=$(aws ssm --region us-east-1 send-command --instance-id $INSTANCE_ID --document-name &quot;AWS-RunShellScript&quot; --parameters &quot;commands=[\&quot;docker run -d --name schema-init -e \\\&quot;MYSQL_RANDOM_ROOT_PASSWORD=yes\\\&quot; --rm mysql\&quot;]&quot; | jq -r &apos;.Command.CommandId&apos;)
-script_cmd_id=$(aws ssm --region us-east-1 send-command --instance-id $INSTANCE_ID --document-name &quot;AWS-RunShellScript&quot; --parameters &quot;commands=[\&quot;docker exec -i schema-init mysql -hpicsure-db.${target_stack}.pic-sure.aim-ahead-dev.host -uroot -p$second_password auth -e &apos;CALL CreateSuperUser(\\\&quot;$EMAIL\\\&quot;, \\\&quot;$CONNECTION_ID\\\&quot;);&apos;\&quot;]&quot; | jq -r &apos;.Command.CommandId&apos;)
+script_cmd_id=$(aws ssm --region us-east-1 send-command --instance-id $INSTANCE_ID --document-name &quot;AWS-RunShellScript&quot; --parameters &quot;commands=[\&quot;docker exec -i schema-init mysql -hpicsure-db.${target_stack}.${env_private_dns_name} -uroot -p$second_password auth -e &apos;CALL CreateSuperUser(\\\&quot;$EMAIL\\\&quot;, \\\&quot;$CONNECTION_ID\\\&quot;);&apos;\&quot;]&quot; | jq -r &apos;.Command.CommandId&apos;)
 stop_cmd_id=$(aws ssm --region us-east-1 send-command --instance-id $INSTANCE_ID --document-name &quot;AWS-RunShellScript&quot; --parameters &quot;commands=[\&quot;docker stop schema-init\&quot;]&quot; | jq -r &apos;.Command.CommandId&apos;)
 
 count=0
