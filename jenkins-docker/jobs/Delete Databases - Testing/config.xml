@@ -1,0 +1,50 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties/>
+  <scm class="hudson.scm.NullSCM"/>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+
+# Source folder containing the scripts
+source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+ls -la &quot;$source_scripts_folder&quot;
+
+# Iterate through the files in the folder and source them
+for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+    chmod +x &quot;$script_file&quot;
+    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+        echo &quot;sourcing $script_file&quot;
+        source &quot;$script_file&quot;
+    fi
+done
+
+assume_role
+
+# Getting a secret value by secret name
+dbuser_pass=$(fetch_secret &quot;$database_root_user_secret_name&quot;)
+
+# dbuser - seems to be the root user
+dbuser_username=$(extract_field &quot;$dbuser_pass&quot; &quot;username&quot;)
+dbuser_password=$(extract_field &quot;$dbuser_pass&quot; &quot;password&quot;)
+dbuser_host=$(extract_field &quot;$dbuser_pass&quot; &quot;host&quot;)
+
+initialize_shared_db_config &quot;${dbuser_host%:3306}&quot; &quot;$dbuser_username&quot; &quot;$dbuser_password&quot;
+drop_database_if_exists &quot;auth&quot;
+drop_database_if_exists &quot;picsure&quot;
+unset_shared_db_config</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers/>
+</project>
