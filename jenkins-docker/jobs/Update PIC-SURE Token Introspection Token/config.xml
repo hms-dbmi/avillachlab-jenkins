@@ -4,22 +4,7 @@
   <description>This job will output a valid long-term jwt token.</description>
   <keepDependencies>false</keepDependencies>
   <properties/>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.1">
-    <configVersion>2</configVersion>
-    <userRemoteConfigs>
-      <hudson.plugins.git.UserRemoteConfig>
-        <url>${pic_sure_introspection_token_repo}</url>
-      </hudson.plugins.git.UserRemoteConfig>
-    </userRemoteConfigs>
-    <branches>
-      <hudson.plugins.git.BranchSpec>
-        <name>${pic_sure_introspection_token_hash}</name>
-      </hudson.plugins.git.BranchSpec>
-    </branches>
-    <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
-    <submoduleCfg class="empty-list"/>
-    <extensions/>
-  </scm>
+  <scm class="hudson.scm.NullSCM"/>
   <canRoam>true</canRoam>
   <disabled>false</disabled>
   <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
@@ -27,14 +12,6 @@
   <triggers/>
   <concurrentBuild>false</concurrentBuild>
   <builders>
-    <hudson.tasks.Maven>
-      <targets>clean install</targets>
-      <mavenName>Maven Home</mavenName>
-      <usePrivateRepository>false</usePrivateRepository>
-      <settings class="jenkins.mvn.DefaultSettingsProvider"/>
-      <globalSettings class="jenkins.mvn.DefaultGlobalSettingsProvider"/>
-      <injectBuildVariables>false</injectBuildVariables>
-    </hudson.tasks.Maven>
     <hudson.tasks.Shell>
       <command>#!/bin/bash
 set -e
@@ -51,16 +28,52 @@ for script_file in &quot;$source_scripts_folder&quot;*.sh; do
     fi
 done
 
-create_jwt_token $picsure_client_secret &quot;$pic_sure_introspection_token_repo&quot; &quot;PSAMA_APPLICATION|$application_id_for_base_query&quot; &quot;${duration_int:-365}&quot; &quot;${duration_unit:-day}&quot;
-if [ -n ${CREATE_JWT_TOKEN_OUTPUT} ]; then
-  echo &quot;New jwt generated update successfully.&quot;
-  echo &quot;Update the picsure_introspection_token configuration with the following:&quot;
-  echo &quot;${CREATE_JWT_TOKEN_OUTPUT}&quot;
-  echo &quot;${CREATE_JWT_TOKEN_OUTPUT}&quot; &gt; new_token
+assume_role
+
+# Getting db admin user secret value by secret name
+db_admin_user_json=$(fetch_secret &quot;$database_admin_user_secret_name&quot;)
+
+# DB admin user information
+db_admin_user_username=$(extract_field &quot;$db_admin_user_json&quot; &quot;username&quot;)
+db_admin_user_password=$(extract_field &quot;$db_admin_user_json&quot; &quot;password&quot;)
+db_admin_user_host=$(extract_field &quot;$db_admin_user_json&quot; &quot;host&quot;)
+
+# Initialize database connection information
+initialize_shared_db_config &quot;${db_admin_user_host%:3306}&quot; &quot;$db_admin_user_username&quot; &quot;$db_admin_user_password&quot;
+
+introspection_token=$(get_token_by_uuid &quot;$application_id_for_base_query&quot;)
+if [ -z &quot;$introspection_token&quot; ]; then
+	echo &quot;No token currently exists. There may be an issue with the Auth database.&quot;
+    exit 0;
+fi
+
+# Pretty print the token&apos;s expiration date
+expiry_date=$(get_jwt_expiration_date &quot;$introspection_token&quot;)
+echo &quot;Token&apos;s expiration date: $expiry_date&quot;
+
+# Check if the token is expiring soon
+if is_expiring_soon &quot;$expiry_date&quot;; then
+    echo &quot;Token is expiring within the next 30 days. Generating a new token...&quot;
+    # Generate a new token - create_jwt_token outputs token to variable CREATE_JWT_TOKEN_OUTPUT
+    create_jwt_token &quot;$picsure_client_secret&quot; &quot;$pic_sure_introspection_token_repo&quot; &quot;PSAMA_APPLICATION|$application_id_for_base_query&quot; &quot;${duration_int:-365}&quot; &quot;${duration_unit:-day}&quot;
+    
+    if [ -n &quot;$CREATE_JWT_TOKEN_OUTPUT&quot; ]; then
+        echo &quot;New JWT generated successfully.&quot;
+        echo &quot;Update the picsure_token_introspection_token configuration with the following:&quot;
+        echo &quot;$CREATE_JWT_TOKEN_OUTPUT&quot;
+        
+        # Update the db application with the new token
+        update_token_by_uuid &quot;$application_id_for_base_query&quot; &quot;$CREATE_JWT_TOKEN_OUTPUT&quot;
+    else
+        echo &quot;Token was not generated successfully. Check that the provided configurations are valid.&quot;
+        exit 1
+    fi
 else
-  echo &quot;Token was not generated successfully check that picsure_client_secret, pic_sure_introspection_token_repo, application_id_for_base_query configurations are a valid value.&quot;
-  exit 1
-fi</command>
+    echo &quot;Token&apos;s valid duration is sufficient. No need for a new token.&quot;
+fi
+
+unset_shared_db_config
+reset_role</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
