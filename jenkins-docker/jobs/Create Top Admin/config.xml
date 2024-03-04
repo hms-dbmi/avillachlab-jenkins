@@ -30,7 +30,12 @@
   <builders>
     <hudson.tasks.Shell>
       <command>#!/bin/bash
-set -e
+# Check if the database root user has been set
+if [ -z &quot;$database_root_user_secret_name&quot; ]; then
+	echo &quot;The &apos;database_root_user_secret_name&apos; must be set in the global configuration&quot;
+    exit;
+fi
+
 # Source folder containing the scripts
 source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
 ls -la &quot;$source_scripts_folder&quot;
@@ -44,7 +49,6 @@ for script_file in &quot;$source_scripts_folder&quot;*.sh; do
     fi
 done
 
-reset_role
 assume_role
 
 CONNECTION_ID=&quot;${connection_id:-$CONNECTION_ID_LOCAL}&quot;
@@ -52,50 +56,18 @@ CONNECTION_ID=&quot;${connection_id:-$CONNECTION_ID_LOCAL}&quot;
 echo &quot;Connection ID: $CONNECTION_ID&quot;
 echo &quot;Email: $EMAIL&quot;
 
-target_stack=$(cat &apos;/var/jenkins_home/workspace/Deployment Pipeline/stacks.json&apos; | jq -r &apos;.environments.next_prod&apos;)
-INSTANCE_NAME_SUFFIX=&quot;Wildfly - $target_stack&quot;
-INSTANCE_ID=$(aws ec2 --region us-east-1 describe-instances --filters &quot;Name=tag:Name,Values=*$INSTANCE_NAME_SUFFIX*&quot; &quot;Name=instance-state-name,Values=running&quot; --query &apos;Reservations[*].Instances[*].InstanceId&apos; --output text)
+# Getting a secret value by secret name
+dbuser_pass=$(fetch_secret &quot;$database_root_user_secret_name&quot;)
 
-echo $INSTANCE_ID
+# dbuser - seems to be the root user
+dbuser_username=$(extract_field &quot;$dbuser_pass&quot; &quot;username&quot;)
+dbuser_password=$(extract_field &quot;$dbuser_pass&quot; &quot;password&quot;)
+dbuser_host=$(extract_field &quot;$dbuser_pass&quot; &quot;host&quot;)
 
-if [ -z &quot;$INSTANCE_ID&quot; ] || [[ &quot;$INSTANCE_ID&quot; == &quot;None&quot; ]]; then
-    echo &quot;No instances found matching the specified criteria.&quot;
-    exit 1
-fi
-
-aws ssm --region us-east-1 send-command --instance-id $INSTANCE_ID --document-name &quot;AWS-RunShellScript&quot; --parameters &quot;commands=[\&quot;docker stop schema-init || true\&quot;]&quot;
-
-pass_command_id=$(aws ssm send-command --document-name &quot;AWS-RunShellScript&quot; --targets &quot;Key=instanceids,Values=${INSTANCE_ID}&quot; --parameters &quot;commands=[\&quot;grep -oP &apos;&lt;password&gt;\\K.*?(?=&lt;/password&gt;)&apos; /home/centos/standalone.xml\&quot;]&quot; --output text --query &quot;Command.CommandId&quot;)
-passwords=$(aws ssm get-command-invocation --command-id &quot;$pass_command_id&quot; --instance-id $INSTANCE_ID --output text --query &quot;StandardOutputContent&quot;)
-second_password=$(echo &quot;$passwords&quot; | awk &apos;NR==2&apos;)
-
-start_docker_cmd_id=$(aws ssm --region us-east-1 send-command --instance-id $INSTANCE_ID --document-name &quot;AWS-RunShellScript&quot; --parameters &quot;commands=[\&quot;docker run -d --name schema-init -e \\\&quot;MYSQL_RANDOM_ROOT_PASSWORD=yes\\\&quot; --rm mysql\&quot;]&quot; | jq -r &apos;.Command.CommandId&apos;)
-script_cmd_id=$(aws ssm --region us-east-1 send-command --instance-id $INSTANCE_ID --document-name &quot;AWS-RunShellScript&quot; --parameters &quot;commands=[\&quot;docker exec -i schema-init mysql -hpicsure-db.${target_stack}.pic-sure.aim-ahead-dev.host -uroot -p$second_password auth -e &apos;CALL CreateSuperUser(\\\&quot;$EMAIL\\\&quot;, \\\&quot;$CONNECTION_ID\\\&quot;);&apos;\&quot;]&quot; | jq -r &apos;.Command.CommandId&apos;)
-stop_cmd_id=$(aws ssm --region us-east-1 send-command --instance-id $INSTANCE_ID --document-name &quot;AWS-RunShellScript&quot; --parameters &quot;commands=[\&quot;docker stop schema-init\&quot;]&quot; | jq -r &apos;.Command.CommandId&apos;)
-
-count=0
-while [ $count -lt 20 ]; do
-    script_response=$(aws ssm get-command-invocation --region us-east-1 --instance-id $INSTANCE_ID --command-id &quot;$script_cmd_id&quot;)
-    cleaned_response=$(echo &quot;$script_response&quot; | tr -d &apos;\000-\031&apos;)
-    status=$(echo &quot;$cleaned_response&quot; | jq -r .Status)
-    if [ &quot;$status&quot; == &quot;InProgress&quot; ]; then
-      echo &quot;Status is InProgress. Waiting for the status to change...&quot;
-      sleep 1;
-    elif [[ &quot;$status&quot; == &quot;Failed&quot; ]]; then
-      errorContent=$(echo &quot;$script_response&quot; | jq -r .StandardErrorContent)
-      reset_role
-      echo &quot;$errorContent&quot;
-      exit 1
-    else
-      break
-    fi
-    count=$((count+1))
-    if [[ $count -eq 20 ]] &amp;&amp; [[ &quot;$status&quot; == &quot;InProgress&quot; ]]; then
-      echo &quot;Command is still in progress after waiting. Exiting...&quot;
-      break
-    fi
-done
-
+# Initialize database connection information
+initialize_shared_db_config &quot;${dbuser_host%:3306}&quot; &quot;$dbuser_username&quot; &quot;$dbuser_password&quot;
+create_top_admin &quot;$EMAIL&quot; &quot;$CONNECTION_ID&quot;
+unset_shared_db_config
 reset_role</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
