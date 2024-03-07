@@ -44,6 +44,14 @@ RUN set -e; \
 RUN apt-get -y install maven
 # jq
 RUN apt-get install jq -y
+
+# java 21
+RUN wget https://download.java.net/java/GA/jdk21.0.1/415e3f918a1f4062a0074a2794853d0d/12/GPL/openjdk-21.0.1_linux-x64_bin.tar.gz
+
+RUN tar -xvf openjdk-21.0.1_linux-x64_bin.tar.gz
+
+RUN mv jdk-21.0.1 /opt/java/
+
 # terraform
 RUN wget -c $JENKINS_DOCKER_TERRAFORM_DISTRO -O /opt/terraform.zip && \
     unzip /opt/terraform.zip -d /usr/local/bin/ && rm -f /opt/terraform.zip
