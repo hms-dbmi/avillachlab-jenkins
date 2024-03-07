@@ -257,66 +257,12 @@ swap_stacks() {
     </hudson.tasks.Shell>
     <hudson.tasks.Shell>
       <command>cat &lt;&lt;&apos;EOF&apos; &gt; pic_sure_rds_snapshot.sh
-# Use feature toggle to the strategy to use for picsure RDS
-# Available strategies
-# * STANDALONE = Unmanaged RDS instance. No prebuild blue snapshot
-# * STANDALONE_W_SS = Unmanaged RDS instance. With prebuild blue snapshot
-# * STANDALONE_W_TAGGED_SS = Unmanaged RDS instance. Will use a specified tagged snapshot to build from. # Tags are being tricky.  But should work.
-# * MANAGED_EMPTY = Managed RDS instance. No prebuild blue snapshot
-# * MANAGED_USE_LATEST_SS = Managed RDS instance. Will take and use the latest snapshot of blue.
-
-do_picsure_rds_strategy() {
-  # variables
-  local picsure_rds_strategy=&quot;${1}&quot;
-  local live_stack=&quot;${2}&quot;
-  local env_project=&quot;${3}&quot;
-    
-  # picsure_rds_standalone_instance=
-  if [ -z ${picsure_rds_strategy} ]; then
-    picsure_rds_snapshot_id=
-  fi
-  if [ &quot;${picsure_rds_strategy}&quot; == &quot;STANDALONE&quot; ]; then
-    # placeholder. implement with persistent work
-    echo &quot;placeholder&quot;
-  fi
-  if [ &quot;${picsure_rds_strategy}&quot; == &quot;STANDALONE_W_SS&quot; ]; then
-    # placeholder. implement with persistent work
-    echo &quot;placeholder&quot;
-  fi
-  if [ &quot;${picsure_rds_strategy}&quot; == &quot;STANDALONE_W_TAGGED_SS&quot; ]; then
-    # placeholder. implement with persistent work
-    echo &quot;placeholder&quot;
-  fi
-  # RDS Strategy: Managed RDS. Empty Database.
-  if [ &quot;${picsure_rds_strategy}&quot; == &quot;MANAGED_EMPTY&quot; ]; then
-    echo &quot;initializing empty database.&quot;
-    exit 0
-  fi
-  # RDS Strategy: Managed RDS using latest SS of blue.
-  if [ &quot;${picsure_rds_strategy}&quot; == &quot;MANAGED_USE_LATEST_SS&quot; ]; then
-    echo &quot;Creating snapshot for picsure rds&quot;
-    create_rds_snapshot_by_tag &quot;${live_stack}&quot; &quot;${env_project}&quot;
-    picsure_rds_snapshot_id=$(get_latest_rds_snapshot_id &quot;${picsure_rds_strategy}&quot; &quot;${live_stack}&quot; &quot;${env_project}&quot;)
-    echo &quot;$picsure_rds_snapshot_id&quot;
-    # validate snapshot
-    if [ -z &quot;$picsure_rds_snapshot_id&quot; ]; then
-      echo &quot;Error: Error with RDS Snapshot. Snapshot empty.  Ensure a snapshot exists for the blue rds instance.&quot;
-      exit 1
-    fi
-    # validate snapshot id format
-    if [[ ! &quot;$picsure_rds_snapshot_id&quot; =~ ^[a-zA-Z0-9-]+$ ]]; then
-      echo &quot;Error: Error with RDS Snapshot. $picsure_rds_snapshot_id is not a valid snapshot id.&quot;
-      exit 1
-    fi
-  fi
-}
-
 # Funtion to return latest snapshot for rds instance
 get_latest_rds_snapshot_id() {
   local picsure_rds_strategy=&quot;$1&quot;
   local stack=&quot;$2&quot;
   local project=&quot;$3&quot;
-  
+
   if [ &quot;${picsure_rds_strategy}&quot; == &quot;MANAGED_USE_LATEST_SS&quot; ]; then
     db_instance_identifier=$(get_db_instance_identifier_by_tag &quot;$live_stack&quot; &quot;$env_project&quot;)
     latest_snapshot=$(aws rds describe-db-snapshots \
@@ -338,12 +284,12 @@ get_db_instance_identifier_by_tag() {
 
 create_rds_snapshot_by_tag() {
   local live_stack=&quot;$1&quot;
-  local env_project=&quot;$2&quot;  
+  local env_project=&quot;$2&quot;
 
   # Find the RDS instance based on the specified tag
   local db_instance_identifier
   db_instance_identifier=$(get_db_instance_identifier_by_tag &quot;$live_stack&quot; &quot;$env_project&quot;)
-  
+
   if [ -z &quot;$db_instance_identifier&quot; ]; then
     echo &quot;No RDS instance found with tag: $live_stack and $env_project&quot;
     return 1
@@ -355,8 +301,8 @@ create_rds_snapshot_by_tag() {
   aws rds create-db-snapshot \
     --db-instance-identifier &quot;$db_instance_identifier&quot; \
     --db-snapshot-identifier &quot;$snapshot_identifier&quot;
-    
-  while true; do  
+
+  while true; do
     local status=$(aws rds describe-db-snapshots \
       --db-instance-identifier &quot;$db_instance_identifier&quot; \
       --db-snapshot-identifier &quot;$snapshot_identifier&quot; \
@@ -370,12 +316,91 @@ create_rds_snapshot_by_tag() {
     fi
   done
 }
+
+# Function to wait for an RDS instance to become available and then create a snapshot
+create_snapshot_when_available() {
+    local DB_INSTANCE_IDENTIFIER=$1
+    local SNAPSHOT_IDENTIFIER=&quot;${DB_INSTANCE_IDENTIFIER}-snapshot-$(date +%Y%m%d-%H%M%S)&quot;
+
+    while true; do
+        status=$(aws rds describe-db-instances --db-instance-identifier &quot;${DB_INSTANCE_IDENTIFIER}&quot; --query &apos;DBInstances[*].DBInstanceStatus&apos; --output text)
+        echo &quot;Current status: $status&quot;
+        if [ &quot;$status&quot; == &quot;available&quot; ]; then
+            echo &quot;Instance is available. Creating snapshot...&quot;
+            aws rds create-db-snapshot --db-instance-identifier &quot;${DB_INSTANCE_IDENTIFIER}&quot; --db-snapshot-identifier &quot;${SNAPSHOT_IDENTIFIER}&quot;
+            echo &quot;Snapshot ${SNAPSHOT_IDENTIFIER} creation initiated.&quot;
+            break
+        else
+            echo &quot;Waiting for instance ${DB_INSTANCE_IDENTIFIER} to become available...&quot;
+            sleep 30
+        fi
+    done
+}
+
+# Function to retrieve the most recent snapshot identifier for a specified RDS instance
+get_latest_snapshot_identifier() {
+    local DB_INSTANCE_IDENTIFIER=$1
+   	local output=$(aws rds describe-db-snapshots \
+    --db-instance-identifier &quot;${DB_INSTANCE_IDENTIFIER}&quot; \
+    --query &apos;DBSnapshots[?SnapshotType==`manual`].[DBSnapshotIdentifier,SnapshotCreateTime] | sort_by(@, &amp;[1]) | [-1]&apos; \
+    --output text)
+
+    local snapshot_identifier=$(echo $output | awk &apos;{print $1}&apos;)
+    echo &quot;The latest snapshot identifier for ${DB_INSTANCE_IDENTIFIER} is: $snapshot_identifier&quot;
+    # Optionally, you can return the identifier if you need to use it in another context
+    echo $snapshot_identifier
+}
+
+# Function to keep only the latest 3 manually created RDS snapshots and delete the rest
+manage_rds_snapshots() {
+  local db_instance_identifier=&quot;$1&quot;
+
+  # Get the list of manually created snapshot identifiers sorted by creation time in descending order
+  # Filters out automated snapshots and assumes snapshot names contain the creation date in a sortable format
+  local snapshots_to_delete=$(aws rds describe-db-snapshots --db-instance-identifier &quot;$db_instance_identifier&quot; \
+                               --query &apos;DBSnapshots[?SnapshotType==`manual`].[DBSnapshotIdentifier,SnapshotCreateTime]&apos; \
+                               --output text | sort -k2,2r | awk &apos;NR&gt;3 {print $1}&apos;)
+
+  # Loop through and delete snapshots older than the 3 most recent manually created ones
+  for snapshot_id in $snapshots_to_delete; do
+    echo &quot;Deleting snapshot: $snapshot_id&quot;
+    aws rds delete-db-snapshot --db-snapshot-identifier &quot;$snapshot_id&quot;
+    # Consider adding error handling here to check the success of the deletion
+  done
+}
 EOF
 </command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
     <hudson.tasks.Shell>
       <command>cat &lt;&lt;&apos;EOF&apos; &gt; jwt_token.sh
+# Function to extract and return the expiration date of the JWT token
+get_jwt_expiration_date() {
+    local token=&quot;$1&quot;
+    local payload
+
+    # Decode payload
+    payload=$(echo &quot;$token&quot; | cut -d&quot;.&quot; -f2 | tr &apos;_-&apos; &apos;/+&apos; | tr -d &apos;=&apos; | base64 -d 2&gt;/dev/null)
+    # Extract and convert exp field to readable date
+    local exp=$(echo &quot;$payload&quot; | jq &apos;.exp&apos; | tr -d &apos;&quot;&apos;)
+    local exp_date=$(date -d &quot;@$exp&quot; 2&gt;/dev/null)
+
+    echo &quot;$exp_date&quot;
+}
+
+# Function to check if the token is expiring within the next 30 days
+is_expiring_soon() {
+    local exp_date=&quot;$1&quot;
+    local exp_date_in_seconds=$(date -d &quot;$exp_date&quot; +%s)
+    local current_date_plus_30=$(date -d &quot;+30 days&quot; +%s)
+
+    if [ &quot;$exp_date_in_seconds&quot; -le &quot;$current_date_plus_30&quot; ]; then
+        return 0 # Token is expiring soon
+    else
+        return 1 # Token is not expiring soon
+    fi
+}
+
 # Create JWT token
 # Clones a Git repository, generates a valid token, and exports it to an environment variable
 # Parameters:
@@ -390,21 +415,251 @@ create_jwt_token() {
   local subject=${3}
   local duration_int=${4}
   local duration_unit=${5:-day}
-  
+
   # Clone the Git repository
-  git clone ${jwt_creator_repo} jwt_creator
-  
+  git clone &quot;${jwt_creator_repo}&quot; jwt_creator || { echo &quot;Failed to clone repository&quot;; exit 1; }
+
   # Change to the cloned directory
   cd jwt_creator
-  mvn clean install
-  
-  cd target
-  echo $secret &gt; secrets.txt
-  # Generate the JWT token and export it as an environment variable
-  # Currently uses the jwt generator @ https://github.com/hms-dbmi/jwt-creator 
-  # should look for something that can be better supported
+  mvn clean install || { echo &quot;Maven build failed&quot;; exit 1; }
+
+  cd target || { echo &quot;Target directory not found&quot;; exit 1; }
+  echo &quot;$secret&quot; &gt; secrets.txt
+
+  # Assuming generateJwt.jar is built and exists
   export CREATE_JWT_TOKEN_OUTPUT=$(java -jar generateJwt.jar &quot;secrets.txt&quot; sub &quot;$subject&quot; &quot;$duration_int&quot; &quot;$duration_unit&quot; | grep -v &quot;Generating&quot;)
+
+  # Cleanup
   cd &quot;${WORKSPACE}&quot;
+}
+EOF</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command>cat &lt;&lt;&apos;EOF&apos; &gt; secret_functions.sh
+### Bash functions that need to be migrated to the Bash_Functions job
+# Function to fetch a secret from AWS Secrets Manager
+fetch_secret() {
+    local secret_id=$1
+    aws secretsmanager get-secret-value --secret-id &quot;$secret_id&quot;
+}
+
+# Function to extract a specific field from a secret
+extract_field() {
+    local secret=$1
+    local field=$2
+    echo &quot;$secret&quot; | jq -r .SecretString | jq -r .$field
+}
+EOF</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command>cat &lt;&lt;&apos;EOF&apos; &gt; database_migration_functions.sh
+create_flyway_conf() {
+  # Parameters:
+  # $1 = Database Name
+  # $2 = RDS_ENDPOINT
+  # $3 = DATABASE_USER
+  # $4 = DATABASE_PASSWORD
+  # $5 = Placeholders as a string &quot;key1=value1,key2=value2&quot;
+
+  # Define the file path dynamically based on the database name
+  CONF_FILE=&quot;conf/$1_flyway.conf&quot;
+
+  # Ensure the conf directory exists
+  mkdir -p conf
+
+  # Create or overwrite the flyway.conf file with the new content
+  echo &quot;flyway.url=jdbc:mysql://$2/$1&quot; &gt; $CONF_FILE
+  echo &quot;flyway.user=$3&quot; &gt;&gt; $CONF_FILE
+  echo &quot;flyway.password=$4&quot; &gt;&gt; $CONF_FILE
+  echo &quot;flyway.locations=filesystem:/flyway/sql&quot; &gt;&gt; $CONF_FILE
+  echo &quot;flyway.baselineVersion=0&quot; &gt;&gt; $CONF_FILE  # Setting the baseline version to 0
+  echo &quot;flyway.baselineOnMigrate=true&quot; &gt;&gt; $CONF_FILE  # Automatically baseline at the first migration (V0)
+
+  # Process placeholders if provided
+  if [[ -n &quot;$5&quot; ]]; then
+    # Split the placeholder string into an array
+    IFS=&apos;,&apos; read -r -a placeholders &lt;&lt;&lt; &quot;$5&quot;
+    for placeholder in &quot;${placeholders[@]}&quot;; do
+      # Each placeholder is in the form key=value
+      echo &quot;flyway.placeholders.${placeholder}&quot; &gt;&gt; $CONF_FILE
+    done
+  fi
+
+  echo &quot;Created or updated $CONF_FILE successfully.&quot;
+}
+
+
+run_flyway_migration() {
+  local sql_path=$1
+  local flyway_conf_path=$2
+
+  docker run --rm --network=host \
+    -v &quot;$(pwd)/${sql_path}:/flyway/sql&quot; \
+    -v &quot;$(pwd)/${flyway_conf_path}:/flyway/conf/flyway.conf&quot; \
+    flyway/flyway -configFiles=/flyway/conf/flyway.conf -X migrate
+}
+EOF</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command>cat &lt;&lt;&apos;EOF&apos; &gt; database_functions.sh
+# Global variables for shared database configuration
+RDS_ENDPOINT=&quot;&quot;
+DATABASE_USER=&quot;&quot;
+DATABASE_PASSWORD=&quot;&quot;
+MYSQL_IMAGE=&quot;mysql:8.0.35&quot;
+
+# Function to initialize shared database configuration
+initialize_shared_db_config() {
+    RDS_ENDPOINT=$1
+    DATABASE_USER=$2
+    DATABASE_PASSWORD=$3
+}
+
+# Function to unset shared database configuration
+unset_shared_db_config() {
+    RDS_ENDPOINT=&quot;&quot;
+    DATABASE_USER=&quot;&quot;
+    DATABASE_PASSWORD=&quot;&quot;
+}
+
+# grant_user_permissions &quot;database_name&quot; &quot;user_name&quot; &quot;user_host&quot;
+grant_user_permissions() {
+  local database_name=&quot;$1&quot;
+  local user_name=&quot;$2&quot;
+
+  # SQL command to grant permissions
+  local grant_sql=&quot;GRANT SELECT, INSERT, UPDATE, DELETE ON ${database_name}.* TO &apos;${user_name}&apos;@&apos;%&apos;;&quot;
+
+  # Execute the SQL command using Docker and MySQL client
+  docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    -e &quot;$grant_sql&quot; &quot;mysql&quot;
+
+  # Apply the changes
+  docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    -e &quot;FLUSH PRIVILEGES;&quot; &quot;mysql&quot;
+}
+
+# Flyway cannot create databases. Check if a database exists and create it if not
+create_database_if_not_exists() {
+  # Parameters: $1 = DATABASE_NAME
+
+  # Use printf to properly quote the password and the entire command
+  CMD=$(printf &quot;mysql -h%s -u%s -p&apos;%s&apos; -e &apos;CREATE DATABASE IF NOT EXISTS %s;&apos;&quot; &quot;$RDS_ENDPOINT&quot; &quot;$DATABASE_USER&quot; &quot;$DATABASE_PASSWORD&quot; &quot;$1&quot;)
+
+  # Run the command in a Docker container
+  docker run --rm $MYSQL_IMAGE /bin/bash -c &quot;$CMD&quot;
+}
+
+drop_all_tables() {
+  # Parameters: $1 = DATABASE_NAME
+
+  # Command to disable foreign key checks and fetch list of tables
+  FETCH_TABLES_CMD=$(printf &quot;mysql -h%s -u%s -p&apos;%s&apos; --database=%s -Nse &apos;SET FOREIGN_KEY_CHECKS = 0; SHOW TABLES;&apos;&quot; &quot;$RDS_ENDPOINT&quot; &quot;$DATABASE_USER&quot; &quot;$DATABASE_PASSWORD&quot; &quot;$1&quot;)
+
+  # Run the command in a Docker container to fetch the list of tables
+  TABLES=$(docker run --rm -e MYSQL_PWD=$DATABASE_PASSWORD $MYSQL_IMAGE mysql -h$RDS_ENDPOINT -u$DATABASE_USER --database=$1 -Nse &quot;SHOW TABLES;&quot;)
+
+  # Iterate over each table and generate the DROP TABLE command
+  for TABLE in $TABLES; do
+  	echo &quot;Dropping Table: $TABLE&quot;
+    DROP_CMD=&quot;SET FOREIGN_KEY_CHECKS = 0; DROP TABLE IF EXISTS $TABLE; SET FOREIGN_KEY_CHECKS = 1;&quot;
+    docker run --rm -e MYSQL_PWD=$DATABASE_PASSWORD $MYSQL_IMAGE mysql -h$RDS_ENDPOINT -u$DATABASE_USER --database=$1 -e &quot;$DROP_CMD&quot;
+  done
+}
+
+# create_top_admin &quot;email&quot; &quot;connection_id&quot;
+create_top_admin() {
+  docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+  -e &quot;CALL CreateSuperUser(&apos;$1&apos;, &apos;$2&apos;);&quot; &quot;auth&quot;
+}
+
+does_user_exists() {
+	# $1 email
+    # $2 connection_id
+
+    local query_result=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    -s -r -e &quot;select email from user where email = &apos;$1&apos; and connectionId = (select uuid from connection where id = &apos;$2&apos;);&quot; &quot;auth&quot;)
+
+    echo &quot;$query_result&quot;
+}
+
+# update_token_by_uuid &quot;uuid&quot; &quot;new_token&quot;
+update_token_by_uuid() {
+  local uuid=&quot;$1&quot;
+  local new_token=&quot;$2&quot;
+
+  # Perform the update operation
+  docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    -e &quot;UPDATE application SET token=&apos;$new_token&apos; WHERE uuid=UNHEX(&apos;$uuid&apos;);&quot; &quot;auth&quot;
+}
+
+# get_token_by_uuid &quot;uuid&quot;
+get_token_by_uuid() {
+  local uuid=&quot;$1&quot;
+
+  # Query to get the token by UUID
+  local query=&quot;SELECT token FROM application WHERE uuid=UNHEX(REPLACE(&apos;$uuid&apos;, &apos;-&apos;, &apos;&apos;));&quot;
+
+  # Execute the query using Docker and MySQL client
+  local token=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    -sse &quot;$query&quot; &quot;auth&quot;)
+
+  echo &quot;$token&quot;
+}
+
+# run_sql_script &quot;/path/to/your/sql_script.sql&quot; &quot;database_name&quot;
+run_sql_script() {
+  # Parameters:
+  # $1 = PATH_TO_SQL_SCRIPT
+  # $2 = DATABASE_NAME
+
+  # Ensure the SQL script file exists
+  if [ ! -f &quot;$1&quot; ]; then
+    echo &quot;SQL script file does not exist: $1&quot;
+    return 1
+  fi
+
+  # Run the SQL script in a Docker container
+  docker run --rm -v &quot;$1:/sql_script.sql&quot; $MYSQL_IMAGE \
+    mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; &quot;$2&quot; &lt; /sql_script.sql
+}
+EOF</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command>cat &lt;&lt;&apos;EOF&apos; &gt; string_util_functions.sh
+# Function to convert a comma-separated list of domains into a regex pattern
+# Will produce ^https?://(www\.)?(www\.domain1\.com|www\.domain2\.com|www\.domain3\.org)
+generate_domain_regex() {
+  local IFS=&apos;,&apos; # Set the internal field separator to comma
+  read -ra ADDR &lt;&lt;&lt; &quot;$1&quot; # Read the list into an array
+  local regex=&quot;^https?://(www\.)?(&quot;
+
+  # Loop through the array and append each domain to the regex pattern
+  for domain in &quot;${ADDR[@]}&quot;; do
+    regex+=&quot;${domain//./\\.}|&quot;
+  done
+
+  # Remove the last &apos;|&apos; and close the pattern, allowing for any paths
+  regex=&quot;${regex%|}).*&quot;
+  echo &quot;${regex}&quot;
+}
+
+replace_xml_special_chars() {
+    local input_string=&quot;$1&quot;
+    local output_string=&quot;&quot;
+
+    # Replace &amp; first to avoid double-encoding of entities
+    output_string=&quot;${input_string//&amp;/&amp;amp;}&quot;
+    output_string=&quot;${output_string//&lt;/&amp;lt;}&quot;
+    output_string=&quot;${output_string//&gt;/&amp;gt;}&quot;
+    output_string=&quot;${output_string//\&quot;/&amp;quot;}&quot;
+    output_string=&quot;${output_string//\&apos;/&amp;apos;}&quot;
+
+    echo &quot;$output_string&quot;
 }
 EOF</command>
       <configuredLocalRules/>
@@ -412,7 +667,7 @@ EOF</command>
   </builders>
   <publishers>
     <hudson.tasks.ArtifactArchiver>
-      <artifacts>target_group_attachment_functions.sh, role_functions.sh, pic_sure_rds_snapshot.sh, jwt_token.sh</artifacts>
+      <artifacts>target_group_attachment_functions.sh, role_functions.sh, pic_sure_rds_snapshot.sh, jwt_token.sh, database_migration_functions.sh, secret_functions.sh, database_functions.sh</artifacts>
       <allowEmptyArchive>false</allowEmptyArchive>
       <onlyIfSuccessful>false</onlyIfSuccessful>
       <fingerprint>false</fingerprint>

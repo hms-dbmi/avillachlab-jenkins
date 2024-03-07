@@ -1,0 +1,118 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.BooleanParameterDefinition>
+          <name>DROP_TABLES</name>
+          <description>Set to TRUE if you would like to drop the databases in order to re-run migrations on clean database tables. Useful for testing migration scripts.</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>infrastructure_git_hash</name>
+          <defaultValue>master</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.1">
+    <configVersion>2</configVersion>
+    <userRemoteConfigs>
+      <hudson.plugins.git.UserRemoteConfig>
+        <url>${infrastructure_git_repo}</url>
+      </hudson.plugins.git.UserRemoteConfig>
+    </userRemoteConfigs>
+    <branches>
+      <hudson.plugins.git.BranchSpec>
+        <name>${infrastructure_git_hash}</name>
+      </hudson.plugins.git.BranchSpec>
+    </branches>
+    <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+    <submoduleCfg class="empty-list"/>
+    <extensions/>
+  </scm>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+# Check if the database root user has been set
+if [ -z &quot;$database_root_user_secret_name&quot; ]; then
+	echo &quot;The &apos;database_root_user_secret_name&apos; must be set in the global configuration&quot;
+    exit;
+fi
+
+# Source folder containing the scripts
+source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+ls -la &quot;$source_scripts_folder&quot;
+
+# Iterate through the files in the folder and source them
+for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+    chmod +x &quot;$script_file&quot;
+    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+        echo &quot;sourcing $script_file&quot;
+        source &quot;$script_file&quot;
+    fi
+done
+
+assume_role
+
+# Getting db admin user secret value by secret name
+db_admin_user_json=$(fetch_secret &quot;$database_admin_user_secret_name&quot;)
+
+# DB admin user information
+db_admin_user_username=$(extract_field &quot;$db_admin_user_json&quot; &quot;username&quot;)
+db_admin_user_password=$(extract_field &quot;$db_admin_user_json&quot; &quot;password&quot;)
+db_admin_user_host=$(extract_field &quot;$db_admin_user_json&quot; &quot;host&quot;)
+
+# Check if any of the variables are empty
+if [ -z &quot;$db_admin_user_username&quot; ] || [ -z &quot;$db_admin_user_password&quot; ] || [ -z &quot;$db_admin_user_host&quot; ]; then
+  echo &quot;Error: One or more required database variables are empty.&quot; &gt;&amp;2
+  exit 1
+fi
+
+initialize_shared_db_config &quot;${db_admin_user_host%:3306}&quot; &quot;$db_admin_user_username&quot; &quot;$db_admin_user_password&quot;
+if [ &quot;$DROP_TABLES&quot; = true ]; then
+	drop_all_tables &quot;auth&quot;
+    drop_all_tables &quot;picsure&quot;
+fi
+
+create_jwt_token &quot;$picsure_client_secret&quot; &quot;$pic_sure_introspection_token_repo&quot; &quot;PSAMA_APPLICATION|$application_id_for_base_query&quot; &quot;${duration_int:-365}&quot; &quot;${duration_unit:-day}&quot;
+echo &quot;New JWT generated successfully.&quot;
+echo &quot;Update the picsure_token_introspection_token configuration with the following:&quot;
+echo &quot;$CREATE_JWT_TOKEN_OUTPUT&quot;
+introspection_token=$CREATE_JWT_TOKEN_OUTPUT
+
+# Paths for migration scripts
+auth_sql_path=&quot;app-infrastructure/db/auth/&quot;
+picsure_sql_path=&quot;app-infrastructure/db/picsure/&quot;
+
+create_flyway_conf &quot;auth&quot; &quot;${db_admin_user_host%:3306}&quot; &quot;$db_admin_user_username&quot; &quot;$db_admin_user_password&quot; \
+&quot;env_private_dns_name=$env_private_dns_name,connection_label=$connection_label,connection_id=$connection_id,connection_sub_prefix=$connection_sub_prefix,picsure_token_introspection_token=$introspection_token&quot;
+create_flyway_conf &quot;picsure&quot; &quot;${db_admin_user_host%:3306}&quot; &quot;$db_admin_user_username&quot; &quot;$db_admin_user_password&quot; &quot;env_private_dns_name=$env_private_dns_name&quot;
+run_flyway_migration &quot;$auth_sql_path&quot; &quot;conf/auth_flyway.conf&quot;
+run_flyway_migration &quot;$picsure_sql_path&quot; &quot;conf/picsure_flyway.conf&quot;
+
+unset_shared_db_config
+reset_role</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.45">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
+</project>

@@ -140,17 +140,6 @@ for script_file in &quot;$source_scripts_folder&quot;*.sh; do
     fi
 done
 
-echo &quot;pic-sure introspection token&quot;
-# if picsure_token_introspection_token is not defined already create one
-if [ -z $picsure_token_introspection_token ]; then
-   echo &quot;No introspection given.  Generating new one.&quot;
-   create_jwt_token $picsure_client_secret &quot;$pic_sure_introspection_token_repo&quot; &quot;PSAMA_APPLICATION|$application_id_for_base_query&quot; &quot;${duration_int:-365}&quot; &quot;${duration_unit:-day}&quot;
-   picsure_token_introspection_token=&quot;${CREATE_JWT_TOKEN_OUTPUT}&quot;
-   echo &quot;introspection token generated.&quot;
-else
-  echo &quot;Using introspection token defined by global properties&quot;
-fi
-
 # Destroy and Build resources
 cd app-infrastructure
 
@@ -160,9 +149,45 @@ aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraf
 # Assume deployment role
 assume_role
 
-# Perform RDS Strategy
-do_picsure_rds_strategy &quot;${picsure_rds_strategy}&quot; &quot;${live_stack}&quot; &quot;${env_project}&quot;
-picsure_rds_snapshot_id=$(get_latest_rds_snapshot_id &quot;${picsure_rds_strategy}&quot; &quot;${live_stack}&quot; &quot;${env_project}&quot;)
+echo &quot;Database Secret Name: $database_app_user_secret_name&quot;
+
+# Getting a secret value by secret name
+db_app_user_json=$(fetch_secret &quot;$database_app_user_secret_name&quot;)
+echo &quot;Database JSON: $db_app_user_json&quot;
+
+# dbuser - seems to be the root user
+picsure_db_username=$(extract_field &quot;$db_app_user_json&quot; &quot;username&quot;)
+picsure_db_password=$(extract_field &quot;$db_app_user_json&quot; &quot;password&quot;)
+picsure_db_host=$(extract_field &quot;$db_app_user_json&quot; &quot;host&quot;)
+
+# Check if any of the variables are empty
+if [ -z &quot;$picsure_db_username&quot; ] || [ -z &quot;$picsure_db_password&quot; ] || [ -z &quot;$picsure_db_host&quot; ]; then
+  echo &quot;Error: One or more required database variables are empty.&quot; &gt;&amp;2
+  exit 1
+fi
+
+# Get introspection token from database.
+initialize_shared_db_config &quot;${picsure_db_host%:3306}&quot; &quot;$picsure_db_username&quot; &quot;$picsure_db_password&quot;
+picsure_token_introspection_token=$(get_token_by_uuid &quot;$application_id_for_base_query&quot;)
+echo &quot;Introspection Token: $picsure_token_introspection_token&quot;
+unset_shared_db_config
+
+# The database password likely contains special characters that don&apos;t play well with XML.
+# We have a utility to replace the special characters so its XML safe.
+picsure_db_password=$(replace_xml_special_chars &quot;${picsure_db_password}&quot;)
+
+# Get the appropriate UUID based on target stack
+if [ &quot;$target_stack&quot; == &quot;a&quot; ]; then
+	# set UUID to a stack UUIDs
+    dictionaryUUID=&quot;4c6e53d0-0860-4129-9bbd-568b18833f98&quot;
+    authHpdsUUID=&quot;02e23f52-f354-4e8b-992c-d37c8b9ba140&quot;
+else
+	# set UUID to b stack UUIDs
+    dictionaryUUID=&quot;36363664-6231-6134-2d38-6538652d3131&quot;
+    authHpdsUUID=&quot;9e765d93-49a9-42a5-884b-412a6a44af81&quot;
+fi
+
+formatted_referer_allowed_domains=$(generate_domain_regex &quot;$referer_allowed_domains&quot;)
 
 terraform init
 if $isDestroyOnly; then
@@ -202,7 +227,14 @@ if $isDestroyOnly; then
      -var=&quot;connection_label=${connection_label}&quot; \
      -var=&quot;connection_sub_prefix=${connection_sub_prefix}&quot; \
      -var=&quot;pdf_link=${pdf_link}&quot; \
-     -var=&quot;help_link=${help_link}&quot; || true
+     -var=&quot;help_link=${help_link}&quot; \
+     -var=&quot;environment_prefix=${environment_prefix}&quot; \
+     -var=&quot;referer_allowed_domains=${formatted_referer_allowed_domains}&quot; \
+     -var=&quot;dictionary_resource_id=${dictionaryUUID}&quot; \
+     -var=&quot;auth_hpds_resource_id=${authHpdsUUID}&quot; \
+     -var=&quot;picsure_db_host=${picsure_db_host}&quot; \
+     -var=&quot;picsure_db_password=${picsure_db_password}&quot; \
+     -var=&quot;picsure_db_username=${picsure_db_username}&quot; || true
 
   reset_role
 
@@ -245,7 +277,14 @@ else
      -var=&quot;connection_label=${connection_label}&quot; \
      -var=&quot;connection_sub_prefix=${connection_sub_prefix}&quot; \
      -var=&quot;pdf_link=${pdf_link}&quot; \
-     -var=&quot;help_link=${help_link}&quot; || true
+     -var=&quot;help_link=${help_link}&quot; \
+     -var=&quot;environment_prefix=${environment_prefix}&quot; \
+     -var=&quot;referer_allowed_domains=${formatted_referer_allowed_domains}&quot; \
+     -var=&quot;dictionary_resource_id=${dictionaryUUID}&quot; \
+     -var=&quot;auth_hpds_resource_id=${authHpdsUUID}&quot; \
+     -var=&quot;picsure_db_host=${picsure_db_host}&quot; \
+     -var=&quot;picsure_db_password=${picsure_db_password}&quot; \
+     -var=&quot;picsure_db_username=${picsure_db_username}&quot; || true
 
   terraform apply -auto-approve \
      -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot;  \
@@ -282,7 +321,14 @@ else
      -var=&quot;connection_label=${connection_label}&quot; \
      -var=&quot;connection_sub_prefix=${connection_sub_prefix}&quot; \
      -var=&quot;pdf_link=${pdf_link}&quot; \
-     -var=&quot;help_link=${help_link}&quot; || true
+     -var=&quot;help_link=${help_link}&quot; \
+     -var=&quot;environment_prefix=${environment_prefix}&quot; \
+     -var=&quot;referer_allowed_domains=${formatted_referer_allowed_domains}&quot; \
+     -var=&quot;dictionary_resource_id=${dictionaryUUID}&quot; \
+     -var=&quot;auth_hpds_resource_id=${authHpdsUUID}&quot; \
+     -var=&quot;picsure_db_host=${picsure_db_host}&quot; \
+     -var=&quot;picsure_db_password=${picsure_db_password}&quot; \
+     -var=&quot;picsure_db_username=${picsure_db_username}&quot; || true
 
   reset_role
 
@@ -300,12 +346,9 @@ else
   aws s3 --sse=AES256 cp picsureui-settings.json s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/picsureui_settings.json
   aws s3 --sse=AES256 cp configs/banner_config.json s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/banner_config.json
   aws s3 --sse=AES256 cp standalone.xml s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/standalone.xml
-  aws s3 --sse=AES256 cp pic-sure-schema.sql s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/pic-sure-schema.sql
-  aws s3 --sse=AES256 cp resources-registration.sql s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/resources-registration.sql
   aws s3 --sse=AES256 cp httpd-vhosts.conf s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/httpd-vhosts.conf
   aws s3 --sse=AES256 cp aggregate-resource.properties s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/aggregate-resource.properties
   aws s3 --sse=AES256 cp visualization-resource.properties s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/visualization-resource.properties
-
 
 fi</command>
       <configuredLocalRules/>

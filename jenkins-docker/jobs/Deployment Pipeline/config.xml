@@ -1,8 +1,8 @@
 <?xml version='1.1' encoding='UTF-8'?>
-<flow-definition plugin="workflow-job@1348.v32a_a_f150910e">
+<flow-definition plugin="workflow-job@1400.v7fd111b_ec82f">
   <actions>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2144.v077a_d1928a_40"/>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2144.v077a_d1928a_40">
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2175.v76a_fff0a_2618"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2175.v76a_fff0a_2618">
       <jobProperties/>
       <triggers/>
       <parameters/>
@@ -12,10 +12,6 @@
   <description></description>
   <keepDependencies>false</keepDependencies>
   <properties>
-<com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@320.v5a_0933a_e7d61">
-      <autoRebuild>false</autoRebuild>
-      <rebuildDisabled>false</rebuildDisabled>
-    </com.sonyericsson.rebuild.RebuildSettings>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
@@ -37,7 +33,7 @@
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3802.vd42b_fcf00b_a_c">
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3853.vb_a_490d892963">
     <script>import groovy.json.JsonSlurper;
 
 def retrieveDepStateId
@@ -75,6 +71,27 @@ pipeline {
                     copyArtifacts filter: &apos;*&apos;, projectName: &apos;Retrieve Deployment State&apos;, selector: specific(&quot;&quot;+retrieveDepStateId)
                     sh &apos;cat stacks.json&apos;
                     stacksJson = new File(&apos;/var/jenkins_home/workspace/Deployment Pipeline/stacks.json&apos;).text
+                }
+            }
+        }
+        stage(&apos;Create Database Snapshot&apos;) {
+            steps {
+                script {
+                    def result = build job: &apos;Create Database Snapshot&apos;
+                }
+            }
+        }
+        stage(&apos;Database Migrations&apos;) {
+            steps {
+                script {
+                    def result = build job: &apos;Database Migrations&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash]]
+                }
+            }
+        }
+        stage(&apos;Update PIC-SURE Token Introspection Token&apos;) {
+            steps {
+                script {
+                    def result = build job: &apos;Update PIC-SURE Token Introspection Token&apos;
                 }
             }
         }
