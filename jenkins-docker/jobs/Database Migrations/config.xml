@@ -66,7 +66,7 @@ done
 assume_role
 
 # Getting db admin user secret value by secret name
-db_admin_user_json=$(fetch_secret &quot;$database_admin_user_secret_name&quot;)
+db_admin_user_json=$(fetch_secret &quot;$database_root_user_secret_name&quot;)
 
 # DB admin user information
 db_admin_user_username=$(extract_field &quot;$db_admin_user_json&quot; &quot;username&quot;)
