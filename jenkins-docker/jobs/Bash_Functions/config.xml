@@ -661,12 +661,42 @@ replace_xml_special_chars() {
     local input_string=&quot;$1&quot;
     local output_string=&quot;&quot;
 
-    # Replace &amp; first to avoid double-encoding of entities
-    output_string=&quot;${input_string//&amp;/&amp;amp;}&quot;
-    output_string=&quot;${output_string//&lt;/&amp;lt;}&quot;
-    output_string=&quot;${output_string//&gt;/&amp;gt;}&quot;
-    output_string=&quot;${output_string//\&quot;/&amp;quot;}&quot;
-    output_string=&quot;${output_string//\&apos;/&amp;apos;}&quot;
+    # Length of the input string
+    local len=${#input_string}
+    local i char ord
+
+    for ((i=0; i&lt;len; i++)); do
+        char=&quot;${input_string:i:1}&quot;
+        case &quot;$char&quot; in
+            &apos;&amp;&apos;)
+                output_string+=&quot;&amp;amp;&quot;
+                ;;
+            &apos;&lt;&apos;)
+                output_string+=&quot;&amp;lt;&quot;
+                ;;
+            &apos;&gt;&apos;)
+                output_string+=&quot;&amp;gt;&quot;
+                ;;
+            &apos;&quot;&apos;)
+                output_string+=&quot;&amp;quot;&quot;
+                ;;
+            &quot;&apos;&quot;)
+                output_string+=&quot;&amp;apos;&quot;
+                ;;
+            &apos;?&apos;)
+                output_string+=&quot;&amp;#63;&quot;
+                ;;
+            &apos;#&apos;)
+                output_string+=&quot;&amp;#35;&quot;
+                ;;
+            &apos;{&apos;)
+                output_string+=&quot;&amp;#123;&quot;
+                ;;
+            *)
+                output_string+=&quot;$char&quot;
+                ;;
+        esac
+    done
 
     echo &quot;$output_string&quot;
 }
