@@ -71,7 +71,7 @@ db_admin_user_json=$(fetch_secret &quot;$database_root_user_secret_name&quot;)
 # DB admin user information
 db_admin_user_username=$(extract_field &quot;$db_admin_user_json&quot; &quot;username&quot;)
 db_admin_user_password=$(extract_field &quot;$db_admin_user_json&quot; &quot;password&quot;)
-db_admin_user_host=$(extract_field &quot;$db_admin_user_json&quot; &quot;host&quot;)
+db_admin_user_host=$database_host_address
 
 # Check if any of the variables are empty
 if [ -z &quot;$db_admin_user_username&quot; ] || [ -z &quot;$db_admin_user_password&quot; ] || [ -z &quot;$db_admin_user_host&quot; ]; then

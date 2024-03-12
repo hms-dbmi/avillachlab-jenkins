@@ -158,7 +158,7 @@ echo &quot;Database JSON: $db_app_user_json&quot;
 # dbuser - seems to be the root user
 picsure_db_username=$(extract_field &quot;$db_app_user_json&quot; &quot;username&quot;)
 picsure_db_password=$(extract_field &quot;$db_app_user_json&quot; &quot;password&quot;)
-picsure_db_host=$(extract_field &quot;$db_app_user_json&quot; &quot;host&quot;)
+picsure_db_host=$database_host_address
 
 # Check if any of the variables are empty
 if [ -z &quot;$picsure_db_username&quot; ] || [ -z &quot;$picsure_db_password&quot; ] || [ -z &quot;$picsure_db_host&quot; ]; then
