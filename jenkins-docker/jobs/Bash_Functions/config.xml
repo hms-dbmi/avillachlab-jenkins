@@ -182,11 +182,11 @@ swap_stacks() {
   echo &quot;live_tg_name=$2&quot;
   echo &quot;staging_httpd_tags_file=$3&quot;
   echo &quot;live_httpd_tags_file=$4&quot;
-  
+
   # Get Target Group ARNs using the function
   local local_staging_target_group_arn=$(get_target_group_arn_by_name &quot;$staging_tg_name&quot;)
   local local_live_target_group_arn=$(get_target_group_arn_by_name &quot;$live_tg_name&quot;)
-  
+
   # Get target group VPC. Both target groups are known to be in the same VPC
   local local_target_group_vpc=$(get_target_group_vpc_by_tg_name &quot;$live_tg_name&quot;)
 
@@ -205,9 +205,9 @@ swap_stacks() {
     fi
   else
     register_targets &quot;$local_target_group_vpc&quot; &quot;$local_live_target_group_arn&quot; &quot;${local_staging_httpd_instance_prv_ips[@]}&quot;
-    wait_for_target_group_health &quot;$local_live_target_group_arn&quot; &quot;HEALTHY&quot; &quot;${local_staging_httpd_instance_prv_ips[@]}&quot;   
+    wait_for_target_group_health &quot;$local_live_target_group_arn&quot; &quot;HEALTHY&quot; &quot;${local_staging_httpd_instance_prv_ips[@]}&quot;
   fi
-  
+
   # Demote Live to Staging (blue to green)
   echo &quot;Demote Live to Staging (blue to green)&quot;
   if [ -z &quot;${local_live_httpd_instance_prv_ips}&quot; ]; then
@@ -231,14 +231,14 @@ swap_stacks() {
       echo &quot;failing build&quot;
       exit 1
     fi
-  else  
+  else
     deregister_targets &quot;$local_target_group_vpc&quot; &quot;$local_live_target_group_arn&quot; &quot;${local_live_httpd_instance_prv_ips[@]}&quot;
     # Wait for draining
     wait_for_target_group_health &quot;$local_live_target_group_arn&quot; &quot;UNUSED&quot; &quot;${local_live_httpd_instance_prv_ips[@]}&quot;
   fi
 
   # Deregister previous Staging from Staging TG (remove green from green)
-  echo &quot;Deregister previous Staging from Staging TG (remove green from green)&quot;  
+  echo &quot;Deregister previous Staging from Staging TG (remove green from green)&quot;
   if [ -z &quot;${local_staging_httpd_instance_prv_ips}&quot; ]; then
     echo &quot;No staging IP Addresses found when deregistering from live TG.&quot;
     echo &quot;Ensure nodes have been created with proper tags for Node, Project, and Stack keys and that it has a TGA.&quot;
@@ -246,7 +246,7 @@ swap_stacks() {
       echo &quot;failing build&quot;
       exit 1
     fi
-  else  
+  else
     deregister_targets &quot;$local_target_group_vpc&quot; &quot;$local_staging_target_group_arn&quot; &quot;${local_staging_httpd_instance_prv_ips[@]}&quot;
     # Wait for draining
     wait_for_target_group_health &quot;$local_staging_target_group_arn&quot; &quot;UNUSED&quot; &quot;${local_staging_httpd_instance_prv_ips[@]}&quot;
@@ -498,7 +498,16 @@ run_flyway_migration() {
   docker run --rm --network=host \
     -v &quot;$(pwd)/${sql_path}:/flyway/sql&quot; \
     -v &quot;$(pwd)/${flyway_conf_path}:/flyway/conf/flyway.conf&quot; \
-      flyway/flyway:10.8 -configFiles=/flyway/conf/flyway.conf -X migrate
+    flyway/flyway:10.8 -configFiles=/flyway/conf/flyway.conf -X migrate
+
+  # Capture the exit status of the docker command
+  local status=$?
+
+  # Check if the status is not zero (which indicates an error)
+  if [ $status -ne 0 ]; then
+    echo &quot;Error: Flyway migration failed with status $status&quot;
+    exit $status  # Exit the script with the same status, causing the Jenkins job to fail
+  fi
 }
 EOF</command>
       <configuredLocalRules/>
@@ -652,12 +661,42 @@ replace_xml_special_chars() {
     local input_string=&quot;$1&quot;
     local output_string=&quot;&quot;
 
-    # Replace &amp; first to avoid double-encoding of entities
-    output_string=&quot;${input_string//&amp;/&amp;amp;}&quot;
-    output_string=&quot;${output_string//&lt;/&amp;lt;}&quot;
-    output_string=&quot;${output_string//&gt;/&amp;gt;}&quot;
-    output_string=&quot;${output_string//\&quot;/&amp;quot;}&quot;
-    output_string=&quot;${output_string//\&apos;/&amp;apos;}&quot;
+    # Length of the input string
+    local len=${#input_string}
+    local i char ord
+
+    for ((i=0; i&lt;len; i++)); do
+        char=&quot;${input_string:i:1}&quot;
+        case &quot;$char&quot; in
+            &apos;&amp;&apos;)
+                output_string+=&quot;&amp;amp;&quot;
+                ;;
+            &apos;&lt;&apos;)
+                output_string+=&quot;&amp;lt;&quot;
+                ;;
+            &apos;&gt;&apos;)
+                output_string+=&quot;&amp;gt;&quot;
+                ;;
+            &apos;&quot;&apos;)
+                output_string+=&quot;&amp;quot;&quot;
+                ;;
+            &quot;&apos;&quot;)
+                output_string+=&quot;&amp;apos;&quot;
+                ;;
+            &apos;?&apos;)
+                output_string+=&quot;&amp;#63;&quot;
+                ;;
+            &apos;#&apos;)
+                output_string+=&quot;&amp;#35;&quot;
+                ;;
+            &apos;{&apos;)
+                output_string+=&quot;&amp;#123;&quot;
+                ;;
+            *)
+                output_string+=&quot;$char&quot;
+                ;;
+        esac
+    done
 
     echo &quot;$output_string&quot;
 }
