@@ -176,17 +176,6 @@ unset_shared_db_config
 # We have a utility to replace the special characters so its XML safe.
 picsure_db_password=$(replace_xml_special_chars &quot;${picsure_db_password}&quot;)
 
-# Get the appropriate UUID based on target stack
-if [ &quot;$target_stack&quot; == &quot;a&quot; ]; then
-	# set UUID to a stack UUIDs
-    dictionaryUUID=&quot;4c6e53d0-0860-4129-9bbd-568b18833f98&quot;
-    authHpdsUUID=&quot;02e23f52-f354-4e8b-992c-d37c8b9ba140&quot;
-else
-	# set UUID to b stack UUIDs
-    dictionaryUUID=&quot;36363664-6231-6134-2d38-6538652d3131&quot;
-    authHpdsUUID=&quot;9e765d93-49a9-42a5-884b-412a6a44af81&quot;
-fi
-
 formatted_referer_allowed_domains=$(generate_domain_regex &quot;$referer_allowed_domains&quot;)
 
 terraform init
@@ -230,8 +219,6 @@ if $isDestroyOnly; then
      -var=&quot;help_link=${help_link}&quot; \
      -var=&quot;environment_prefix=${environment_prefix}&quot; \
      -var=&quot;referer_allowed_domains=${formatted_referer_allowed_domains}&quot; \
-     -var=&quot;dictionary_resource_id=${dictionaryUUID}&quot; \
-     -var=&quot;auth_hpds_resource_id=${authHpdsUUID}&quot; \
      -var=&quot;picsure_db_host=${picsure_db_host}&quot; \
      -var=&quot;picsure_db_password=${picsure_db_password}&quot; \
      -var=&quot;picsure_db_username=${picsure_db_username}&quot; || true
@@ -280,8 +267,6 @@ else
      -var=&quot;help_link=${help_link}&quot; \
      -var=&quot;environment_prefix=${environment_prefix}&quot; \
      -var=&quot;referer_allowed_domains=${formatted_referer_allowed_domains}&quot; \
-     -var=&quot;dictionary_resource_id=${dictionaryUUID}&quot; \
-     -var=&quot;auth_hpds_resource_id=${authHpdsUUID}&quot; \
      -var=&quot;picsure_db_host=${picsure_db_host}&quot; \
      -var=&quot;picsure_db_password=${picsure_db_password}&quot; \
      -var=&quot;picsure_db_username=${picsure_db_username}&quot; || true
@@ -324,8 +309,6 @@ else
      -var=&quot;help_link=${help_link}&quot; \
      -var=&quot;environment_prefix=${environment_prefix}&quot; \
      -var=&quot;referer_allowed_domains=${formatted_referer_allowed_domains}&quot; \
-     -var=&quot;dictionary_resource_id=${dictionaryUUID}&quot; \
-     -var=&quot;auth_hpds_resource_id=${authHpdsUUID}&quot; \
      -var=&quot;picsure_db_host=${picsure_db_host}&quot; \
      -var=&quot;picsure_db_password=${picsure_db_password}&quot; \
      -var=&quot;picsure_db_username=${picsure_db_username}&quot; || true
