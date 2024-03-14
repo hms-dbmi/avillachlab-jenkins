@@ -31,7 +31,7 @@ done
 assume_role
 
 # Getting a secret value by secret name
-dbuser_pass=$(fetch_secret &quot;$database_root_user_secret_name&quot;)
+dbuser_pass=$(fetch_secret &quot;$database_admin_user_secret_name&quot;)
 
 # dbuser - seems to be the root user
 dbuser_username=$(extract_field &quot;$dbuser_pass&quot; &quot;username&quot;)

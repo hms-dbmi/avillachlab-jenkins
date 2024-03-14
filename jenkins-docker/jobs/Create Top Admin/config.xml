@@ -31,8 +31,8 @@
     <hudson.tasks.Shell>
       <command>#!/bin/bash
 # Check if the database root user has been set
-if [ -z &quot;$database_root_user_secret_name&quot; ]; then
-	echo &quot;The &apos;database_root_user_secret_name&apos; must be set in the global configuration&quot;
+if [ -z &quot;$database_admin_user_secret_name&quot; ]; then
+	echo &quot;The &apos;database_admin_user_secret_name&apos; must be set in the global configuration&quot;
     exit;
 fi
 
@@ -57,7 +57,7 @@ echo &quot;Connection ID: $CONNECTION_ID&quot;
 echo &quot;Email: $EMAIL&quot;
 
 # Getting a secret value by secret name
-dbuser_pass=$(fetch_secret &quot;$database_root_user_secret_name&quot;)
+dbuser_pass=$(fetch_secret &quot;$database_admin_user_secret_name&quot;)
 
 # dbuser - seems to be the root user
 dbuser_username=$(extract_field &quot;$dbuser_pass&quot; &quot;username&quot;)
