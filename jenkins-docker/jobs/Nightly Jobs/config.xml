@@ -31,7 +31,7 @@
                 script{
                     // If you would like to keep a stack you can change these values
                     def destroyGreen = true
-                    def destroyBlue = false // TODO: Change to true after testing
+                    def destroyBlue = true
 
                     // Triggering the job with boolean parameters
                     build job: &apos;Terraform Destroy Stack - Standalone&apos;, 

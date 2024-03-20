@@ -3,23 +3,7 @@
   <actions/>
   <description></description>
   <keepDependencies>false</keepDependencies>
-  <properties>
-    <hudson.model.ParametersDefinitionProperty>
-      <parameterDefinitions>
-        <hudson.model.StringParameterDefinition>
-          <name>EMAIL</name>
-          <description>Enter the user&apos;s email or username. The user must exist in the Database.</description>
-          <defaultValue>george_colon@hms.harvard.edu</defaultValue>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>CONNECTION_ID_LOCAL</name>
-          <description>connection id from the connection table for the user&apos;s connection. </description>
-          <trim>true</trim>
-        </hudson.model.StringParameterDefinition>
-      </parameterDefinitions>
-    </hudson.model.ParametersDefinitionProperty>
-  </properties>
+  <properties/>
   <scm class="hudson.scm.NullSCM"/>
   <canRoam>true</canRoam>
   <disabled>false</disabled>
@@ -30,11 +14,6 @@
   <builders>
     <hudson.tasks.Shell>
       <command>#!/bin/bash
-# Check if the database root user has been set
-if [ -z &quot;$database_admin_user_secret_name&quot; ]; then
-	echo &quot;The &apos;database_admin_user_secret_name&apos; must be set in the global configuration&quot;
-    exit;
-fi
 
 # Source folder containing the scripts
 source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
@@ -51,11 +30,6 @@ done
 
 assume_role
 
-CONNECTION_ID=&quot;${connection_id:-$CONNECTION_ID_LOCAL}&quot;
-
-echo &quot;Connection ID: $CONNECTION_ID&quot;
-echo &quot;Email: $EMAIL&quot;
-
 # Getting a secret value by secret name
 dbuser_pass=$(fetch_secret &quot;$database_admin_user_secret_name&quot;)
 
@@ -64,11 +38,10 @@ dbuser_username=$(extract_field &quot;$dbuser_pass&quot; &quot;username&quot;)
 dbuser_password=$(extract_field &quot;$dbuser_pass&quot; &quot;password&quot;)
 dbuser_host=$(extract_field &quot;$dbuser_pass&quot; &quot;host&quot;)
 
-# Initialize database connection information
 initialize_shared_db_config &quot;${dbuser_host%:3306}&quot; &quot;$dbuser_username&quot; &quot;$dbuser_password&quot;
-create_top_admin &quot;$EMAIL&quot; &quot;$CONNECTION_ID&quot;
-unset_shared_db_config
-reset_role</command>
+drop_database_if_exists &quot;auth&quot;
+drop_database_if_exists &quot;picsure&quot;
+unset_shared_db_config</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
