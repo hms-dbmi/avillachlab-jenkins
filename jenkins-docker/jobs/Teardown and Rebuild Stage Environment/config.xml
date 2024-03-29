@@ -66,6 +66,7 @@
   <disabled>false</disabled>
   <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
   <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <jdk>(System)</jdk>
   <triggers/>
   <concurrentBuild>false</concurrentBuild>
   <builders>
@@ -178,6 +179,11 @@ picsure_db_password=$(replace_xml_special_chars &quot;${picsure_db_password}&quo
 
 formatted_referer_allowed_domains=$(generate_domain_regex &quot;$referer_allowed_domains&quot;)
 
+picsure_resource_uuid=&quot;02e23f52-f354-4e8b-992c-d37c8b9ba140&quot;
+if [ &quot;$env_is_open_access&quot; == &quot;true&quot; ]; then
+	picsure_resource_uuid=&quot;70c837be-5ffc-11eb-ae93-0242ac130002&quot;
+fi
+
 terraform init
 if $isDestroyOnly; then
 
@@ -221,7 +227,8 @@ if $isDestroyOnly; then
      -var=&quot;referer_allowed_domains=${formatted_referer_allowed_domains}&quot; \
      -var=&quot;picsure_db_host=${picsure_db_host}&quot; \
      -var=&quot;picsure_db_password=${picsure_db_password}&quot; \
-     -var=&quot;picsure_db_username=${picsure_db_username}&quot; || true
+     -var=&quot;picsure_db_username=${picsure_db_username}&quot; \
+     -var=&quot;pic_sure_resource_id=${picsure_resource_uuid}&quot; || true
 
   reset_role
 
@@ -269,7 +276,8 @@ else
      -var=&quot;referer_allowed_domains=${formatted_referer_allowed_domains}&quot; \
      -var=&quot;picsure_db_host=${picsure_db_host}&quot; \
      -var=&quot;picsure_db_password=${picsure_db_password}&quot; \
-     -var=&quot;picsure_db_username=${picsure_db_username}&quot; || true
+     -var=&quot;picsure_db_username=${picsure_db_username}&quot; \
+     -var=&quot;pic_sure_resource_id=${picsure_resource_uuid}&quot; || true
 
   terraform apply -auto-approve \
      -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot;  \
@@ -311,7 +319,8 @@ else
      -var=&quot;referer_allowed_domains=${formatted_referer_allowed_domains}&quot; \
      -var=&quot;picsure_db_host=${picsure_db_host}&quot; \
      -var=&quot;picsure_db_password=${picsure_db_password}&quot; \
-     -var=&quot;picsure_db_username=${picsure_db_username}&quot; || true
+     -var=&quot;picsure_db_username=${picsure_db_username}&quot; \
+     -var=&quot;pic_sure_resource_id=${picsure_resource_uuid}&quot; || true
 
   reset_role
 
