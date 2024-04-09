@@ -228,7 +228,9 @@ if $isDestroyOnly; then
      -var=&quot;picsure_db_host=${picsure_db_host}&quot; \
      -var=&quot;picsure_db_password=${picsure_db_password}&quot; \
      -var=&quot;picsure_db_username=${picsure_db_username}&quot; \
-     -var=&quot;pic_sure_resource_id=${picsure_resource_uuid}&quot; || true
+     -var=&quot;pic_sure_resource_id=${picsure_resource_uuid}&quot; \
+     -var=&quot;app_acct_id=${app_acct_id}&quot; \
+     -var=&quot;app_user_secret_name=${database_app_user_secret_name}&quot; || true
 
   reset_role
 
@@ -277,7 +279,9 @@ else
      -var=&quot;picsure_db_host=${picsure_db_host}&quot; \
      -var=&quot;picsure_db_password=${picsure_db_password}&quot; \
      -var=&quot;picsure_db_username=${picsure_db_username}&quot; \
-     -var=&quot;pic_sure_resource_id=${picsure_resource_uuid}&quot; || true
+     -var=&quot;pic_sure_resource_id=${picsure_resource_uuid}&quot; \
+     -var=&quot;app_acct_id=${app_acct_id}&quot; \
+     -var=&quot;app_user_secret_name=${database_app_user_secret_name}&quot; || true
 
   terraform apply -auto-approve \
      -var=&quot;dataset_s3_object_key=${dataset_s3_object_key}&quot;  \
@@ -320,7 +324,9 @@ else
      -var=&quot;picsure_db_host=${picsure_db_host}&quot; \
      -var=&quot;picsure_db_password=${picsure_db_password}&quot; \
      -var=&quot;picsure_db_username=${picsure_db_username}&quot; \
-     -var=&quot;pic_sure_resource_id=${picsure_resource_uuid}&quot; || true
+     -var=&quot;pic_sure_resource_id=${picsure_resource_uuid}&quot; \
+     -var=&quot;app_acct_id=${app_acct_id}&quot; \
+     -var=&quot;app_user_secret_name=${database_app_user_secret_name}&quot; || true
 
   reset_role
 
