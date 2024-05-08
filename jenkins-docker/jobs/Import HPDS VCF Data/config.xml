@@ -28,22 +28,19 @@
   <triggers/>
   <concurrentBuild>false</concurrentBuild>
   <builders>
-    <hudson.plugins.groovy.Groovy plugin="groovy@457.v99900cb_85593">
-      <scriptSource class="hudson.plugins.groovy.StringScriptSource">
-        <command>import jenkins.*
+    <hudson.plugins.groovy.SystemGroovy plugin="groovy@457.v99900cb_85593">
+      <source class="hudson.plugins.groovy.StringSystemScriptSource">
+        <script plugin="script-security@1336.vf33a_a_9863911">
+          <script>import jenkins.*
 import jenkins.model.*
 import hudson.*
 import hudson.model.*
 
-def bashFunctionsJob = Jenkins.instance.getItemByFullName(&quot;Bash_Functions&quot;).scheduleBuild2(0).get()</command>
-      </scriptSource>
-      <groovyName>(Default)</groovyName>
-      <parameters></parameters>
-      <scriptParameters></scriptParameters>
-      <properties></properties>
-      <javaOpts></javaOpts>
-      <classPath></classPath>
-    </hudson.plugins.groovy.Groovy>
+def bashFunctionsJob = Jenkins.instance.getItemByFullName(&quot;Bash_Functions&quot;).scheduleBuild2(0).get()</script>
+          <sandbox>false</sandbox>
+        </script>
+      </source>
+    </hudson.plugins.groovy.SystemGroovy>
     <hudson.tasks.Shell>
       <command>#!/bin/bash
 set -e
