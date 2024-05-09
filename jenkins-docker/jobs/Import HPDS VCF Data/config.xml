@@ -4,7 +4,7 @@
   <description></description>
   <keepDependencies>false</keepDependencies>
   <properties/>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.0">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.1">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
@@ -24,9 +24,23 @@
   <disabled>false</disabled>
   <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
   <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <jdk>(System)</jdk>
   <triggers/>
   <concurrentBuild>false</concurrentBuild>
   <builders>
+    <hudson.plugins.groovy.SystemGroovy plugin="groovy@457.v99900cb_85593">
+      <source class="hudson.plugins.groovy.StringSystemScriptSource">
+        <script plugin="script-security@1336.vf33a_a_9863911">
+          <script>import jenkins.*
+import jenkins.model.*
+import hudson.*
+import hudson.model.*
+
+def bashFunctionsJob = Jenkins.instance.getItemByFullName(&quot;Bash_Functions&quot;).scheduleBuild2(0).get()</script>
+          <sandbox>false</sandbox>
+        </script>
+      </source>
+    </hudson.plugins.groovy.SystemGroovy>
     <hudson.tasks.Shell>
       <command>#!/bin/bash
 set -e
@@ -44,7 +58,8 @@ for script_file in &quot;$source_scripts_folder&quot;*.sh; do
 done
 SOURCE_FILE_S3_LINK=`grep source_genomic_dataset_s3_url build-spec.json | cut -d &apos;:&apos; -f 2,3 | sed &apos;s/&quot;//g&apos;`
 
-[ -d &apos;all&apos; ] || mkdir all/
+rm -rf all/
+mkdir all/
 assume_role &quot;arn:aws:iam::736265540791:role/curated-datasets-s3-role&quot;
 aws s3 cp --recursive $SOURCE_FILE_S3_LINK all/
 
@@ -55,5 +70,12 @@ aws s3 --sse=AES256 cp --recursive all/ s3://${stack_s3_bucket}/data/`git blame 
     </hudson.tasks.Shell>
   </builders>
   <publishers/>
-  <buildWrappers/>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.45">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
 </project>
