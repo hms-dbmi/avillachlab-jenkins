@@ -703,10 +703,46 @@ replace_xml_special_chars() {
 EOF</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command>cat &lt;&lt;&apos;EOF&apos; &gt; helper_functions.sh
+
+# Function to wait for command to complete and check for success
+wait_for_command() {
+  local command_id=$1
+  local instance_id=$2
+
+  while true; do
+    command_status=$(aws ssm get-command-invocation --command-id ${command_id} --instance-id ${instance_id} --query &apos;Status&apos; --output text)
+
+    if [[ &quot;${command_status}&quot; == &quot;Success&quot; ]]; then
+      echo &quot;Command succeeded&quot;
+      break
+    elif [[ &quot;${command_status}&quot; == &quot;Failed&quot; || &quot;${command_status}&quot; == &quot;Cancelled&quot; || &quot;${command_status}&quot; == &quot;TimedOut&quot; ]]; then
+      echo &quot;Command failed with status: ${command_status}&quot;
+      echo &quot;Fetching logs...&quot;
+
+      aws ssm get-command-invocation --command-id ${command_id} --instance-id ${instance_id} --query &apos;StandardOutputContent&apos; --output text &gt; command_output.log
+      aws ssm get-command-invocation --command-id ${command_id} --instance-id ${instance_id} --query &apos;StandardErrorContent&apos; --output text &gt; command_error.log
+
+      echo &quot;Standard Output:&quot;
+      cat command_output.log
+      echo &quot;Standard Error:&quot;
+      cat command_error.log
+
+      exit 1
+    else
+      echo &quot;Command status: ${command_status}, waiting...&quot;
+      sleep 5
+    fi
+  done
+}
+EOF</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
   </builders>
   <publishers>
     <hudson.tasks.ArtifactArchiver>
-      <artifacts>target_group_attachment_functions.sh, role_functions.sh, pic_sure_rds_snapshot.sh, jwt_token.sh, database_migration_functions.sh, secret_functions.sh, database_functions.sh</artifacts>
+      <artifacts>target_group_attachment_functions.sh, role_functions.sh, pic_sure_rds_snapshot.sh, jwt_token.sh, database_migration_functions.sh, secret_functions.sh, database_functions.sh, helper_functions.sh</artifacts>
       <allowEmptyArchive>false</allowEmptyArchive>
       <onlyIfSuccessful>false</onlyIfSuccessful>
       <fingerprint>false</fingerprint>
