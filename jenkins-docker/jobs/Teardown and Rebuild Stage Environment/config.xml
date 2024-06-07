@@ -226,8 +226,6 @@ if $isDestroyOnly; then
      -var=&quot;environment_prefix=${environment_prefix}&quot; \
      -var=&quot;referer_allowed_domains=${formatted_referer_allowed_domains}&quot; \
      -var=&quot;picsure_db_host=${picsure_db_host}&quot; \
-     -var=&quot;picsure_db_password=${picsure_db_password}&quot; \
-     -var=&quot;picsure_db_username=${picsure_db_username}&quot; \
      -var=&quot;pic_sure_resource_id=${picsure_resource_uuid}&quot; \
      -var=&quot;app_acct_id=${app_acct_id}&quot; \
      -var=&quot;app_user_secret_name=${database_app_user_secret_name}&quot; || true
@@ -278,8 +276,6 @@ else
      -var=&quot;environment_prefix=${environment_prefix}&quot; \
      -var=&quot;referer_allowed_domains=${formatted_referer_allowed_domains}&quot; \
      -var=&quot;picsure_db_host=${picsure_db_host}&quot; \
-     -var=&quot;picsure_db_password=${picsure_db_password}&quot; \
-     -var=&quot;picsure_db_username=${picsure_db_username}&quot; \
      -var=&quot;pic_sure_resource_id=${picsure_resource_uuid}&quot; \
      -var=&quot;app_acct_id=${app_acct_id}&quot; \
      -var=&quot;app_user_secret_name=${database_app_user_secret_name}&quot; || true
@@ -324,8 +320,6 @@ else
      -var=&quot;environment_prefix=${environment_prefix}&quot; \
      -var=&quot;referer_allowed_domains=${formatted_referer_allowed_domains}&quot; \
      -var=&quot;picsure_db_host=${picsure_db_host}&quot; \
-     -var=&quot;picsure_db_password=${picsure_db_password}&quot; \
-     -var=&quot;picsure_db_username=${picsure_db_username}&quot; \
      -var=&quot;pic_sure_resource_id=${picsure_resource_uuid}&quot; \
      -var=&quot;app_acct_id=${app_acct_id}&quot; \
      -var=&quot;app_user_secret_name=${database_app_user_secret_name}&quot; || true
@@ -341,11 +335,16 @@ else
   # roles are now in the same state as their related resources..
   #aws s3 cp ../s3-deployment-roles/terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate_roles
 
+  # Files that are needed, but are do not need to rendered by terraform.
+  aws s3 --sse=AES256 cp configs/banner_config.json s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/banner_config.json
+  aws s3 --sse=AES256 cp configs/psama-db-config.properties s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/psama-db-config.properties
+  aws s3 --sse=AES256 cp scripts/wildfly-docker.sh s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/wildfly-docker.sh
+  aws s3 --sse=AES256 cp scripts/psama-docker.sh s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/psama-docker.sh
+
   # These files are uploaded to s3 because user-scripts download them.  The user scripts are already running
   # so this is a race condition at this point as terraform has been applied
   #  have terraform provision these to the ec2 and remove the aws cli stuff from the user-scripts and here
   aws s3 --sse=AES256 cp picsureui-settings.json s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/picsureui_settings.json
-  aws s3 --sse=AES256 cp configs/banner_config.json s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/banner_config.json
   aws s3 --sse=AES256 cp standalone.xml s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/standalone.xml
   aws s3 --sse=AES256 cp httpd-vhosts.conf s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/httpd-vhosts.conf
   aws s3 --sse=AES256 cp aggregate-resource.properties s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/aggregate-resource.properties
