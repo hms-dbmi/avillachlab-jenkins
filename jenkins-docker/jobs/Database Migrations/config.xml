@@ -1,53 +1,57 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
-  <actions/>
-  <description></description>
-  <keepDependencies>false</keepDependencies>
-  <properties>
-    <hudson.model.ParametersDefinitionProperty>
-      <parameterDefinitions>
-        <hudson.model.BooleanParameterDefinition>
-          <name>DROP_TABLES</name>
-          <description>Set to TRUE if you would like to drop the databases in order to re-run migrations on clean database tables. Useful for testing migration scripts.</description>
-          <defaultValue>false</defaultValue>
-        </hudson.model.BooleanParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>infrastructure_git_hash</name>
-          <defaultValue>master</defaultValue>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
-      </parameterDefinitions>
-    </hudson.model.ParametersDefinitionProperty>
-  </properties>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.1">
-    <configVersion>2</configVersion>
-    <userRemoteConfigs>
-      <hudson.plugins.git.UserRemoteConfig>
-        <url>${infrastructure_git_repo}</url>
-      </hudson.plugins.git.UserRemoteConfig>
-    </userRemoteConfigs>
-    <branches>
-      <hudson.plugins.git.BranchSpec>
-        <name>${infrastructure_git_hash}</name>
-      </hudson.plugins.git.BranchSpec>
-    </branches>
-    <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
-    <submoduleCfg class="empty-list"/>
-    <extensions/>
-  </scm>
-  <canRoam>true</canRoam>
-  <disabled>false</disabled>
-  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
-  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
-  <triggers/>
-  <concurrentBuild>false</concurrentBuild>
-  <builders>
-    <hudson.tasks.Shell>
-      <command>#!/bin/bash
+    <actions/>
+    <description></description>
+    <keepDependencies>false</keepDependencies>
+    <properties>
+        <hudson.model.ParametersDefinitionProperty>
+            <parameterDefinitions>
+                <hudson.model.BooleanParameterDefinition>
+                    <name>DROP_TABLES</name>
+                    <description>Set to TRUE if you would like to drop the databases in order to re-run migrations on
+                        clean database tables. Useful for testing migration scripts.
+                    </description>
+                    <defaultValue>false</defaultValue>
+                </hudson.model.BooleanParameterDefinition>
+                <hudson.model.StringParameterDefinition>
+                    <name>infrastructure_git_hash</name>
+                    <defaultValue>master</defaultValue>
+                    <trim>false</trim>
+                </hudson.model.StringParameterDefinition>
+            </parameterDefinitions>
+        </hudson.model.ParametersDefinitionProperty>
+    </properties>
+    <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.1">
+        <configVersion>2</configVersion>
+        <userRemoteConfigs>
+            <hudson.plugins.git.UserRemoteConfig>
+                <url>${infrastructure_git_repo}</url>
+            </hudson.plugins.git.UserRemoteConfig>
+        </userRemoteConfigs>
+        <branches>
+            <hudson.plugins.git.BranchSpec>
+                <name>${infrastructure_git_hash}</name>
+            </hudson.plugins.git.BranchSpec>
+        </branches>
+        <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+        <submoduleCfg class="empty-list"/>
+        <extensions/>
+    </scm>
+    <canRoam>true</canRoam>
+    <disabled>false</disabled>
+    <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+    <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+    <jdk>(System)</jdk>
+    <triggers/>
+    <concurrentBuild>false</concurrentBuild>
+    <builders>
+        <hudson.tasks.Shell>
+            <command>#!/bin/bash
+
 # Check if the database root user has been set
 if [ -z &quot;$database_admin_user_secret_name&quot; ]; then
-	echo &quot;The &apos;database_admin_user_secret_name&apos; must be set in the global configuration&quot;
-    exit;
+    echo &quot;The &apos;database_admin_user_secret_name&apos; must be set in the global configuration&quot;
+    exit 1
 fi
 
 # Source folder containing the scripts
@@ -56,11 +60,11 @@ ls -la &quot;$source_scripts_folder&quot;
 
 # Iterate through the files in the folder and source them
 for script_file in &quot;$source_scripts_folder&quot;*.sh; do
-    chmod +x &quot;$script_file&quot;
-    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
-        echo &quot;sourcing $script_file&quot;
-        source &quot;$script_file&quot;
-    fi
+chmod +x &quot;$script_file&quot;
+if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+    echo &quot;sourcing $script_file&quot;
+    source &quot;$script_file&quot;
+fi
 done
 
 assume_role
@@ -74,18 +78,21 @@ db_admin_user_password=$(extract_field &quot;$db_admin_user_json&quot; &quot;pas
 db_admin_user_host=$database_host_address
 
 # Check if any of the variables are empty
-if [ -z &quot;$db_admin_user_username&quot; ] || [ -z &quot;$db_admin_user_password&quot; ] || [ -z &quot;$db_admin_user_host&quot; ]; then
-  echo &quot;Error: One or more required database variables are empty.&quot; &gt;&amp;2
-  exit 1
+if [ -z &quot;$db_admin_user_username&quot; ] || [ -z &quot;$db_admin_user_password&quot; ] || [ -z
+&quot;$db_admin_user_host&quot; ]; then
+    echo &quot;Error: One or more required database variables are empty.&quot; &gt;&amp;2
+    exit 1
 fi
 
-initialize_shared_db_config &quot;${db_admin_user_host%:3306}&quot; &quot;$db_admin_user_username&quot; &quot;$db_admin_user_password&quot;
+initialize_shared_db_config &quot;${db_admin_user_host%:3306}&quot; &quot;$db_admin_user_username&quot;
+&quot;$db_admin_user_password&quot;
 if [ &quot;$DROP_TABLES&quot; = true ]; then
-	drop_all_tables &quot;auth&quot;
+    drop_all_tables &quot;auth&quot;
     drop_all_tables &quot;picsure&quot;
 fi
 
-create_jwt_token &quot;$picsure_client_secret&quot; &quot;$pic_sure_introspection_token_repo&quot; &quot;PSAMA_APPLICATION|$application_id_for_base_query&quot; &quot;${duration_int:-365}&quot; &quot;${duration_unit:-day}&quot;
+create_jwt_token &quot;$picsure_client_secret&quot; &quot;$pic_sure_introspection_token_repo&quot;
+&quot;PSAMA_APPLICATION|$application_id_for_base_query&quot; &quot;${duration_int:-365}&quot; &quot;${duration_unit:-day}&quot;
 echo &quot;New JWT generated successfully.&quot;
 echo &quot;Update the picsure_token_introspection_token configuration with the following:&quot;
 echo &quot;$CREATE_JWT_TOKEN_OUTPUT&quot;
@@ -96,35 +103,90 @@ auth_sql_path=&quot;app-infrastructure/db/auth/&quot;
 picsure_sql_path=&quot;app-infrastructure/db/picsure/&quot;
 
 if [ &quot;$include_auth_hpds&quot; = &quot;false&quot; ]; then
-	hide_auth_hpds=true
+    hide_auth_hpds=true
 else
-	hide_auth_hpds=false
+    hide_auth_hpds=false
 fi
 
 if [ &quot;$include_open_hpds&quot; = &quot;false&quot; ]; then
-	hide_open_hpds=true
+    hide_open_hpds=true
 else
-	hide_open_hpds=false
+    hide_open_hpds=false
 fi
 
-create_flyway_conf &quot;auth&quot; &quot;${db_admin_user_host%:3306}&quot; &quot;$db_admin_user_username&quot; &quot;$db_admin_user_password&quot; \
+create_flyway_conf &quot;auth&quot; &quot;${db_admin_user_host%:3306}&quot; &quot;$db_admin_user_username&quot;
+&quot;$db_admin_user_password&quot; \
 &quot;env_private_dns_name=$env_private_dns_name,connection_label=$connection_label,connection_id=$connection_id,connection_sub_prefix=$connection_sub_prefix,picsure_token_introspection_token=$introspection_token&quot;
-create_flyway_conf &quot;picsure&quot; &quot;${db_admin_user_host%:3306}&quot; &quot;$db_admin_user_username&quot; &quot;$db_admin_user_password&quot; &quot;env_private_dns_name=$env_private_dns_name,include_auth_hpds=$hide_auth_hpds,include_open_hpds=$hide_open_hpds&quot;
+create_flyway_conf &quot;picsure&quot; &quot;${db_admin_user_host%:3306}&quot; &quot;$db_admin_user_username&quot;
+&quot;$db_admin_user_password&quot; &quot;env_private_dns_name=$env_private_dns_name,include_auth_hpds=$hide_auth_hpds,include_open_hpds=$hide_open_hpds&quot;
 run_flyway_migration &quot;$auth_sql_path&quot; &quot;conf/auth_flyway.conf&quot;
 run_flyway_migration &quot;$picsure_sql_path&quot; &quot;conf/picsure_flyway.conf&quot;
 
+if [ &quot;$DROP_TABLES&quot; = true ]; then
+    # Grap the TF state file.
+    echo &quot;Download terraform.tfstate file for A stack&quot;
+    aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/a/terraform.tfstate terraform_a.tfstate
+
+    # Extract the Wildfly EC2 instance ID
+    echo &quot;Extract Wildfly instance ID for A stack&quot;
+    wildfly_instance_id=$(jq -r &apos;.outputs[&quot;wildfly-ec2-id&quot;].value&apos; terraform_a.tfstate)
+    echo &quot;${wildfly_instance_id}&quot;
+
+    if [ -z &quot;$wildfly_instance_id&quot; ]; then
+        echo &quot;Error: WildFly instance ID not found&quot;
+        ## Wildfly instance does not exist, exit with success
+        exit 0
+    fi
+
+    # Update WildFly standalone.xml token
+    update_wildly_standalone_xml_token=&quot;sudo sed -i &apos;s#&lt;simple name=\&quot;java:global/token_introspection_token\&quot;
+    value=\&quot;[^\&quot;]*\&quot;/&gt;#&lt;simple name=\&quot;java:global/token_introspection_token\&quot;
+    value=\&quot;${introspection_token}\&quot;/&gt;#&apos; /home/centos/standalone.xml&quot;
+    replace_token_command_json=$(jq -n --arg cmd &quot;$update_wildly_standalone_xml_token&quot; &apos;{commands:
+    [$cmd]}&apos;)
+    echo &quot;${update_wildly_standalone_xml_token}&quot;
+    echo &quot;${replace_token_command_json}&quot;
+
+    # Execute command to update the token using AWS SSM
+    command_id=$(aws ssm send-command \
+    --instance-ids &quot;${wildfly_instance_id}&quot; \
+    --document-name &quot;AWS-RunShellScript&quot; \
+    --comment &quot;Update WildFly token&quot; \
+    --parameters &quot;$replace_token_command_json&quot; \
+    --query &quot;Command.CommandId&quot; \
+    --output text)
+
+    wait_for_command ${command_id} ${wildfly_instance_id}
+    echo &quot;Token update success&quot;
+
+    restart_command=&quot;sudo docker restart wildfly&quot;
+    restart_command_json=$(jq -n --arg cmd &quot;$restart_command&quot; &apos;{commands: [$cmd]}&apos;)
+
+    command_id=$(aws ssm send-command \
+    --instance-ids &quot;${wildfly_instance_id}&quot; \
+    --document-name &quot;AWS-RunShellScript&quot; \
+    --comment &quot;Restart WildFly container&quot; \
+    --parameters &quot;$restart_command_json&quot; \
+    --query &quot;Command.CommandId&quot; \
+    --output text)
+
+    wait_for_command ${command_id} ${wildfly_instance_id}
+fi
+
+
 unset_shared_db_config
-reset_role</command>
-      <configuredLocalRules/>
-    </hudson.tasks.Shell>
-  </builders>
-  <publishers/>
-  <buildWrappers>
-    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.45">
-      <deleteDirs>false</deleteDirs>
-      <cleanupParameter></cleanupParameter>
-      <externalDelete></externalDelete>
-      <disableDeferredWipeout>false</disableDeferredWipeout>
-    </hudson.plugins.ws__cleanup.PreBuildCleanup>
-  </buildWrappers>
+reset_role
+            </command>
+            <configuredLocalRules/>
+        </hudson.tasks.Shell>
+    </builders>
+    <publishers/>
+    <buildWrappers>
+        <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.45">
+            <deleteDirs>false</deleteDirs>
+            <cleanupParameter></cleanupParameter>
+            <externalDelete></externalDelete>
+            <disableDeferredWipeout>false</disableDeferredWipeout>
+        </hudson.plugins.ws__cleanup.PreBuildCleanup>
+    </buildWrappers>
 </project>
