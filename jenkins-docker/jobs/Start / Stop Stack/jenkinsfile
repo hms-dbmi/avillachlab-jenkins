@@ -1,0 +1,85 @@
+pipeline {
+    agent any
+
+    environment {
+        AWS_REGION = 'us-east-1' 
+        PROJECT_TAG = 'Project'
+    }
+
+    parameters {
+        choice(name: 'ACTION', choices: ['start', 'stop'], description: 'Choose to start or stop the instances')
+        string(name: 'ENVIRONMENT', defaultValue: "${environment_name}", description: 'Specify the environment (e.g., dev, prod)')
+    }
+
+    stages {
+        stage('Check Environment') {
+            steps {
+                script {
+                    if (params.ENVIRONMENT != 'dev') {
+                        error "This pipeline can only be run in the dev environment. Current environment: ${params.ENVIRONMENT}"
+                    }
+                }
+            }
+        }
+
+        // list of EC2 instances based on the specified tag
+        stage('Get EC2 Instances') {
+            steps {
+                script {
+                    def instances = sh(
+                        script: """
+                            aws ec2 describe-instances --region $AWS_REGION --filters "Name=tag:Project,Values=$PROJECT_TAG" --query "Reservations[*].Instances[*].[InstanceId,State.Name]" --output text
+                        """,
+                        returnStdout: true
+                    ).trim().split('\n')
+
+                    def toOperateInstances = []
+                    instances.each { line ->
+                        def (instanceId, state) = line.split()
+                        if (params.ACTION == 'start' && state == 'stopped') {
+                            toOperateInstances << instanceId
+                        } else if (params.ACTION == 'stop' && state == 'running') {
+                            toOperateInstances << instanceId
+                        }
+                    }
+                    
+                    if (toOperateInstances.size() == 0) {
+                        echo "No instances to ${params.ACTION}."
+                        currentBuild.result = 'SUCCESS'
+                        return
+                    }
+
+                    env.TO_OPERATE_INSTANCES = toOperateInstances.join(' ')
+                }
+            }
+        }
+
+        // Perform requested actions to specified instances.
+        stage('Perform Action') {
+            when {
+                expression { env.TO_OPERATE_INSTANCES != null && env.TO_OPERATE_INSTANCES != '' }
+            }
+            steps {
+                script {
+                    // Execute the start or stop command based on user input
+                    if (params.ACTION == 'start') {
+                        sh """
+                            aws ec2 start-instances --region $AWS_REGION --instance-ids $TO_OPERATE_INSTANCES
+                        """
+                    } else if (params.ACTION == 'stop') {
+                        sh """
+                            aws ec2 stop-instances --region $AWS_REGION --instance-ids $TO_OPERATE_INSTANCES
+                        """
+                    }
+                    echo "${params.ACTION.capitalize()} action performed on instances: $TO_OPERATE_INSTANCES"
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+    }
+}
