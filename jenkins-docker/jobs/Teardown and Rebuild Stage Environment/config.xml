@@ -349,7 +349,7 @@ else
   aws s3 --sse=AES256 cp httpd-vhosts.conf s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/httpd-vhosts.conf
   aws s3 --sse=AES256 cp aggregate-resource.properties s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/aggregate-resource.properties
   aws s3 --sse=AES256 cp visualization-resource.properties s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/visualization-resource.properties
-
+  aws s3 --sse=AES256 cp psama.env s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/psama.env
 fi</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
