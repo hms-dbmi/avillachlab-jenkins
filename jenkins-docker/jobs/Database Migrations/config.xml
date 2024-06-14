@@ -91,8 +91,7 @@ if [ &quot;$DROP_TABLES&quot; = true ]; then
     drop_all_tables &quot;picsure&quot;
 fi
 
-create_jwt_token &quot;$picsure_client_secret&quot; &quot;$pic_sure_introspection_token_repo&quot;
-&quot;PSAMA_APPLICATION|$application_id_for_base_query&quot; &quot;${duration_int:-365}&quot; &quot;${duration_unit:-day}&quot;
+create_jwt_token &quot;$picsure_client_secret&quot; &quot;$pic_sure_introspection_token_repo&quot; &quot;PSAMA_APPLICATION|$application_id_for_base_query&quot; &quot;${duration_int:-365}&quot; &quot;${duration_unit:-day}&quot;
 echo &quot;New JWT generated successfully.&quot;
 echo &quot;Update the picsure_token_introspection_token configuration with the following:&quot;
 echo &quot;$CREATE_JWT_TOKEN_OUTPUT&quot;
