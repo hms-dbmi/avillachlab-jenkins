@@ -114,9 +114,7 @@ else
     hide_open_hpds=false
 fi
 
-create_flyway_conf &quot;auth&quot; &quot;${db_admin_user_host%:3306}&quot; &quot;$db_admin_user_username&quot;
-&quot;$db_admin_user_password&quot; \
-&quot;env_private_dns_name=$env_private_dns_name,connection_label=$connection_label,connection_id=$connection_id,connection_sub_prefix=$connection_sub_prefix,picsure_token_introspection_token=$introspection_token&quot;
+create_flyway_conf &quot;auth&quot; &quot;${db_admin_user_host%:3306}&quot; &quot;$db_admin_user_username&quot; &quot;$db_admin_user_password&quot; &quot;env_private_dns_name=$env_private_dns_name,connection_label=$connection_label,connection_id=$connection_id,connection_sub_prefix=$connection_sub_prefix,picsure_token_introspection_token=$introspection_token&quot;
 create_flyway_conf &quot;picsure&quot; &quot;${db_admin_user_host%:3306}&quot; &quot;$db_admin_user_username&quot;
 &quot;$db_admin_user_password&quot; &quot;env_private_dns_name=$env_private_dns_name,include_auth_hpds=$hide_auth_hpds,include_open_hpds=$hide_open_hpds&quot;
 run_flyway_migration &quot;$auth_sql_path&quot; &quot;conf/auth_flyway.conf&quot;
