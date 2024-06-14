@@ -125,8 +125,7 @@ if [ &quot;$DROP_TABLES&quot; = true ]; then
     aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/a/terraform.tfstate terraform_a.tfstate
 
     # Extract the Wildfly EC2 instance ID
-    echo &quot;Extract Wildfly instance ID for A stack&quot;
-    wildfly_instance_id=$(jq -r &apos;.outputs[&quot;wildfly-ec2-id&quot;].value&apos; terraform_a.tfstate)
+    echo &quot;Extract Wildfly instance ID for A stack&quot; wildfly_instance_id=$(jq -r &apos;.outputs[&quot;wildfly-ec2-id&quot;].value&apos; terraform_a.tfstate)
     echo &quot;${wildfly_instance_id}&quot;
 
     if [ -z &quot;$wildfly_instance_id&quot; ]; then
@@ -136,11 +135,8 @@ if [ &quot;$DROP_TABLES&quot; = true ]; then
     fi
 
     # Update WildFly standalone.xml token
-    update_wildly_standalone_xml_token=&quot;sudo sed -i &apos;s#&lt;simple name=\&quot;java:global/token_introspection_token\&quot;
-    value=\&quot;[^\&quot;]*\&quot;/&gt;#&lt;simple name=\&quot;java:global/token_introspection_token\&quot;
-    value=\&quot;${introspection_token}\&quot;/&gt;#&apos; /home/centos/standalone.xml&quot;
-    replace_token_command_json=$(jq -n --arg cmd &quot;$update_wildly_standalone_xml_token&quot; &apos;{commands:
-    [$cmd]}&apos;)
+    update_wildly_standalone_xml_token=&quot;sudo sed -i &apos;s#&lt;simple name=\&quot;java:global/token_introspection_token\&quot; value=\&quot;[^\&quot;]*\&quot;/&gt;#&lt;simple name=\&quot;java:global/token_introspection_token\&quot; value=\&quot;${introspection_token}\&quot;/&gt;#&apos; /home/centos/standalone.xml&quot;
+    replace_token_command_json=$(jq -n --arg cmd &quot;$update_wildly_standalone_xml_token&quot; &apos;{commands: [$cmd]}&apos;)
     echo &quot;${update_wildly_standalone_xml_token}&quot;
     echo &quot;${replace_token_command_json}&quot;
 
