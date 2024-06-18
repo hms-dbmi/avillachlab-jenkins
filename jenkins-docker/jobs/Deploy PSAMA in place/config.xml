@@ -1,11 +1,12 @@
 <?xml version='1.1' encoding='UTF-8'?>
-<flow-definition plugin="workflow-job@1426.v2ecb_a_a_42fd46">
+<flow-definition plugin="workflow-job@1385.vb_58b_86ea_fff1">
   <actions>
     <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2198.v41dd8ef6dd56"/>
     <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2198.v41dd8ef6dd56">
       <jobProperties/>
       <triggers/>
       <parameters>
+        <string>TARGET_STACK</string>
         <string>RUN_DATABASE_MIGRATIONS</string>
         <string>DROP_TABLES</string>
       </parameters>
@@ -15,7 +16,7 @@
   <description></description>
   <keepDependencies>false</keepDependencies>
   <properties>
-    <hudson.plugins.copyartifact.CopyArtifactPermissionProperty plugin="copyartifact@722.v0662a_9b_e22a_c">
+    <hudson.plugins.copyartifact.CopyArtifactPermissionProperty plugin="copyartifact@746.vd2a_674fb_4f6f">
       <projectNameList>
         <string>*</string>
       </projectNameList>
@@ -32,6 +33,12 @@
           <description>Drop tables during migration</description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>TARGET_STACK</name>
+          <description>The stack you want to deploy to. a or b.</description>
+          <defaultValue>b</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -52,6 +59,7 @@ pipeline {
     parameters {
         booleanParam(name: &apos;RUN_DATABASE_MIGRATIONS&apos;, defaultValue: true, description: &apos;Run database migrations&apos;)
         booleanParam(name: &apos;DROP_TABLES&apos;, defaultValue: false, description: &apos;Drop tables during migration&apos;)
+        string(name: &apos;TARGET_STACK&apos;, defaultValue: &apos;b&apos;, description: &apos;The stack you want to deploy to. a or b.&apos;)
     }
     stages {
         stage(&apos;Retrieve Build Spec&apos;) {
@@ -81,13 +89,6 @@ pipeline {
                 }
             }
         }
-        stage(&apos;Update PSAMA on WildFly&apos;) {
-            steps {
-                script {
-                    def result = build job: &apos;Deploy PSAMA to Existing WildFly EC2 - Standalone Tomcat Container&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId]]
-                }
-            }
-        }
         stage(&apos;Database Migrations&apos;) {
             when {
                 expression { return params.RUN_DATABASE_MIGRATIONS }
@@ -96,6 +97,13 @@ pipeline {
                 script {
                     def result = build job: &apos;Database Migrations&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash],
                     [$class: &apos;BooleanParameterValue&apos;, name: &apos;DROP_TABLES&apos;, value: params.DROP_TABLES]]
+                }
+            }
+        }
+        stage(&apos;Update PSAMA on WildFly&apos;) {
+            steps {
+                script {
+                    def result = build job: &apos;Deploy PSAMA to Existing WildFly EC2 - Standalone Tomcat Container&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: TARGET_STACK],[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId]]
                 }
             }
         }
