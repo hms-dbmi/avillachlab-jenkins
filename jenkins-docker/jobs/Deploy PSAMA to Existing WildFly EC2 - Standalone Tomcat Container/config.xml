@@ -16,6 +16,10 @@
           <defaultValue>MANUAL_RUN</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>target_stack</name>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -46,19 +50,17 @@ done
 
 assume_role
 
-# Ensure role reset on exit
-trap reset_role EXIT
-
 # Download the terraform state file
-echo &quot;Download terraform.tfstate file for A stack&quot;
-aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/a/terraform.tfstate terraform_a.tfstate
+echo &quot;Download terraform.tfstate file for $target_stack stack&quot;
+aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/$target_stack/terraform.tfstate terraform.tfstate
 
 # Extract the Wildfly EC2 instance ID
-echo &quot;Extract Wildfly instance ID for A stack&quot;
-wildfly_instance_id=$(jq -r &apos;.outputs[&quot;wildfly-ec2-id&quot;].value&apos; terraform_a.tfstate)
+echo &quot;Extract Wildfly instance ID for $target_stack stack&quot;
+wildfly_instance_id=$(jq -r &apos;.outputs[&quot;wildfly-ec2-id&quot;].value&apos; terraform.tfstate)
 echo &quot;${wildfly_instance_id}&quot;
 
 update_psama_container=&quot;sudo /home/centos/psama-docker.sh $stack_s3_bucket $pipeline_build_id&quot;
+echo &quot;$update_psama_container&quot;
 update_psama_container_json=$(jq -n --arg cmd &quot;$update_psama_container&quot; &apos;{commands: [$cmd]}&apos;)
 
 command_id=$(aws ssm send-command \
@@ -68,8 +70,10 @@ command_id=$(aws ssm send-command \
   --parameters &quot;$update_psama_container_json&quot; \
   --query &quot;Command.CommandId&quot; \
   --output text)
-  
- wait_for_command ${command_id} ${wildfly_instance_id}</command>
+
+ wait_for_command ${command_id} ${wildfly_instance_id}
+
+ reset_role</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
