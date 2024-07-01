@@ -30,6 +30,24 @@
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
+          <name>DATASOURCE_URL</name>
+          <description>Datasource URL</description>
+          <defaultValue>${database_host_address}</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>DATASOURCE_USERNAME</name>
+          <description>Datasource username</description>
+          <defaultValue>${database_app_user_secret_name}</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>STACK_SPECIFIC_APPLICATION_ID</name>
+          <description>Application ID for base query</description>
+          <defaultValue>${application_id_for_base_query}</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
           <name>pipeline_build_id</name>
           <defaultValue>MANUAL_RUN</defaultValue>
           <trim>true</trim>
