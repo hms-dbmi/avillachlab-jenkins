@@ -1,0 +1,224 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job@1385.vb_58b_86ea_fff1">
+  <actions>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2203.v89fa_170c2b_f5"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2203.v89fa_170c2b_f5">
+      <jobProperties/>
+      <triggers/>
+      <parameters>
+        <string>DEPLOY_PSAMA</string>
+        <string>DEPLOY_AUTH_HPDS</string>
+        <string>TARGET_STACK</string>
+        <string>stack_s3_bucket</string>
+        <string>INCLUDE_AUTH_HPDS_DATA</string>
+        <string>RUN_DATABASE_MIGRATIONS</string>
+        <string>DROP_TABLES</string>
+      </parameters>
+      <options/>
+    </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
+  </actions>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <org.jenkinsci.plugins.workflow.job.properties.DisableConcurrentBuildsJobProperty>
+      <abortPrevious>false</abortPrevious>
+    </org.jenkinsci.plugins.workflow.job.properties.DisableConcurrentBuildsJobProperty>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.BooleanParameterDefinition>
+          <name>RUN_DATABASE_MIGRATIONS</name>
+          <description>Run database migrations</description>
+          <defaultValue>true</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>DROP_TABLES</name>
+          <description>Drop tables during migration</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>TARGET_STACK</name>
+          <description>The stack you want to deploy to. a or b.</description>
+          <defaultValue>b</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>DEPLOY_PSAMA</name>
+          <description>Deploy PSAMA</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>DEPLOY_AUTH_HPDS</name>
+          <description>Deploy HPDS</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>INCLUDE_AUTH_HPDS_DATA</name>
+          <description>This will include the auth-hpds-data.sh script.</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>stack_s3_bucket</name>
+          <defaultValue>${stack_s3_bucket}</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>release_control_git_hash</name>
+          <description>Set to override the default release control branch.</description>
+          <defaultValue>${release_control_git_hash}</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3903.v48a_8836749e9">
+    <script>import groovy.json.JsonSlurper
+
+def bdc_ui_docker_tag
+def bdcUIBuildSpecId
+def overrideUiBuildSpec
+def pipelineBuildId
+def build_hashes = [:]
+def hasOverrideUI
+def infrastructure_git_hash
+
+pipeline {
+    agent any
+    environment {
+        RELEASE_CONTROL_GIT_REPO = &quot;${release_control_git_repo}&quot;
+        RELEASE_CONTROL_GIT_HASH = &quot;${release_control_git_hash}&quot;
+    }
+    parameters {
+        booleanParam(name: &apos;RUN_DATABASE_MIGRATIONS&apos;, defaultValue: true, description: &apos;Run database migrations&apos;)
+        booleanParam(name: &apos;DROP_TABLES&apos;, defaultValue: false, description: &apos;Drop tables during migration&apos;)
+        string(name: &apos;TARGET_STACK&apos;, defaultValue: &apos;b&apos;, description: &apos;The stack you want to deploy to. a or b.&apos;)
+        booleanParam(name: &apos;DEPLOY_PSAMA&apos;, defaultValue: false, description: &apos;Deploy PSAMA&apos;)
+        booleanParam(name: &apos;DEPLOY_AUTH_HPDS&apos;, defaultValue: false, description: &apos;Deploy HPDS&apos;)
+        booleanParam(name: &apos;INCLUDE_AUTH_HPDS_DATA&apos;, defaultValue: false, description: &apos;This will include the auth-hpds-data.sh script.&apos;)
+        string(name: &apos;stack_s3_bucket&apos;, defaultValue: &apos;${stack_s3_bucket}&apos;)
+    }
+    stages {
+        stage(&apos;Checkout Build Spec&apos;) {
+            steps {
+                script {
+                    // Checkout the specified commit from the release control repository
+                    checkout([$class: &apos;GitSCM&apos;, branches: [[name: &quot;${RELEASE_CONTROL_GIT_HASH}&quot;]],
+                              userRemoteConfigs: [[url: &quot;${RELEASE_CONTROL_GIT_REPO}&quot;]]])
+
+                    // Git current git hash
+                    pipelineBuildId = sh(script: &apos;git rev-parse HEAD&apos;, returnStdout: true).trim()
+
+                    // Parsing build-spec.json and pipeline_git_commit.txt
+                    def buildSpecFile = new File(&quot;${WORKSPACE}/build-spec.json&quot;)
+                    def buildSpec = new JsonSlurper().parse(buildSpecFile)
+
+                    // Collecting git hashes from build spec
+                    buildSpec.application.each { build -&gt;
+                        build_hashes[build.project_job_git_key] = build.git_hash
+                    }
+                    infrastructure_git_hash = buildSpec.infrastructure_git_hash
+                }
+            }
+        }
+        stage(&apos;Determine Dataset Files&apos;) {
+            steps {
+                sh &apos;&apos;&apos;
+                    echo &quot;Determining dataset files...&quot;
+
+                    # Determine the last dataset modification commit
+                    LAST_DATASET_MODIFICATION_COMMIT=$(git blame --abbrev=39 build-spec.json | grep source_dataset_s3_url | cut -f 1 -d &apos; &apos;)
+                    aws s3api head-object --bucket ${stack_s3_bucket} --key &quot;data/${LAST_DATASET_MODIFICATION_COMMIT}/javabins_rekeyed.tar.gz&quot; || not_exist=true
+                    if [ $not_exist ]; then
+                      echo $LAST_DATASET_MODIFICATION_COMMIT &gt; toBeRekeyed.txt
+                    else
+                      echo $LAST_DATASET_MODIFICATION_COMMIT &gt; alreadyRekeyed.txt
+                    fi
+
+                    # Determine the last destigmatized dataset modification commit
+                    LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT=$(git blame --abbrev=39 build-spec.json | grep source_destigmatized_dataset_s3_url | cut -f 1 -d &apos; &apos;)
+                    aws s3api head-object --bucket ${stack_s3_bucket} --key &quot;data/${LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT}/destigmatized_javabins_rekeyed.tar.gz&quot; || not_exist_destig=true
+                    if [ $not_exist_destig ]; then
+                      echo $LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT &gt; destigmatized_toBeRekeyed.txt
+                    else
+                      echo $LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT &gt; destigmatized_alreadyRekeyed.txt
+                    fi
+
+                    # Determine the last genomic dataset modification commit
+                    LAST_GENOMIC_DATASET_MODIFICATION_COMMIT=$(git blame --abbrev=39 build-spec.json | grep source_genomic_dataset_s3_url | cut -f 1 -d &apos; &apos;)
+                    echo $LAST_GENOMIC_DATASET_MODIFICATION_COMMIT &gt; genomicDatasetKey.txt
+                &apos;&apos;&apos;
+                script {
+                    // Determine dataset S3 object key
+                    env.DATASET_S3_OBJECT_KEY = fileExists(&apos;toBeRekeyed.txt&apos;) ? readFile(&apos;toBeRekeyed.txt&apos;).trim() : readFile(&apos;alreadyRekeyed.txt&apos;).trim()
+                    echo &quot;DATASET_S3_OBJECT_KEY: ${env.DATASET_S3_OBJECT_KEY}&quot;
+
+                    // Determine destigmatized dataset S3 object key
+                    env.DESTIGMATIZED_DATASET_S3_OBJECT_KEY = fileExists(&apos;destigmatized_toBeRekeyed.txt&apos;) ? readFile(&apos;destigmatized_toBeRekeyed.txt&apos;).trim() : readFile(&apos;destigmatized_alreadyRekeyed.txt&apos;).trim()
+                    echo &quot;DESTIGMATIZED_DATASET_S3_OBJECT_KEY: ${env.DESTIGMATIZED_DATASET_S3_OBJECT_KEY}&quot;
+
+                    // Read genomic dataset S3 object key
+                    env.GENOMIC_DATASET_S3_OBJECT_KEY = readFile(&apos;genomicDatasetKey.txt&apos;).trim()
+                    echo &quot;GENOMIC_DATASET_S3_OBJECT_KEY: ${env.GENOMIC_DATASET_S3_OBJECT_KEY}&quot;
+                }
+            }
+        }
+        stage(&apos;Database Migrations&apos;) {
+            when {
+                expression { return params.RUN_DATABASE_MIGRATIONS }
+            }
+            steps {
+                script {
+                    build job: &apos;Database Migrations&apos;, parameters: [
+                        string(name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash),
+                        booleanParam(name: &apos;DROP_TABLES&apos;, value: params.DROP_TABLES)
+                    ]
+                }
+            }
+        }
+        stage(&apos;Parallel Execution&apos;) {
+            parallel {
+                stage(&apos;Deploy PSAMA&apos;) {
+                    when {
+                        expression { return params.DEPLOY_PSAMA }
+                    }
+                    steps {
+                        script {
+                            build job: &apos;Incremental Deployment - PIC-SURE PSAMA&apos;, parameters: [
+                                string(name: &apos;TARGET_STACK&apos;, value: params.TARGET_STACK),
+                                string(name: &apos;pipeline_build_id&apos;, value: pipelineBuildId),
+                                string(name: &apos;PSAMA_GIT_HASH&apos;, value: build_hashes[&apos;PSAMA&apos;])
+                            ]
+                        }
+                    }
+                }
+                stage(&apos;Deploy Auth HPDS&apos;) {
+                    when {
+                        expression { return params.DEPLOY_AUTH_HPDS }
+                    }
+                    steps {
+                        script {
+                            build job: &apos;Incremental Deployment - PIC-SURE HPDS&apos;, parameters: [
+                                string(name: &apos;TARGET_STACK&apos;, value: params.TARGET_STACK),
+                                string(name: &apos;pipeline_build_id&apos;, value: pipelineBuildId),
+                                string(name: &apos;PSH_GIT_HASH&apos;, value: build_hashes[&apos;PSH&apos;]),
+                                string(name: &apos;dataset_s3_object_key&apos;, value: env.DATASET_S3_OBJECT_KEY),
+                                string(name: &apos;genomic_dataset_s3_object_key&apos;, value: env.GENOMIC_DATASET_S3_OBJECT_KEY),
+                                booleanParam(name: &apos;INCLUDE_DATA&apos;, value: INCLUDE_AUTH_HPDS_DATA)
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    }
+    post { 
+        always { 
+            cleanWs()
+        }
+    }
+}
+</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>
