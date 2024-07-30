@@ -43,7 +43,7 @@
   <concurrentBuild>false</concurrentBuild>
   <builders>
     <hudson.tasks.Shell>
-      <command>aws s3 --sse=AES256 cp s3://$S3_BUCKET_NAME/releases/pic-sure-api.tar.gz pic-sure-api.tar.gz 
+      <command>aws s3 --sse=AES256 cp s3://$S3_BUCKET_NAME/releases/pic-sure-api.tar.gz pic-sure-api.tar.gz
 aws s3 --sse=AES256 cp s3://$S3_BUCKET_NAME/releases/pic-sure-aggregate-resource.tar.gz pic-sure-aggregate-resource.tar.gz
 aws s3 --sse=AES256 cp s3://$S3_BUCKET_NAME/releases/pic-sure-visualization-resource.tar.gz pic-sure-visualization-resource.tar.gz
 
@@ -64,7 +64,7 @@ docker build \
  .
  
 docker save hms-dbmi/pic-sure-wildfly:${pipeline_build_id} &gt; pic-sure-wildfly.tar.gz
-aws s3 --sse=AES256 cp pic-sure-wildfly.tar.gz s3://$S3_BUCKET_NAME/releases/pic-sure-wildfly.tar.gz 
+aws s3 --sse=AES256 cp pic-sure-wildfly.tar.gz s3://$S3_BUCKET_NAME/releases/pic-sure-wildfly.tar.gz
 
 </command>
       <configuredLocalRules/>

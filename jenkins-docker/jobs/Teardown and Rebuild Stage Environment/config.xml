@@ -335,7 +335,7 @@ else
   aws s3 --sse=AES256 cp scripts/open-hpds-docker.sh s3://$stack_s3_bucket/configs/open-hpds-docker.sh
   aws s3 --sse=AES256 cp scripts/auth-hpds-docker.sh s3://$stack_s3_bucket/configs/open-hpds-data.sh
   aws s3 --sse=AES256 cp scripts/httpd-docker.sh s3://$stack_s3_bucket/configs/httpd-docker.sh
-  aws s3 --sse=AES256 cp scripts/dictionary-docker.sh s3://$stack_s3_bucket/configs/dictionary-docker.sh  
+  aws s3 --sse=AES256 cp scripts/dictionary-docker.sh s3://$stack_s3_bucket/configs/dictionary-docker.sh
 
   # These files are uploaded to s3 because user-scripts download them.  The user scripts are already running
   # so this is a race condition at this point as terraform has been applied
