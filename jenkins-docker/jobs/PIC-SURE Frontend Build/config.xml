@@ -53,7 +53,7 @@
         GIT_COMMIT_SHORT=`echo ${GIT_COMMIT} | cut -c1-7`
         #need httpd-vhost
         docker build -f Dockerfile -t hms-dbmi/pic-sure-frontend:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
-        docker tag hms-dbmi/pic-sure-frontend:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} hms-dbmi/pic-sure-frontend:LATEST | gzip &gt; pic-sure-frontend.tar.gz
+        docker save hms-dbmi/pic-sure-frontend:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-frontend.tar.gz
         aws s3 --sse=AES256 cp pic-sure-frontend.tar.gz s3://$S3_BUCKET_NAME/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-frontend.tar.gz
       </command>
       <configuredLocalRules/>
