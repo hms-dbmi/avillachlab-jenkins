@@ -1,0 +1,35 @@
+pipeline {
+    agent any
+    
+    parameters {
+        string(name: 'DISPLAY', defaultValue: '3', description: 'Weight for concept_node.DISPLAY')
+        string(name: 'CONCEPT_PATH', defaultValue: '2', description: 'Weight for concept_node.CONCEPT_PATH')
+        string(name: 'FULL_NAME', defaultValue: '1', description: 'Weight for dataset.FULL_NAME')
+        string(name: 'DESCRIPTION', defaultValue: '1', description: 'Weight for dataset.DESCRIPTION')
+        string(name: 'META_STR_WEIGHT', defaultValue: '1', description: 'Weight for concept_node_meta_str')
+    }
+
+    stages {
+        stage('Build CSV') {
+            steps {
+                script {
+                    def csvContent = """\
+concept_node.DISPLAY,${params.DISPLAY_WEIGHT}
+concept_node.CONCEPT_PATH,${params.CONCEPT_PATH_WEIGHT}
+dataset.FULL_NAME,${params.FULL_NAME_WEIGHT}
+dataset.DESCRIPTION,${params.DESCRIPTION_WEIGHT}
+concept_node_meta_str,${params.META_STR_WEIGHT}
+"""
+
+                    writeFile file: 'weights.csv', text: csvContent
+                }
+            }
+        }
+
+        stage('Archive CSV') {
+            steps {
+                archiveArtifacts artifacts: 'weights.csv', onlyIfSuccessful: true
+            }
+        }
+    }
+}
