@@ -22,7 +22,13 @@ pipeline {
     stages {
         stage('Clone Repository') {
             steps {
-                git branch: "${params.GIT_BRANCH}", url: "${params.GIT_REPO_URL}"
+                script {
+                    def ref = "${params.GIT_BRANCH}"
+                    checkout([$class: 'GitSCM',
+                        branches: [[name: ref]],
+                        userRemoteConfigs: [[url: "${params.GIT_REPO_URL}"]]
+                    ])
+                }
             }
         }
     }    
