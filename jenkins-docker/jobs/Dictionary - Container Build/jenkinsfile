@@ -1,0 +1,64 @@
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'GIT_REPO_URL', defaultValue: 'https://github.com/hms-dbmi/picsure-dictionary.git', description: 'The GitHub repository URL')
+        string(name: 'GIT_BRANCH', defaultValue: 'main', description: 'The Git branch to checkout')
+        string(name: 'DOCKER_REPO', defaultValue: 'avillach', description: 'The Docker repository name')
+        string(name: 'API_IMAGE_NAME', defaultValue: 'dictionary-api', description: 'The Docker image name for the Dictionary API')
+        string(name: 'WEIGHTS_IMAGE_NAME', defaultValue: 'dictionary-weights', description: 'The Docker image name for the Dictionary Weights')
+        string(name: 'DOCKER_IMAGE_VERSION', defaultValue: 'latest', description: 'The Docker image version/tag')
+    }
+
+    stages {
+        stage('Clone Repository') {
+            steps {
+                script {
+                    def ref = "${params.GIT_BRANCH}"
+                    checkout([$class: 'GitSCM',
+                        branches: [[name: ref]],
+                        userRemoteConfigs: [[url: "${params.GIT_REPO_URL}"]]
+                    ])
+                }
+            }
+        }
+
+        stage('Build Dictionary Docker Image') {
+            steps {
+                dir('.') {
+                    script {
+                        sh "docker build . -t '${params.DOCKER_REPO}/${params.API_IMAGE_NAME}:${params.DOCKER_IMAGE_VERSION}'"
+                    }
+                }
+            }
+        }
+
+        stage('Build Dictionary Weights Docker Image') {
+            steps {
+                dir('dictionaryweights') {
+                    script {
+                        sh "docker build . -t '${params.DOCKER_REPO}/${params.WEIGHTS_IMAGE_NAME}:${params.DOCKER_IMAGE_VERSION}'"
+                    }
+                }
+            }
+        }
+
+        stage('Save Docker Images as TAR') {
+            steps {
+                script {
+                    sh "docker save -o dictionary-api.tar.gz ${params.DOCKER_REPO}/${params.API_IMAGE_NAME}:${params.DOCKER_IMAGE_VERSION}"
+                    sh "docker save -o dictionary-weights.tar.gz ${params.DOCKER_REPO}/${params.WEIGHTS_IMAGE_NAME}:${params.DOCKER_IMAGE_VERSION}"
+                }
+            }
+        }
+
+        stage('Upload TAR Files to S3') {
+            steps {
+                script {
+                    sh "aws s3 cp dictionary-api.tar.gz s3://${stack_s3_bucket}/containers/application/dictionary-api.tar.gz"
+                    sh "aws s3 cp dictionary-weights.tar.gz s3://${stack_s3_bucket}/containers/application/dictionary-weights.tar.gz"
+                }
+            }
+        }
+    }
+}
