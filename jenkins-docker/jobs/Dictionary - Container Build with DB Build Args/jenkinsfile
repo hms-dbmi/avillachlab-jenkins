@@ -9,6 +9,7 @@ pipeline {
         string(name: 'DATASOURCE_URL', description: 'Datasource URL', defaultValue: '${database_host_address}')
         string(name: 'DATASOURCE_USERNAME', description: 'Datasource username', defaultValue: '${database_app_user_secret_name}')
         string(name: 'STACK_SPECIFIC_APPLICATION_ID', description: 'Application ID for base query', defaultValue: '${application_id_for_base_query}')
+        string(name: 'SPRING_PROFILE', description: 'Spring profile', defaultValue: 'bdc')
     }
 
     environment {
@@ -32,7 +33,8 @@ pipeline {
                     // Define the build args
                     def buildArgs = " --build-arg DATASOURCE_URL=${env.DATASOURCE_URL} " +
                                     " --build-arg DATASOURCE_USERNAME=${env.DATASOURCE_USERNAME} " +
-                                    " --build-arg STACK_SPECIFIC_APPLICATION_ID=${env.STACK_SPECIFIC_APPLICATION_ID} "
+                                    " --build-arg STACK_SPECIFIC_APPLICATION_ID=${env.STACK_SPECIFIC_APPLICATION_ID} " +
+                                    " --build-arg SPRING_PROFILE=${env.SPRING_PROFILE}"
 
                     sh "docker build ${DOCKER_BUILD_ARGS} ${buildArgs} -t ${params.DOCKER_REGISTRY}/${params.REPOSITORY_NAME}:${IMAGE_TAG} ."
                     sh "docker tag ${params.DOCKER_REGISTRY}/${params.REPOSITORY_NAME}:${IMAGE_TAG} ${params.DOCKER_REGISTRY}/${params.REPOSITORY_NAME}:${LATEST_TAG}"
