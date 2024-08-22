@@ -12,9 +12,14 @@ pipeline {
 
     stages {
         stage('Clone Repository') {
-            steps {
-                git branch: "*/${params.GIT_BRANCH}", url: "${params.GIT_REPO_URL}"
-            }
+    steps {
+        script {
+            checkout([$class: 'GitSCM',
+                branches: [[name: "*/${params.GIT_TAG}"]],
+                userRemoteConfigs: [[url: "${params.GIT_REPO_URL}"]]
+            ])
+        }
+    }
         }
 
         stage('Build Dictionary Docker Image') {
