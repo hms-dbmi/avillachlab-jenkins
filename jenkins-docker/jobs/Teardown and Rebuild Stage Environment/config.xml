@@ -330,6 +330,7 @@ else
   aws s3 --sse=AES256 cp configs/banner_config.json s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/banner_config.json
   aws s3 --sse=AES256 cp scripts/wildfly-docker.sh s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/wildfly-docker.sh
   aws s3 --sse=AES256 cp scripts/psama-docker.sh s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/psama-docker.sh
+  aws s3 --sse=AES256 cp scripts/dictionary-docker.sh s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/dictionary-docker.sh
 
   # These files are uploaded to s3 because user-scripts download them.  The user scripts are already running
   # so this is a race condition at this point as terraform has been applied
