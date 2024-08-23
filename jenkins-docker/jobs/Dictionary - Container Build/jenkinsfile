@@ -33,7 +33,7 @@ pipeline {
                                         " --build-arg DATASOURCE_USERNAME=${env.DATASOURCE_USERNAME} " +
                                         " --build-arg SPRING_PROFILE=${params.SPRING_PROFILE}"
 
-                        sh "docker build . ${buildArgs} -t '${params.DOCKER_REPO}/${params.API_IMAGE_NAME}:${params.DOCKER_IMAGE_VERSION}'"
+                        sh "docker build --no-cache ${buildArgs} -t '${params.DOCKER_REPO}/${params.API_IMAGE_NAME}:${params.DOCKER_IMAGE_VERSION}' ."
                     }
                 }
             }
