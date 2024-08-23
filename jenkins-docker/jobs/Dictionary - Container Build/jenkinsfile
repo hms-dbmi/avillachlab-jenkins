@@ -6,11 +6,10 @@ pipeline {
         string(name: 'GIT_BRANCH', defaultValue: 'main', description: 'The Git branch to checkout')
         string(name: 'DOCKER_REPO', defaultValue: 'avillach', description: 'The Docker repository name')
         string(name: 'API_IMAGE_NAME', defaultValue: 'dictionary-api', description: 'The Docker image name for the Dictionary API')
-        string(name: 'WEIGHTS_IMAGE_NAME', defaultValue: 'dictionary-weights', description: 'The Docker image name for the Dictionary Weights')
         string(name: 'DOCKER_IMAGE_VERSION', defaultValue: 'latest', description: 'The Docker image version/tag')
         string(name: 'SPRING_PROFILE', defaultValue: 'bdc', description: 'The Spring profile')
-        string(name: 'DATASOURCE_URL', description: 'Datasource URL', defaultValue: '${database_host_address}')
-        string(name: 'DATASOURCE_USERNAME', description: 'Datasource username', defaultValue: '${database_app_user_secret_name}')
+        string(name: 'DATASOURCE_URL', description: 'Datasource URL', defaultValue: '${database_psql_host_address}')
+        string(name: 'DATASOURCE_USERNAME', description: 'Datasource username', defaultValue: '${database_psql_app_user_secret_name}')
     }
 
     stages {
