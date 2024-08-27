@@ -1,8 +1,8 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <flow-definition plugin="workflow-job@1385.vb_58b_86ea_fff1">
   <actions>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2168.vf921b_4e72c73"/>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2168.vf921b_4e72c73">
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2205.vc9522a_9d5711"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2205.vc9522a_9d5711">
       <jobProperties/>
       <triggers/>
       <parameters/>
@@ -12,13 +12,13 @@
   <description></description>
   <keepDependencies>false</keepDependencies>
   <properties>
-    <hudson.plugins.copyartifact.CopyArtifactPermissionProperty plugin="copyartifact@722.v0662a_9b_e22a_c">
+    <hudson.plugins.copyartifact.CopyArtifactPermissionProperty plugin="copyartifact@749.vfb_dca_a_9b_6549">
       <projectNameList>
         <string>*</string>
       </projectNameList>
     </hudson.plugins.copyartifact.CopyArtifactPermissionProperty>
   </properties>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3832.vc43e04d6d68c">
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3908.vd6b_b_5a_a_54010">
     <script>import groovy.json.JsonSlurper;
 def bdc_ui_docker_tag;
 
@@ -90,7 +90,7 @@ pipeline {
         stage(&apos;PIC-SURE Dictionary image &apos;){
             steps {
                 script {
-                    def dictionaryBuildResult = build job: &apos;Dictionary - Container Build&apos;, parameters: [
+                    def dictionaryBuildResult = build job: &apos;PIC-SURE Dictionary - Jenkinsfile&apos;, parameters: [
                         [$class: &apos;StringParameterValue&apos;, name: &apos;GIT_BRANCH&apos;, value: build_hashes[&apos;PSS&apos;]]
                     ]
                 }
