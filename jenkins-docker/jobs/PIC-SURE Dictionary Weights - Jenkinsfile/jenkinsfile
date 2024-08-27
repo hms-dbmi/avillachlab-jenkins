@@ -65,11 +65,6 @@ pipeline {
             steps {
                 dir('dictionaryweights') {
                     script {
-                        echo "Building Docker image..."
-                        echo "DATASOURCE_URL: ${params.DATASOURCE_URL}"
-                        echo "DATASOURCE_USERNAME: ${params.DATASOURCE_USERNAME}"
-                        echo "SPRING_PROFILE: ${params.SPRING_PROFILE}"
-
                         def buildArgs = " --build-arg DATASOURCE_URL=${params.DATASOURCE_URL} " +
                                         " --build-arg DATASOURCE_USERNAME=${params.DATASOURCE_USERNAME} " +
                                         " --build-arg SPRING_PROFILE=${params.SPRING_PROFILE}"
@@ -86,10 +81,6 @@ pipeline {
                 script {
                     def awsHelper = new AWSHelper("${app_acct_id}", "${jenkins_provisioning_assume_role_name}", { msg -> echo msg })
                     awsHelper.assumeRole()
-
-                    // TODO: This code can be removed once we are unblocked.
-                    def secrets = awsHelper.getAllSecretsNames()
-                    echo "Secrets: ${secrets}"
 
                     def (accessKeyId, secretAccessKey, sessionToken) = awsHelper.fetchAwsCredentials()
 
