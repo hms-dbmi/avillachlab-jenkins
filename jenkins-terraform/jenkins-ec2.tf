@@ -13,7 +13,7 @@ data "template_file" "jenkins-user_data" {
 }
 
 #Lookup latest AMI
-data "aws_ami" "centos" {
+data "aws_ami" "this" {
   most_recent = true
   owners      = ["752463128620"]
   name_regex  = "^srce-rhel9-with-docker-golden-*"
@@ -31,7 +31,7 @@ data "template_cloudinit_config" "config" {
 }
 
 resource "aws_instance" "jenkins" {
-  ami           = data.aws_ami.centos.id
+  ami           = data.aws_ami.this.id
   instance_type = var.jenkins_ec2_instance_type
 
   iam_instance_profile = var.jenkins_instance_profile_name
