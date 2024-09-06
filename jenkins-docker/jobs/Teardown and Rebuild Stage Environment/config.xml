@@ -225,7 +225,11 @@ if $isDestroyOnly; then
      -var=&quot;picsure_db_host=${picsure_db_host}&quot; \
      -var=&quot;pic_sure_resource_id=${picsure_resource_uuid}&quot; \
      -var=&quot;app_acct_id=${app_acct_id}&quot; \
-     -var=&quot;app_user_secret_name=${database_app_user_secret_name}&quot; || true
+     -var=&quot;app_user_secret_name=${database_app_user_secret_name}&quot; \
+     -var=&quot;ras_client_id=${ras_client_id}&quot; \
+     -var=&quot;ras_okta_idp_id=${ras_okta_idp_id}&quot; \
+     -var=&quot;ras_idp_provider_uri=${ras_idp_provider_uri}&quot; \
+     -var=&quot;login_redirect_uri=${login_redirect_uri}&quot; || true
 
 
   reset_role
@@ -272,7 +276,11 @@ else
      -var=&quot;picsure_db_host=${picsure_db_host}&quot; \
      -var=&quot;pic_sure_resource_id=${picsure_resource_uuid}&quot; \
      -var=&quot;app_acct_id=${app_acct_id}&quot; \
-     -var=&quot;app_user_secret_name=${database_app_user_secret_name}&quot; || true
+     -var=&quot;app_user_secret_name=${database_app_user_secret_name}&quot; \
+     -var=&quot;ras_client_id=${ras_client_id}&quot; \
+     -var=&quot;ras_okta_idp_id=${ras_okta_idp_id}&quot; \
+     -var=&quot;ras_idp_provider_uri=${ras_idp_provider_uri}&quot; \
+     -var=&quot;login_redirect_uri=${login_redirect_uri}&quot; || true
 
 
   terraform apply -auto-approve \
@@ -313,7 +321,11 @@ else
      -var=&quot;picsure_db_host=${picsure_db_host}&quot; \
      -var=&quot;pic_sure_resource_id=${picsure_resource_uuid}&quot; \
      -var=&quot;app_acct_id=${app_acct_id}&quot; \
-     -var=&quot;app_user_secret_name=${database_app_user_secret_name}&quot; || true
+     -var=&quot;app_user_secret_name=${database_app_user_secret_name}&quot; \
+     -var=&quot;ras_client_id=${ras_client_id}&quot; \
+     -var=&quot;ras_okta_idp_id=${ras_okta_idp_id}&quot; \
+     -var=&quot;ras_idp_provider_uri=${ras_idp_provider_uri}&quot; \
+     -var=&quot;login_redirect_uri=${login_redirect_uri}&quot; || true
 
 
   reset_role
