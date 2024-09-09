@@ -26,7 +26,7 @@
     <string>staticMethod org.codehaus.groovy.runtime.ProcessGroovyMethods getText java.lang.Process</string>
     <string>staticMethod org.codehaus.groovy.runtime.ProcessGroovyMethods waitForProcessOutput java.lang.Process java.lang.Appendable java.lang.Appendable</string>
     <string>method java.util.Properties load java.io.InputStream</string>
- d  </approvedSignatures>
+  </approvedSignatures>
   <aclApprovedSignatures/>
   <approvedClasspathEntries/>
   <pendingScripts/>
