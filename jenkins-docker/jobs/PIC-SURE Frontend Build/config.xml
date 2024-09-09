@@ -54,7 +54,7 @@
         GIT_COMMIT_SHORT=`echo ${GIT_COMMIT} | cut -c1-7`
         #need httpd-vhost
         
-        aws s3api get-ob ject --bucket $stack_s3_bucket --key &quot;configs/${LAST_DATASET_MODIFICATION_COMMIT}bdc.env&quot; .env
+        aws s3api get-ob  dject --bucket $stack_s3_bucket --key &quot;configs/${LAST_DATASET_MODIFICATION_COMMIT}bdc.env&quot; .env
         
         docker build -f Dockerfile -t hms-dbmi/pic-sure-frontend:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
         docker save hms-dbmi/pic-sure-frontend:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-frontend.tar.gz
