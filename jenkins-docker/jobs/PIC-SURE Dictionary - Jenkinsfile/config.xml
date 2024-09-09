@@ -6,11 +6,14 @@
       <jobProperties/>
       <triggers/>
       <parameters>
-        <string>STACK_SPECIFIC_APPLICATION_ID</string>
-        <string>REPOSITORY_NAME</string>
+        <string>DOCKER_IMAGE_VERSION</string>
+        <string>DOCKER_REPO</string>
+        <string>API_IMAGE_NAME</string>
+        <string>GIT_BRANCH</string>
+        <string>SPRING_PROFILE</string>
         <string>DATASOURCE_USERNAME</string>
-        <string>DOCKER_REGISTRY</string>
         <string>DATASOURCE_URL</string>
+        <string>GIT_REPO_URL</string>
       </parameters>
       <options/>
     </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
@@ -21,49 +24,52 @@
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
-          <name>DOCKER_REGISTRY</name>
-          <description>Docker registry URL (e.g., ECR URL)</description>
-          <defaultValue>hms-dbmi</defaultValue>
+          <name>GIT_REPO_URL</name>
+          <description>The GitHub repository URL</description>
+          <defaultValue>https://github.com/hms-dbmi/picsure-dictionary.git</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>REPOSITORY_NAME</name>
-          <description>Docker repository name</description>
-          <defaultValue>psama</defaultValue>
+          <name>GIT_BRANCH</name>
+          <description>The Git branch to checkout</description>
+          <defaultValue>main</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>DOCKER_REPO</name>
+          <description>The Docker repository name</description>
+          <defaultValue>avillach</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>API_IMAGE_NAME</name>
+          <description>The Docker image name for the Dictionary API</description>
+          <defaultValue>dictionary-api</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>DOCKER_IMAGE_VERSION</name>
+          <description>The Docker image version/tag</description>
+          <defaultValue>latest</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>SPRING_PROFILE</name>
+          <description>The Spring profile</description>
+          <defaultValue>bdc</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>DATASOURCE_URL</name>
           <description>Datasource URL</description>
-          <defaultValue>${database_host_address}</defaultValue>
+          <defaultValue>${database_psql_host_address}</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>DATASOURCE_USERNAME</name>
           <description>Datasource username</description>
-          <defaultValue>${database_app_user_secret_name}</defaultValue>
+          <defaultValue>${database_psql_app_user_secret_name}</defaultValue>
           <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>STACK_SPECIFIC_APPLICATION_ID</name>
-          <description>Application ID for base query</description>
-          <defaultValue>${application_id_for_base_query}</defaultValue>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>pipeline_build_id</name>
-          <defaultValue>MANUAL_RUN</defaultValue>
-          <trim>true</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>git_hash</name>
-          <defaultValue>feature/java-21-Merge-Fence</defaultValue>
-          <trim>true</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>S3_BUCKET_NAME</name>
-          <defaultValue>${stack_s3_bucket}</defaultValue>
-          <trim>true</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
@@ -73,20 +79,20 @@
       <configVersion>2</configVersion>
       <userRemoteConfigs>
         <hudson.plugins.git.UserRemoteConfig>
-          <url>${pic_sure_auth_microapp_repo}</url>
+          <url>https://github.com/hms-dbmi/avillachlab-jenkins</url>
         </hudson.plugins.git.UserRemoteConfig>
       </userRemoteConfigs>
       <branches>
         <hudson.plugins.git.BranchSpec>
-          <name>${git_hash}</name>
+          <name>${jenkins_git_hash} d</name>
         </hudson.plugins.git.BranchSpec>
       </branches>
       <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
       <submoduleCfg class="empty-list"/>
       <extensions/>
     </scm>
-    <scriptPath>Jenkinsfile.fence</scriptPath>
-    <lightweight>false</lightweight>
+    <scriptPath>jenkins-docker/jobs/PIC-SURE Dictionary - Jenkinsfile/jenkinsfile</scriptPath>
+    <lightweight>true</lightweight>
   </definition>
   <triggers/>
   <disabled>false</disabled>

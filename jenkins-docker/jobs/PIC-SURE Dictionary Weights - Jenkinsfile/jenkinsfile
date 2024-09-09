@@ -1,0 +1,106 @@
+@Library('avillach_lab_pic_sure@als-7051-redux') _
+
+pipeline {
+    agent any
+    
+    parameters {
+        string(name: 'DISPLAY', defaultValue: '3', description: 'Weight for concept_node.DISPLAY')
+        string(name: 'CONCEPT_PATH', defaultValue: '2', description: 'Weight for concept_node.CONCEPT_PATH')
+        string(name: 'FULL_NAME', defaultValue: '1', description: 'Weight for dataset.FULL_NAME')
+        string(name: 'DESCRIPTION', defaultValue: '1', description: 'Weight for dataset.DESCRIPTION')
+        string(name: 'META_STR', defaultValue: '1', description: 'Weight for concept_node_meta_str')
+        string(name: 'GIT_REPO_URL', defaultValue: 'https://github.com/hms-dbmi/picsure-dictionary.git', description: 'The GitHub repository URL')
+        string(name: 'GIT_BRANCH', defaultValue: 'ALS-7051', description: 'The Git branch to checkout')
+        string(name: 'DOCKER_REPO', defaultValue: 'avillach', description: 'The Docker repository name')
+        string(name: 'SPRING_PROFILE', defaultValue: 'bdc', description: 'The Spring profile')
+        string(name: 'IMAGE_NAME', defaultValue: 'dictionary_weights', description: 'The name of the Docker image')
+        string(name: 'DOCKER_IMAGE_VERSION', defaultValue: 'latest', description: 'The Docker image tag')
+        string(name: 'DATASOURCE_URL', description: 'Datasource URL', defaultValue: '${database_psql_host_address}')
+        string(name: 'DATASOURCE_USERNAME', description: 'Datasource username', defaultValue: '${database_psql_app_user_secret_name}')
+    }
+
+    stages {
+        stage('Build CSV') {
+            steps {
+                script {
+                    def csvContent = """\
+                    concept_node.DISPLAY,${params.DISPLAY}
+                    concept_node.CONCEPT_PATH,${params.CONCEPT_PATH}
+                    dataset.FULL_NAME,${params.FULL_NAME}
+                    dataset.DESCRIPTION,${params.DESCRIPTION}
+                    concept_node_meta_str,${params.META_STR}
+                    """
+
+                    writeFile file: 'weights.csv', text: csvContent
+                }
+            }
+        }
+
+        stage('Archive CSV') {
+            steps {
+                archiveArtifacts artifacts: 'weights.csv', onlyIfSuccessful: true
+            }
+        }
+
+        stage('Clone Repository') {
+            steps {
+                script {
+                    def ref = "${params.GIT_BRANCH}"
+                    checkout([$class: 'GitSCM',
+                        branches: [[name: ref]],
+                        userRemoteConfigs: [[url: "${params.GIT_REPO_URL}"]],
+                        extensions: [
+                            [$class: 'SparseCheckoutPaths', sparseCheckoutPaths: [
+                                [path: 'dictionaryweights']
+                            ]],
+                            [$class: 'CheckoutOption', timeout: 10],
+                            [$class: 'CloneOption', depth: 1, noTags: true, shallow: true]
+                        ]
+                    ])
+                }
+            }
+        }
+
+        stage('Build Dictionary Docker Image') {
+            steps {
+                dir('dictionaryweights') {
+                    script {
+                        def buildArgs = " --build-arg DATASOURCE_URL=${params.DATASOURCE_URL} " +
+                                        " --build-arg DATASOURCE_USERNAME=${params.DATASOURCE_USERNAME} " +
+                                        " --build-arg SPRING_PROFILE=${params.SPRING_PROFILE}"
+
+                        sh "docker build ${buildArgs} -t '${params.DOCKER_REPO}/${params.IMAGE_NAME}:${params.DOCKER_IMAGE_VERSION}' ."
+                    }
+                }
+            }
+        }
+
+
+        stage('Run Docker Container') {
+            steps {
+                script {
+                    def awsHelper = new AWSHelper("${app_acct_id}", "${jenkins_provisioning_assume_role_name}", { msg -> echo msg })
+                    awsHelper.assumeRole()
+
+                    def (accessKeyId, secretAccessKey, sessionToken) = awsHelper.fetchAwsCredentials()
+
+                    sh """
+                    echo "Running Docker container..."
+                    docker run \
+                          --rm \
+                          -t \
+                          --name dictionary-weights \
+                          -v ./weights.csv:/weights.csv \
+                          -e AWS_ACCESS_KEY_ID=${accessKeyId} \
+                          -e AWS_SECRET_ACCESS_KEY=${secretAccessKey} \
+                          -e AWS_SESSION_TOKEN=${sessionToken} \
+                          -e AWS_DEFAULT_REGION=us-east-1 \
+                          ${params.DOCKER_REPO}/${params.IMAGE_NAME}:${params.DOCKER_IMAGE_VERSION}
+                    """
+
+                    awsHelper = null
+                }
+            }
+        }
+    }
+}
