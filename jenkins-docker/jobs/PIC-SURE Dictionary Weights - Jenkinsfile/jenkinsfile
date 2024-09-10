@@ -16,7 +16,7 @@ pipeline {
         string(name: 'IMAGE_NAME', defaultValue: 'dictionary_weights', description: 'The name of the Docker image')
         string(name: 'DOCKER_IMAGE_VERSION', defaultValue: 'latest', description: 'The Docker image tag')
         string(name: 'DATASOURCE_URL', description: 'Datasource URL', defaultValue: '${database_psql_host_address}')
-        string(name: 'DATASOURCE_USERNAME', description: 'Datasource username', defaultValue: '${database_psql_app_user_secret_name}')
+        string(name: 'DATASOURCE_USERNAME', description: 'Datasource username', defaultValue: '${database_psql_dbadmin_user_secret_name}')
     }
 
     stages {
