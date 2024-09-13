@@ -562,22 +562,44 @@ create_database_if_not_exists() {
   docker run --rm $MYSQL_IMAGE /bin/bash -c &quot;$CMD&quot;
 }
 
+# Function to drop all tables in a given database
+# -----------------------------------------------
+# Functionality: 
+#   Drops all tables in the specified schema, but exits gracefully if the schema doesn&apos;t exist.
+# Example Use:
+#   drop_all_tables &quot;auth2&quot;
+# Result:
+#   All tables in the `auth2` schema are dropped if the schema exists; otherwise, the function exits gracefully.
 drop_all_tables() {
-  # Parameters: $1 = DATABASE_NAME
+    local schema_name=$1
 
-  # Command to disable foreign key checks and fetch list of tables
-  FETCH_TABLES_CMD=$(printf &quot;mysql -h%s -u%s -p&apos;%s&apos; --database=%s -Nse &apos;SET FOREIGN_KEY_CHECKS = 0; SHOW TABLES;&apos;&quot; &quot;$RDS_ENDPOINT&quot; &quot;$DATABASE_USER&quot; &quot;$DATABASE_PASSWORD&quot; &quot;$1&quot;)
+    # Check if the schema exists
+    SCHEMA_EXISTS=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+        -sse &quot;SELECT SCHEMA_NAME FROM information_schema.schemata WHERE SCHEMA_NAME = &apos;$schema_name&apos;;&quot;)
 
-  # Run the command in a Docker container to fetch the list of tables
-  TABLES=$(docker run --rm -e MYSQL_PWD=$DATABASE_PASSWORD $MYSQL_IMAGE mysql -h$RDS_ENDPOINT -u$DATABASE_USER --database=$1 -Nse &quot;SHOW TABLES;&quot;)
+    if [ -z &quot;$SCHEMA_EXISTS&quot; ]; then
+        echo &quot;Schema $schema_name does not exist. Exiting.&quot;
+        return 0
+    fi
 
-  # Iterate over each table and generate the DROP TABLE command
-  for TABLE in $TABLES; do
-  	echo &quot;Dropping Table: $TABLE&quot;
-    DROP_CMD=&quot;SET FOREIGN_KEY_CHECKS = 0; DROP TABLE IF EXISTS $TABLE; SET FOREIGN_KEY_CHECKS = 1;&quot;
-    docker run --rm -e MYSQL_PWD=$DATABASE_PASSWORD $MYSQL_IMAGE mysql -h$RDS_ENDPOINT -u$DATABASE_USER --database=$1 -e &quot;$DROP_CMD&quot;
-  done
+    # If schema exists, proceed to drop all tables
+    echo &quot;Dropping all tables in schema: $schema_name...&quot;
+
+    # Fetch list of tables in the schema
+    TABLES=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+        --database=$schema_name -Nse &quot;SHOW TABLES;&quot;)
+
+    # Drop each table
+    for TABLE in $TABLES; do
+        echo &quot;Dropping Table: $TABLE&quot;
+        DROP_CMD=&quot;SET FOREIGN_KEY_CHECKS = 0; DROP TABLE IF EXISTS $TABLE; SET FOREIGN_KEY_CHECKS = 1;&quot;
+        docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+            --database=$schema_name -e &quot;$DROP_CMD&quot;
+    done
+
+    echo &quot;All tables in $schema_name dropped.&quot;
 }
+
 
 # create_top_admin &quot;email&quot; &quot;connection_id&quot;
 create_top_admin() {
@@ -634,6 +656,96 @@ run_sql_script() {
   # Run the SQL script in a Docker container
   docker run --rm -v &quot;$1:/sql_script.sql&quot; $MYSQL_IMAGE \
     mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; &quot;$2&quot; &lt; /sql_script.sql
+}
+
+# Function to back up a schema with a timestamp
+# -----------------------------------------------
+# Functionality: 
+#   Creates a MySQL dump of the specified schema and saves it with a timestamp in the file name.
+# Example Use:
+#   backup_schema &quot;auth&quot;
+# Result:
+#   The live schema `auth` is backed up into a file named something like `auth_20240912123045.sql`.
+backup_schema() {
+    local schema_to_backup=$1
+    local backup_file=&quot;${MYSQL_DUMP_PATH}${schema_to_backup}_backup_$(date +&quot;%Y%m%d%H%M%S&quot;).sql&quot;
+
+    echo &quot;Creating MySQL dump of $schema_to_backup schema...&quot;
+    docker run --rm -e MYSQL_PWD=$DATABASE_PASSWORD $MYSQL_IMAGE \
+        mysqldump --set-gtid-purged=OFF --single-transaction -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; $schema_to_backup &gt; &quot;$backup_file&quot;
+
+    if [ $? -eq 0 ]; then
+        echo &quot;Backup of $schema_to_backup database completed: $backup_file&quot;
+    else
+        echo &quot;Error occurred during backup.&quot;
+        exit 1
+    fi
+}
+
+# Function to copy all objects from one database to another
+# -----------------------------------------------
+# Functionality: 
+#   1. Creates the target database if it doesn&apos;t exist.
+#   2. Backs up the target database (if it already existed).
+#   3. Drops all tables in the target database using the existing drop_all_tables function.
+#   4. Copies all objects (tables and data) from the source database to the target database.
+# Example Use:
+#   copy_database &quot;auth&quot; &quot;auth2&quot;
+# Result:
+#   The `auth2` database is created if it doesn&apos;t exist, backed up (if it existed), its tables are dropped, and all objects from the `auth` database are copied into it.
+copy_database() {
+    local source_database=$1
+    local target_database=$2
+    
+    echo &quot;Starting database copy from $source_database to $target_database...&quot;
+
+    # Step 1: Check if the target database exists
+    DATABASE_EXISTS=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+        -sse &quot;SELECT SCHEMA_NAME FROM information_schema.schemata WHERE SCHEMA_NAME = &apos;$target_database&apos;;&quot;)
+
+    if [ -z &quot;$DATABASE_EXISTS&quot; ]; then
+        # If the target database doesn&apos;t exist, create it
+        echo &quot;Target database $target_database does not exist. Creating database...&quot;
+        docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+            -e &quot;CREATE DATABASE IF NOT EXISTS $target_database;&quot;
+
+        if [ $? -eq 0 ]; then
+            echo &quot;Database $target_database created successfully.&quot;
+        else
+            echo &quot;Error occurred while creating $target_database.&quot;
+            exit 1
+        fi
+    else
+        # If the target database exists, back it up
+        echo &quot;Backing up $target_database database...&quot;
+        backup_schema &quot;$target_database&quot;
+    fi
+
+    # Step 2: Drop all tables in the target database using the existing drop_all_tables function
+    echo &quot;Dropping all tables in $target_database...&quot;
+    drop_all_tables &quot;$target_database&quot;
+    echo &quot;All tables in $target_database dropped.&quot;
+
+    # Step 3: Copy all tables and data from the source database to the target database
+    echo &quot;Copying all tables from $source_database to $target_database...&quot;
+
+    # Get the list of tables from the source database and execute SQL commands to copy structure and data
+    TABLES=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+        --skip-column-names -e &quot;SELECT table_name FROM information_schema.tables WHERE table_schema = &apos;$source_database&apos;;&quot;)
+
+    for TABLE in $TABLES; do
+        # Create table in the target database
+        echo &quot;Creating table $TABLE in $target_database...&quot;
+        docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+            -e &quot;CREATE TABLE $target_database.$TABLE LIKE $source_database.$TABLE;&quot;
+
+        # Copy data from the source table to the target table
+        echo &quot;Copying data from $source_database.$TABLE to $target_database.$TABLE...&quot;
+        docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+            -e &quot;INSERT INTO $target_database.$TABLE SELECT * FROM $source_database.$TABLE;&quot;
+    done
+
+    echo &quot;Database copy from $source_database to $target_database completed successfully.&quot;
 }
 EOF</command>
       <configuredLocalRules/>
@@ -752,7 +864,7 @@ EOF</command>
     </hudson.tasks.ArtifactArchiver>
   </publishers>
   <buildWrappers>
-    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.45">
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.46">
       <deleteDirs>false</deleteDirs>
       <cleanupParameter></cleanupParameter>
       <externalDelete></externalDelete>
