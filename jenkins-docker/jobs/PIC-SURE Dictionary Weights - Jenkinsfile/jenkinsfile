@@ -17,9 +17,14 @@ pipeline {
         string(name: 'DATASOURCE_USERNAME', description: 'Datasource username', defaultValue: '${database_psql_root_user_secret_name}')
     }
 
-    @Library("avillach_lab_pic_sure@${params.GROOVY_LIB_BRANCH}") _
-
     stages {
+        stage('Load Library') {
+            steps {
+                script {
+                    library("avillach_lab_pic_sure@${params.GROOVY_LIB_BRANCH}")
+                }
+            }
+        }
         stage('Build CSV') {
             steps {
                 script {
