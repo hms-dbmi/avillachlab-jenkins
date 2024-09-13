@@ -1,3 +1,5 @@
+@Library('avillach_lab_pic_sure@release-new-ui') _
+
 pipeline {
     agent any
 
@@ -18,13 +20,6 @@ pipeline {
     }
 
     stages {
-        stage('Load Library') {
-            steps {
-                script {
-                    library("avillach_lab_pic_sure@${params.GROOVY_LIB_BRANCH}")
-                }
-            }
-        }
         stage('Build CSV') {
             steps {
                 script {
