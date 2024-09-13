@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     parameters {
-        string(name: 'GROOVY_LIB_BRANCH', defaultValue: 'release-new-ui', description: 'The branch of the Groovy library to use')
+        string(name: 'GROOVY_LIB_BRANCH', defaultValue: 'release', description: 'The branch of the Groovy library to use')
         string(name: 'DISPLAY', defaultValue: '3', description: 'Weight for concept_node.DISPLAY')
         string(name: 'CONCEPT_PATH', defaultValue: '2', description: 'Weight for concept_node.CONCEPT_PATH')
         string(name: 'FULL_NAME', defaultValue: '1', description: 'Weight for dataset.FULL_NAME')
