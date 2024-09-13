@@ -10,13 +10,13 @@ pipeline {
         string(name: 'DESCRIPTION', defaultValue: '1', description: 'Weight for dataset.DESCRIPTION')
         string(name: 'META_STR', defaultValue: '1', description: 'Weight for concept_node_meta_str')
         string(name: 'GIT_REPO_URL', defaultValue: 'https://github.com/hms-dbmi/picsure-dictionary.git', description: 'The GitHub repository URL')
-        string(name: 'GIT_BRANCH', defaultValue: 'ALS-7051', description: 'The Git branch to checkout')
+        string(name: 'GIT_BRANCH', defaultValue: 'release', description: 'The Git branch to checkout')
         string(name: 'DOCKER_REPO', defaultValue: 'avillach', description: 'The Docker repository name')
         string(name: 'SPRING_PROFILE', defaultValue: 'bdc', description: 'The Spring profile')
         string(name: 'IMAGE_NAME', defaultValue: 'dictionary_weights', description: 'The name of the Docker image')
         string(name: 'DOCKER_IMAGE_VERSION', defaultValue: 'latest', description: 'The Docker image tag')
         string(name: 'DATASOURCE_URL', description: 'Datasource URL', defaultValue: '${database_psql_host_address}')
-        string(name: 'DATASOURCE_USERNAME', description: 'Datasource username', defaultValue: '${database_psql_dbadmin_user_secret_name}')
+        string(name: 'DATASOURCE_USERNAME', description: 'Datasource username', defaultValue: '${database_psql_root_user_secret_name}')
     }
 
     stages {
