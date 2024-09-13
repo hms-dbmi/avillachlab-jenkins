@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     parameters {
-        string(name: 'GROOVY_LIB_BRANCH', defaultValue: 'release', description: 'The branch of the Groovy library to use')
+        string(name: 'GROOVY_LIB_BRANCH', defaultValue: 'release-new-ui', description: 'The branch of the Groovy library to use')
         string(name: 'DISPLAY', defaultValue: '3', description: 'Weight for concept_node.DISPLAY')
         string(name: 'CONCEPT_PATH', defaultValue: '2', description: 'Weight for concept_node.CONCEPT_PATH')
         string(name: 'FULL_NAME', defaultValue: '1', description: 'Weight for dataset.FULL_NAME')
@@ -48,4 +48,60 @@ pipeline {
                 script {
                     def ref = "${params.GIT_BRANCH}"
                     checkout([$class: 'GitSCM',
+                        branches: [[name: ref]],
+                        userRemoteConfigs: [[url: "${params.GIT_REPO_URL}"]],
+                        extensions: [
+                            [$class: 'SparseCheckoutPaths', sparseCheckoutPaths: [
+                                [path: 'dictionaryweights']
+                            ]],
+                            [$class: 'CheckoutOption', timeout: 10],
+                            [$class: 'CloneOption', depth: 1, noTags: true, shallow: true]
+                        ]
+                    ])
+                }
+            }
+        }
 
+        stage('Build Dictionary Docker Image') {
+            steps {
+                dir('dictionaryweights') {
+                    script {
+                        def buildArgs = " --build-arg DATASOURCE_URL=${params.DATASOURCE_URL} " +
+                                        " --build-arg DATASOURCE_USERNAME=${params.DATASOURCE_USERNAME} " +
+                                        " --build-arg SPRING_PROFILE=${params.SPRING_PROFILE}"
+
+                        sh "docker build --no-cache ${buildArgs} -t '${params.DOCKER_REPO}/${params.IMAGE_NAME}:${params.DOCKER_IMAGE_VERSION}' ."
+                    }
+                }
+            }
+        }
+
+
+        stage('Run Docker Container') {
+            steps {
+                script {
+                    def awsHelper = new AWSHelper("${app_acct_id}", "${jenkins_provisioning_assume_role_name}", { msg -> echo msg })
+                    awsHelper.assumeRole()
+
+                    def (accessKeyId, secretAccessKey, sessionToken) = awsHelper.fetchAwsCredentials()
+
+                    sh """
+                    echo "Running Docker container..."
+                    docker run \
+                          --rm \
+                          -t \
+                          --name dictionary-weights \
+                          -v ./weights.csv:/weights.csv \
+                          -e AWS_ACCESS_KEY_ID=${accessKeyId} \
+                          -e AWS_SECRET_ACCESS_KEY=${secretAccessKey} \
+                          -e AWS_SESSION_TOKEN=${sessionToken} \
+                          -e AWS_DEFAULT_REGION=us-east-1 \
+                          ${params.DOCKER_REPO}/${params.IMAGE_NAME}:${params.DOCKER_IMAGE_VERSION}
+                    """
+
+                    awsHelper = null
+                }
+            }
+        }
+    }
+}
