@@ -229,6 +229,7 @@ if $isDestroyOnly; then
      -var=&quot;ras_client_id=${ras_client_id}&quot; \
      -var=&quot;ras_okta_idp_id=${ras_okta_idp_id}&quot; \
      -var=&quot;ras_idp_provider_uri=${ras_idp_provider_uri}&quot; \
+     -var=&quot;ras_session_logout_uri=${ras_session_logout_uri}&quot; \
      -var=&quot;login_redirect_uri=${login_redirect_uri}&quot; || true
 
 
@@ -280,6 +281,7 @@ else
      -var=&quot;ras_client_id=${ras_client_id}&quot; \
      -var=&quot;ras_okta_idp_id=${ras_okta_idp_id}&quot; \
      -var=&quot;ras_idp_provider_uri=${ras_idp_provider_uri}&quot; \
+     -var=&quot;ras_session_logout_uri=${ras_session_logout_uri}&quot; \
      -var=&quot;login_redirect_uri=${login_redirect_uri}&quot; || true
 
 
@@ -325,6 +327,7 @@ else
      -var=&quot;ras_client_id=${ras_client_id}&quot; \
      -var=&quot;ras_okta_idp_id=${ras_okta_idp_id}&quot; \
      -var=&quot;ras_idp_provider_uri=${ras_idp_provider_uri}&quot; \
+     -var=&quot;ras_session_logout_uri=${ras_session_logout_uri}&quot; \
      -var=&quot;login_redirect_uri=${login_redirect_uri}&quot; || true
 
 
