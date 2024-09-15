@@ -56,7 +56,7 @@
 
 # Check if the database root user has been set
 if [ -z &quot;$database_root_user_secret_name&quot; ]; then
-    echo &quot;The &apos;database_admin_user_secret_name&apos; must be set in the global configuration&quot;
+    echo &quot;The &apos;database_root_user_secret_name&apos; must be set in the global configuration&quot;
     exit 1
 fi
 
