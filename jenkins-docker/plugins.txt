@@ -22,3 +22,4 @@ cloudbees-folder
 copyartifact
 saml
 role-strategy
+uno-choice
