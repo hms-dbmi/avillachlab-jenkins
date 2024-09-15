@@ -63,11 +63,21 @@ fi
 
 initialize_shared_db_config &quot;${db_admin_user_host%:3306}&quot; &quot;$db_admin_user_username&quot; &quot;$db_admin_user_password&quot;
 
-backup_schema &quot;$SOURCE_DATABASE&quot;
+backup_filename=$(backup_schema &quot;$SOURCE_DATABASE&quot;)
+
+echo &quot;Created $backup_filename&quot;
 
 unset_shared_db_config
 reset_role
-            </command>
+
+if [ &quot;$backup_filename&quot; = &quot;Error&quot; ]; then
+	echo &quot;Failed to create backup&quot;
+    exit 1
+else
+  # Upload database dumb to remote s3
+  echo $backup_filename
+  aws s3 --sse=AES256 cp ${backup_filename} s3://$stack_s3_bucket/database_backups/${backup_filename}
+fi</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>

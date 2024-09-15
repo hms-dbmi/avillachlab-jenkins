@@ -6,17 +6,15 @@
   <properties>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
-        <hudson.model.BooleanParameterDefinition>
-          <name>DROP_AUTH_TABLES</name>
-          <defaultValue>false</defaultValue>
-        </hudson.model.BooleanParameterDefinition>
-        <hudson.model.BooleanParameterDefinition>
-          <name>DROP_PICSURE_TABLES</name>
-          <defaultValue>false</defaultValue>
-        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>DROP_SCHEMA_NAME</name>
+          <description>Be extremely careful with this function. It will drop the entire provided schema.</description>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
+  <scm class="hudson.scm.NullSCM"/>
   <canRoam>true</canRoam>
   <disabled>false</disabled>
   <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
@@ -29,7 +27,7 @@
       <command>#!/bin/bash
 
 # Check if the database root user has been set
-if [ -z &quot;$database_admin_user_secret_name&quot; ]; then
+if [ -z &quot;$database_root_user_secret_name&quot; ]; then
     echo &quot;The &apos;database_admin_user_secret_name&apos; must be set in the global configuration&quot;
     exit 1
 fi
@@ -50,7 +48,7 @@ done
 assume_role
 
 # Getting db admin user secret value by secret name
-db_admin_user_json=$(fetch_secret &quot;$database_admin_user_secret_name&quot;)
+db_admin_user_json=$(fetch_secret &quot;$database_root_user_secret_name&quot;)
 
 # DB admin user information
 db_admin_user_username=$(extract_field &quot;$db_admin_user_json&quot; &quot;username&quot;)
@@ -64,17 +62,10 @@ if [ -z &quot;$db_admin_user_username&quot; ] || [ -z &quot;$db_admin_user_passw
 fi
 
 initialize_shared_db_config &quot;${db_admin_user_host%:3306}&quot; &quot;$db_admin_user_username&quot; &quot;$db_admin_user_password&quot;
-if [ &quot;$DROP_AUTH_TABLES&quot; = true ]; then
-    drop_all_tables &quot;auth&quot;
-fi
-
-if [ &quot;$DROP_PICSURE_TABLES&quot; = true ]; then
-    drop_all_tables &quot;picsure&quot;
-fi
+drop_schema &quot;$DROP_SCHEMA_NAME&quot;
 
 unset_shared_db_config
-reset_role
-            </command>
+reset_role</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>

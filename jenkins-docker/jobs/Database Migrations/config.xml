@@ -6,16 +6,22 @@
   <properties>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
-        <hudson.model.BooleanParameterDefinition>
-          <name>DROP_TABLES</name>
-          <description>Set to TRUE if you would like to drop the databases in order to re-run migrations on
-                        clean database tables. Useful for testing migration scripts.
-                    </description>
-          <defaultValue>false</defaultValue>
-        </hudson.model.BooleanParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>infrastructure_git_hash</name>
           <defaultValue>master</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>DROP_AUTH_TABLES</name>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>DROP_PICSURE_TABLES</name>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>COPY_APPLICATION_TOKEN_FROM_DB</name>
+          <description>The value must be the name of an auth database. For example auth2. This will copy the existing token from the auth2 database into the auth database. Additionally, the token will be compared to the current WildFly standalone.xml token. If it is different it will replace the token and restart the WildFly. It will do this for both stacks.</description>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
@@ -49,7 +55,7 @@
       <command>#!/bin/bash
 
 # Check if the database root user has been set
-if [ -z &quot;$database_admin_user_secret_name&quot; ]; then
+if [ -z &quot;$database_root_user_secret_name&quot; ]; then
     echo &quot;The &apos;database_admin_user_secret_name&apos; must be set in the global configuration&quot;
     exit 1
 fi
@@ -70,7 +76,7 @@ done
 assume_role
 
 # Getting db admin user secret value by secret name
-db_admin_user_json=$(fetch_secret &quot;$database_admin_user_secret_name&quot;)
+db_admin_user_json=$(fetch_secret &quot;$database_root_user_secret_name&quot;)
 
 # DB admin user information
 db_admin_user_username=$(extract_field &quot;$db_admin_user_json&quot; &quot;username&quot;)
@@ -84,16 +90,24 @@ if [ -z &quot;$db_admin_user_username&quot; ] || [ -z &quot;$db_admin_user_passw
 fi
 
 initialize_shared_db_config &quot;${db_admin_user_host%:3306}&quot; &quot;$db_admin_user_username&quot; &quot;$db_admin_user_password&quot;
-if [ &quot;$DROP_TABLES&quot; = true ]; then
+if [ &quot;$DROP_AUTH_TABLES&quot; = true ]; then
     drop_all_tables &quot;auth&quot;
+fi
+
+if [ &quot;$DROP_PICSURE_TABLES&quot; = true ]; then
     drop_all_tables &quot;picsure&quot;
 fi
 
-create_jwt_token &quot;$picsure_client_secret&quot; &quot;$pic_sure_introspection_token_repo&quot; &quot;PSAMA_APPLICATION|$application_id_for_base_query&quot; &quot;${duration_int:-365}&quot; &quot;${duration_unit:-day}&quot;
-echo &quot;New JWT generated successfully.&quot;
-echo &quot;Update the picsure_token_introspection_token configuration with the following:&quot;
-echo &quot;$CREATE_JWT_TOKEN_OUTPUT&quot;
-introspection_token=$CREATE_JWT_TOKEN_OUTPUT
+if [ &quot;$COPY_APPLICATION_TOKEN_FROM_DB&quot; ]; then
+	echo &quot;Copying token from $COPY_APPLICATION_TOKEN_FROM_DB&quot;
+    introspection_token=$(get_token_by_uuid &quot;$application_id_for_base_query&quot; &quot;$COPY_APPLICATION_TOKEN_FROM_DB&quot;)
+else
+    create_jwt_token &quot;$picsure_client_secret&quot; &quot;$pic_sure_introspection_token_repo&quot; &quot;PSAMA_APPLICATION|$application_id_for_base_query&quot; &quot;${duration_int:-365}&quot; &quot;${duration_unit:-day}&quot;
+    echo &quot;New JWT generated successfully.&quot;
+    echo &quot;Update the picsure_token_introspection_token configuration with the following:&quot;
+	echo &quot;$CREATE_JWT_TOKEN_OUTPUT&quot;
+	introspection_token=$CREATE_JWT_TOKEN_OUTPUT
+fi
 
 # Paths for migration scripts
 auth_sql_path=&quot;app-infrastructure/db/auth/&quot;
@@ -116,97 +130,36 @@ create_flyway_conf &quot;picsure&quot; &quot;${db_admin_user_host%:3306}&quot; &
 run_flyway_migration &quot;$auth_sql_path&quot; &quot;conf/auth_flyway.conf&quot;
 run_flyway_migration &quot;$picsure_sql_path&quot; &quot;conf/picsure_flyway.conf&quot;
 
-if [ &quot;$DROP_TABLES&quot; = true ]; then
-    # Grap the TF state file.
-    echo &quot;Download terraform.tfstate file for A stack&quot;
-    aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/a/terraform.tfstate terraform_a.tfstate
-
-    # Extract the Wildfly EC2 instance ID
-    echo &quot;Extract Wildfly instance ID for A stack&quot;
-    wildfly_instance_id=$(jq -r &apos;.outputs[&quot;wildfly-ec2-id&quot;].value&apos; terraform_a.tfstate)
-    echo &quot;${wildfly_instance_id}&quot;
-
-    if [ -z &quot;$wildfly_instance_id&quot; ] || [ &quot;$wildfly_instance_id&quot; = &quot;null&quot; ]; then
-        echo &quot;Error: WildFly instance ID for stack A not found&quot;
+# If we have dropped the AUTH_TABLES we will need to update the introspection token
+if [ &quot;$DROP_AUTH_TABLES&quot; = true ]; then
+	# Update a stack&apos;s wildfly introspection token and restart the wildfly instance
+    tf_download_state &quot;a&quot; &quot;$stack_s3_bucket&quot;
+    if [ -f &quot;terraform_a.tfstate&quot; ]; then
+        wildfly_instance_id=$(tf_extract_wildfly_instance_id &quot;a&quot;)
+        echo &quot;A stack wildfly instance id: $wildfly_instance_id&quot;
+        if [ -z &quot;$wildfly_instance_id&quot; ] || [ &quot;$wildfly_instance_id&quot; = &quot;null&quot; ]; then
+            echo &quot;Error: WildFly instance ID for A stack not found&quot;
+        else
+            update_wildfly_token &quot;$wildfly_instance_id&quot; &quot;$introspection_token&quot;
+        fi
     else
-      # Update WildFly standalone.xml token
-      update_wildly_standalone_xml_token=&quot;sudo sed -i &apos;s#&lt;simple name=\&quot;java:global/token_introspection_token\&quot; value=\&quot;[^\&quot;]*\&quot;/&gt;#&lt;simple name=\&quot;java:global/token_introspection_token\&quot; value=\&quot;${introspection_token}\&quot;/&gt;#&apos; /home/centos/standalone.xml&quot;
-      replace_token_command_json=$(jq -n --arg cmd &quot;$update_wildly_standalone_xml_token&quot; &apos;{commands: [$cmd]}&apos;)
-      echo &quot;${update_wildly_standalone_xml_token}&quot;
-      echo &quot;${replace_token_command_json}&quot;
-
-      # Execute command to update the token using AWS SSM
-      command_id=$(aws ssm send-command \
-      --instance-ids &quot;${wildfly_instance_id}&quot; \
-      --document-name &quot;AWS-RunShellScript&quot; \
-      --comment &quot;Update WildFly token&quot; \
-      --parameters &quot;$replace_token_command_json&quot; \
-      --query &quot;Command.CommandId&quot; \
-      --output text)
-
-      wait_for_command ${command_id} ${wildfly_instance_id}
-      echo &quot;Token update success&quot;
-
-      restart_command=&quot;sudo docker restart wildfly&quot;
-      restart_command_json=$(jq -n --arg cmd &quot;$restart_command&quot; &apos;{commands: [$cmd]}&apos;)
-
-      command_id=$(aws ssm send-command \
-      --instance-ids &quot;${wildfly_instance_id}&quot; \
-      --document-name &quot;AWS-RunShellScript&quot; \
-      --comment &quot;Restart WildFly container&quot; \
-      --parameters &quot;$restart_command_json&quot; \
-      --query &quot;Command.CommandId&quot; \
-      --output text)
-
-      wait_for_command ${command_id} ${wildfly_instance_id}
+    	echo &quot;Terraform state file not found for A stack&quot;
     fi
 
-      # Grap the TF state file.
-      echo &quot;Download terraform.tfstate file for b stack&quot;
-      aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/b/terraform.tfstate terraform_b.tfstate
-
-      # Extract the Wildfly EC2 instance ID
-      echo &quot;Extract Wildfly instance ID for B stack&quot;
-      wildfly_instance_id=$(jq -r &apos;.outputs[&quot;wildfly-ec2-id&quot;].value&apos; terraform_b.tfstate)
-      echo &quot;${wildfly_instance_id}&quot;
-
-    if [ -z &quot;$wildfly_instance_id&quot; ] || [ &quot;$wildfly_instance_id&quot; = &quot;null&quot; ]; then
-        echo &quot;Error: WildFly instance ID for stack B not found&quot;
-        ## Wildfly instance does not exist, exit with success
-    else
-      # Update WildFly standalone.xml token
-      update_wildly_standalone_xml_token=&quot;sudo sed -i &apos;s#&lt;simple name=\&quot;java:global/token_introspection_token\&quot; value=\&quot;[^\&quot;]*\&quot;/&gt;#&lt;simple name=\&quot;java:global/token_introspection_token\&quot; value=\&quot;${introspection_token}\&quot;/&gt;#&apos; /home/centos/standalone.xml&quot;
-      replace_token_command_json=$(jq -n --arg cmd &quot;$update_wildly_standalone_xml_token&quot; &apos;{commands: [$cmd]}&apos;)
-      echo &quot;${update_wildly_standalone_xml_token}&quot;
-      echo &quot;${replace_token_command_json}&quot;
-
-      # Execute command to update the token using AWS SSM
-      command_id=$(aws ssm send-command \
-      --instance-ids &quot;${wildfly_instance_id}&quot; \
-      --document-name &quot;AWS-RunShellScript&quot; \
-      --comment &quot;Update WildFly token&quot; \
-      --parameters &quot;$replace_token_command_json&quot; \
-      --query &quot;Command.CommandId&quot; \
-      --output text)
-
-      wait_for_command ${command_id} ${wildfly_instance_id}
-      echo &quot;Token update success&quot;
-
-      restart_command=&quot;sudo docker restart wildfly&quot;
-      restart_command_json=$(jq -n --arg cmd &quot;$restart_command&quot; &apos;{commands: [$cmd]}&apos;)
-
-      command_id=$(aws ssm send-command \
-      --instance-ids &quot;${wildfly_instance_id}&quot; \
-      --document-name &quot;AWS-RunShellScript&quot; \
-      --comment &quot;Restart WildFly container&quot; \
-      --parameters &quot;$restart_command_json&quot; \
-      --query &quot;Command.CommandId&quot; \
-      --output text)
-
-      wait_for_command ${command_id} ${wildfly_instance_id}
+	# Update b stack&apos;s wildfly introspection token and restart the wildfly instance
+    tf_download_state &quot;b&quot; &quot;$stack_s3_bucket&quot;
+    if [ -f &quot;terraform_b.tfstate&quot; ]; then
+        wildfly_instance_id=$(tf_extract_wildfly_instance_id &quot;b&quot;)
+        echo &quot;B stack wildfly instance id: $wildfly_instance_id&quot;
+        if [ -z &quot;$wildfly_instance_id&quot; ] || [ &quot;$wildfly_instance_id&quot; = &quot;null&quot; ]; then
+            echo &quot;Error: WildFly instance ID for B stack not found&quot;
+        else
+            update_wildfly_token &quot;$wildfly_instance_id&quot; &quot;$introspection_token&quot;
+        fi
+	else
+    	echo &quot;Terraform state file not found for B stack&quot;
     fi
 fi
-
 
 unset_shared_db_config
 reset_role

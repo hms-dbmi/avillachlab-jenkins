@@ -432,6 +432,38 @@ create_jwt_token() {
   # Cleanup
   cd &quot;${WORKSPACE}&quot;
 }
+
+# Function to update the WildFly token in standalone.xml
+# -----------------------------------------------
+# Functionality:
+#   1. Updates the token introspection value in WildFly&apos;s standalone.xml using AWS SSM.
+#   2. Uses sed to find and replace the token value in the specified file.
+# Example Use:
+#   replace_wildfly_token &quot;$wildfly_instance_id&quot; &quot;$introspection_token&quot;
+# Result:
+#   The introspection token in WildFly&apos;s standalone.xml is updated.
+replace_wildfly_token() {
+    local wildfly_instance_id=$1
+    local introspection_token=$2
+    update_wildly_standalone_xml_token=&quot;sudo sed -i &apos;s#&lt;simple name=\&quot;java:global/token_introspection_token\&quot; value=\&quot;[^\&quot;]*\&quot;/&gt;#&lt;simple name=\&quot;java:global/token_introspection_token\&quot; value=\&quot;${introspection_token}\&quot;/&gt;#&apos; /home/centos/standalone.xml&quot;
+    replace_token_command_json=$(jq -n --arg cmd &quot;$update_wildly_standalone_xml_token&quot; &apos;{commands: [$cmd]}&apos;)
+    
+    echo &quot;${update_wildly_standalone_xml_token}&quot;
+    echo &quot;${replace_token_command_json}&quot;
+
+    # Execute command to update the token using AWS SSM
+    command_id=$(aws ssm send-command \
+    --instance-ids &quot;${wildfly_instance_id}&quot; \
+    --document-name &quot;AWS-RunShellScript&quot; \
+    --comment &quot;Update WildFly token&quot; \
+    --parameters &quot;$replace_token_command_json&quot; \
+    --query &quot;Command.CommandId&quot; \
+    --output text)
+
+    wait_for_command ${command_id} ${wildfly_instance_id}
+    echo &quot;Token update success&quot;
+}
+
 EOF</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
@@ -575,7 +607,7 @@ drop_all_tables() {
 
     # Check if the schema exists
     SCHEMA_EXISTS=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
-        -sse &quot;SELECT SCHEMA_NAME FROM information_schema.schemata WHERE SCHEMA_NAME = &apos;$schema_name&apos;;&quot;)
+        -sse &quot;SELECT SCHEMA_NAME FROM information_schema.schemata WHERE SCHEMA_NAME = &apos;$schema_name&apos;;&quot; 2&gt;/dev/null)
 
     if [ -z &quot;$SCHEMA_EXISTS&quot; ]; then
         echo &quot;Schema $schema_name does not exist. Exiting.&quot;
@@ -587,18 +619,49 @@ drop_all_tables() {
 
     # Fetch list of tables in the schema
     TABLES=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
-        --database=$schema_name -Nse &quot;SHOW TABLES;&quot;)
+        --database=$schema_name -Nse &quot;SHOW TABLES;&quot; 2&gt;/dev/null)
 
     # Drop each table
     for TABLE in $TABLES; do
         echo &quot;Dropping Table: $TABLE&quot;
         DROP_CMD=&quot;SET FOREIGN_KEY_CHECKS = 0; DROP TABLE IF EXISTS $TABLE; SET FOREIGN_KEY_CHECKS = 1;&quot;
         docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
-            --database=$schema_name -e &quot;$DROP_CMD&quot;
+            --database=$schema_name -e &quot;$DROP_CMD&quot; 2&gt;/dev/null
     done
 
     echo &quot;All tables in $schema_name dropped.&quot;
 }
+
+# Function to drop a schema in the database
+# -----------------------------------------------
+# Functionality: 
+#   Drops the specified schema if it exists, but exits gracefully if the schema doesn&apos;t exist.
+# Example Use:
+#   drop_schema &quot;auth2&quot;
+# Result:
+#   The `auth2` schema is dropped if it exists; otherwise, the function exits gracefully.
+drop_schema() {
+    local schema_name=$1
+
+    # Check if the schema exists
+    SCHEMA_EXISTS=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+        -sse &quot;SELECT SCHEMA_NAME FROM information_schema.schemata WHERE SCHEMA_NAME = &apos;$schema_name&apos;;&quot; 2&gt;/dev/null)
+
+    if [ -z &quot;$SCHEMA_EXISTS&quot; ]; then
+        echo &quot;Schema $schema_name does not exist. Exiting.&quot;
+        return 0
+    fi
+
+    # If schema exists, proceed to drop the schema
+    echo &quot;Dropping schema: $schema_name...&quot;
+
+    DROP_SCHEMA_CMD=&quot;DROP SCHEMA IF EXISTS $schema_name;&quot;
+    docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+        -e &quot;$DROP_SCHEMA_CMD&quot; 2&gt;/dev/null
+
+    echo &quot;Schema $schema_name dropped.&quot;
+}
+
 
 
 # create_top_admin &quot;email&quot; &quot;connection_id&quot;
@@ -621,6 +684,7 @@ does_user_exists() {
 update_token_by_uuid() {
   local uuid=&quot;$1&quot;
   local new_token=&quot;$2&quot;
+  local target_database=&quot;${3:-auth}&quot;
 
   # Perform the update operation
   docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
@@ -630,13 +694,14 @@ update_token_by_uuid() {
 # get_token_by_uuid &quot;uuid&quot;
 get_token_by_uuid() {
   local uuid=&quot;$1&quot;
+  local schema=&quot;${2:-auth}&quot;
 
   # Query to get the token by UUID
   local query=&quot;SELECT token FROM application WHERE uuid=UNHEX(REPLACE(&apos;$uuid&apos;, &apos;-&apos;, &apos;&apos;));&quot;
 
   # Execute the query using Docker and MySQL client
   local token=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
-    -sse &quot;$query&quot; &quot;auth&quot;)
+    -sse &quot;$query&quot; &quot;$schema&quot;)
 
   echo &quot;$token&quot;
 }
@@ -668,19 +733,75 @@ run_sql_script() {
 #   The live schema `auth` is backed up into a file named something like `auth_20240912123045.sql`.
 backup_schema() {
     local schema_to_backup=$1
-    local backup_file=&quot;${MYSQL_DUMP_PATH}${schema_to_backup}_backup_$(date +&quot;%Y%m%d%H%M%S&quot;).sql&quot;
+    local backup_file=&quot;$(date +&quot;%Y%m%d%H%M%S&quot;)_${schema_to_backup}_backup.sql&quot;
 
-    echo &quot;Creating MySQL dump of $schema_to_backup schema...&quot;
     docker run --rm -e MYSQL_PWD=$DATABASE_PASSWORD $MYSQL_IMAGE \
         mysqldump --set-gtid-purged=OFF --single-transaction -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; $schema_to_backup &gt; &quot;$backup_file&quot;
 
     if [ $? -eq 0 ]; then
-        echo &quot;Backup of $schema_to_backup database completed: $backup_file&quot;
+        echo &quot;$backup_file&quot;
     else
-        echo &quot;Error occurred during backup.&quot;
-        exit 1
+        echo &quot;Error&quot;
     fi
 }
+
+# Function to restore a schema from a dump file stored in S3
+# -----------------------------------------------
+# Functionality: 
+#   1. Downloads the specified SQL dump file from an S3 bucket.
+#   2. Restores the schema from the downloaded SQL dump file.
+#   The schema will be dropped and recreated before restoration.
+# Example Use:
+#   restore_schema &quot;auth2&quot; &quot;auth2_dump.sql&quot;
+# Result:
+#   The `auth2` schema is restored from the specified SQL dump file stored in S3.
+# Important Information:
+#	This function cannot be executed with assume_role
+restore_schema() {
+    local schema_name=$1
+    local backup_filename=$2
+    local s3_bucket=$stack_s3_bucket # The S3 bucket where the dump file is stored
+
+    # Temporary local path to store the dump file
+    local temp_dump_file=&quot;/tmp/$backup_filename&quot;
+
+    # Check if the S3 bucket and backup file are provided
+    if [ -z &quot;$s3_bucket&quot; ] || [ -z &quot;$backup_filename&quot; ]; then
+        echo &quot;S3 bucket or backup file not provided. Exiting.&quot;
+        return 1
+    fi
+
+    echo &quot;Downloading the dump file $backup_filename from S3 bucket $s3_bucket...&quot;
+
+    # Download the dump file from S3
+    aws s3 cp &quot;s3://$s3_bucket/database_backups/$backup_filename&quot; &quot;$temp_dump_file&quot; --sse AES256
+    if [ $? -ne 0 ]; then
+        echo &quot;Failed to download the dump file from S3. Exiting.&quot;
+        return 1
+    fi
+
+    # Check if the dump file was downloaded successfully
+    if [ ! -f &quot;$temp_dump_file&quot; ]; then
+        echo &quot;Dump file $temp_dump_file does not exist after download. Exiting.&quot;
+        return 1
+    fi
+
+    echo &quot;Restoring schema: $schema_name from dump file: $temp_dump_file...&quot;
+
+    # Drop the schema if it exists and recreate it
+    DROP_SCHEMA_CMD=&quot;DROP SCHEMA IF EXISTS $schema_name; CREATE SCHEMA $schema_name;&quot;
+    docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+        -e &quot;$DROP_SCHEMA_CMD&quot; 2&gt;/dev/null
+
+    # Restore the schema from the downloaded dump file
+    docker run --rm -i $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; &quot;$schema_name&quot; &lt; &quot;$temp_dump_file&quot; 2&gt;/dev/null
+
+    echo &quot;Schema $schema_name restored successfully from $backup_filename.&quot;
+
+    # Cleanup: Remove the downloaded dump file
+    rm -f &quot;$temp_dump_file&quot;
+}
+
 
 # Function to copy all objects from one database to another
 # -----------------------------------------------
@@ -851,10 +972,199 @@ wait_for_command() {
 EOF</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command>cat &lt;&lt;&apos;EOF&apos; &gt; application_functions.sh
+# Function to restart the WildFly container
+# -----------------------------------------------
+# Functionality:
+#   1. Restarts the WildFly container via AWS SSM by executing a Docker restart command.
+# Example Use:
+#   restart_wildfly &quot;$wildfly_instance_id&quot;
+# Result:
+#   The WildFly container is restarted successfully.
+restart_wildfly() {
+    local wildfly_instance_id=$1
+    restart_command=&quot;sudo docker restart wildfly&quot;
+    restart_command_json=$(jq -n --arg cmd &quot;$restart_command&quot; &apos;{commands: [$cmd]}&apos;)
+
+    command_id=$(aws ssm send-command \
+    --instance-ids &quot;${wildfly_instance_id}&quot; \
+    --document-name &quot;AWS-RunShellScript&quot; \
+    --comment &quot;Restart WildFly container&quot; \
+    --parameters &quot;$restart_command_json&quot; \
+    --query &quot;Command.CommandId&quot; \
+    --output text)
+
+    wait_for_command ${command_id} ${wildfly_instance_id}
+}
+
+# Function to update the WildFly token in standalone.xml
+# -----------------------------------------------
+# Functionality:
+#   1. Compares the existing token in WildFly&apos;s standalone.xml with the new introspection token.
+#   2. If the tokens are the same, no update is made.
+#   3. If the tokens are different, the new token is updated in the standalone.xml file using AWS SSM and the
+#	WildFly docker container is restarted.
+# Example Use:
+#   update_wildfly_token &quot;$wildfly_instance_id&quot; &quot;$introspection_token&quot;
+# Result:
+#   The introspection token in WildFly&apos;s standalone.xml is updated only if it&apos;s different from the existing token.
+update_wildfly_token() {
+    local wildfly_instance_id=$1
+    local introspection_token=$2
+
+    # Command to extract the current token from standalone.xml
+    get_current_token_command=&quot;grep &apos;&lt;simple name=\&quot;java:global/token_introspection_token\&quot;&apos; /home/centos/standalone.xml | sed -n &apos;s/.*value=\&quot;\\([^\&quot;]*\\)\&quot;.*/\\1/p&apos;&quot;
+    
+    # Format the command in JSON
+    get_token_command_json=$(jq -n --arg cmd &quot;$get_current_token_command&quot; &apos;{commands: [$cmd]}&apos;)
+    
+    # Execute the command using AWS SSM and wait for immediate response
+    command_id=$(aws ssm send-command \
+        --instance-ids &quot;${wildfly_instance_id}&quot; \
+        --document-name &quot;AWS-RunShellScript&quot; \
+        --parameters &quot;$get_token_command_json&quot; \
+        --query &quot;Command.CommandId&quot; \
+        --output text)
+    
+    # Immediately fetch the command output after execution
+    current_token=$(aws ssm get-command-invocation \
+        --command-id ${command_id} \
+        --instance-id ${wildfly_instance_id} \
+        --query &apos;StandardOutputContent&apos; \
+        --output text)
+
+    echo &quot;Current token: $current_token&quot;
+    echo &quot;New token: $introspection_token&quot;
+
+    # Compare the current token with the new token
+    if [ &quot;$current_token&quot; = &quot;$introspection_token&quot; ]; then
+        echo &quot;Tokens are identical. No update required.&quot;
+    else
+        echo &quot;Tokens differ. Updating token.&quot;
+
+        # Update WildFly standalone.xml token
+        update_wildly_standalone_xml_token=&quot;sudo sed -i &apos;s#&lt;simple name=\&quot;java:global/token_introspection_token\&quot; value=\&quot;[^\&quot;]*\&quot;/&gt;#&lt;simple name=\&quot;java:global/token_introspection_token\&quot; value=\&quot;${introspection_token}\&quot;/&gt;#&apos; /home/centos/standalone.xml&quot;
+        replace_token_command_json=$(jq -n --arg cmd &quot;$update_wildly_standalone_xml_token&quot; &apos;{commands: [$cmd]}&apos;)
+
+        echo &quot;${update_wildly_standalone_xml_token}&quot;
+        echo &quot;${replace_token_command_json}&quot;
+
+        # Execute command to update the token using AWS SSM
+        command_id=$(aws ssm send-command \
+        --instance-ids &quot;${wildfly_instance_id}&quot; \
+        --document-name &quot;AWS-RunShellScript&quot; \
+        --comment &quot;Update WildFly token&quot; \
+        --parameters &quot;$replace_token_command_json&quot; \
+        --query &quot;Command.CommandId&quot; \
+        --output text)
+
+        wait_for_command ${command_id} ${wildfly_instance_id}
+        echo &quot;Token update success&quot;
+    fi
+    
+    restart_wildfly &quot;$wildfly_instance_id&quot;
+}
+
+# Function to monitor Docker logs via SSM to detect if Spring Boot has started
+# -----------------------------------------------
+# Functionality:
+#   1. Uses AWS SSM to execute &apos;docker logs&apos; periodically on the remote EC2 instance.
+#   2. Monitors the logs for the &quot;Started Application in&quot; message every 5 seconds.
+# Example Use:
+#   wait_for_spring_boot_ssm_logs &quot;i-xxxxxxxxxx&quot; &quot;spring_app_container&quot;
+# Result:
+#   The function will wait until the log message indicating the application has started is found.
+wait_for_spring_boot_ssm_logs() {
+  local instance_id=$1    # EC2 instance ID where the Docker container is running
+  local container_name=$2 # Docker container name or ID
+  local phrase=&quot;Started Application in&quot;
+  local max_retries=${3:-60}  # Maximum number of retries before giving up (default 60 retries)
+  local sleep_duration=${4:-5} # Wait 5 seconds between each retry
+
+  echo &quot;Waiting for Spring Boot application to start by monitoring Docker logs via SSM...&quot;
+
+  for ((i=1; i&lt;=max_retries; i++)); do
+    # Command to check the Docker logs for the startup phrase
+    check_logs_command=&quot;docker logs ${container_name} 2&gt;&amp;1 | grep &apos;${phrase}&apos;&quot;
+
+    # Execute the command using AWS SSM
+    check_logs_command_json=$(jq -n --arg cmd &quot;$check_logs_command&quot; &apos;{commands: [$cmd]}&apos;)
+
+    command_id=$(aws ssm send-command \
+      --instance-ids &quot;${instance_id}&quot; \
+      --document-name &quot;AWS-RunShellScript&quot; \
+      --parameters &quot;$check_logs_command_json&quot; \
+      --comment &quot;Check Docker logs for Spring Boot startup&quot; \
+      --query &quot;Command.CommandId&quot; \
+      --output text)
+
+    # Fetch the result of the command
+    log_output=$(aws ssm get-command-invocation \
+      --command-id ${command_id} \
+      --instance-id ${instance_id} \
+      --query &apos;StandardOutputContent&apos; \
+      --output text)
+
+    # Check if the phrase was found in the logs
+    if echo &quot;$log_output&quot; | grep -q &quot;${phrase}&quot;; then
+      echo &quot;Spring Boot application started in the Docker container &apos;${container_name}&apos;!&quot;
+      break
+    elif [[ &quot;$i&quot; -eq &quot;$max_retries&quot; ]]; then
+      echo &quot;Spring Boot application failed to start within the maximum retries (${max_retries}).&quot;
+      exit 1
+    else
+      echo &quot;Spring Boot application not started yet. Retrying in ${sleep_duration} seconds... ($i/$max_retries)&quot;
+      sleep ${sleep_duration}
+    fi
+  done
+}
+
+
+
+EOF</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command>cat &lt;&lt;&apos;EOF&apos; &gt; terraform_functions.sh
+# Function to download the Terraform state file for a given stack
+# -----------------------------------------------
+# Functionality:
+#   1. Downloads the Terraform state file from the specified S3 bucket for the provided stack.
+#   2. Saves the file locally with the naming convention terraform_&lt;stack&gt;.tfstate.
+# Example Use:
+#   tf_download_state &quot;a&quot; &quot;my-stack-s3-bucket&quot;
+# Result:
+#   The Terraform state file for stack &quot;a&quot; is downloaded from the S3 bucket and saved as terraform_a.tfstate.
+tf_download_state() {
+    local stack=$1
+    local stack_s3_bucket=$2
+    echo &quot;Download terraform.tfstate file for ${stack} stack&quot;
+    aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/${stack}/terraform.tfstate terraform_${stack}.tfstate
+}
+
+# Function to extract the WildFly EC2 instance ID from the Terraform state
+# -----------------------------------------------
+# Functionality:
+#   1. Extracts the WildFly EC2 instance ID from the downloaded Terraform state file.
+#   2. The instance ID is extracted using jq and returned for further use.
+# Example Use:
+#   wildfly_instance_id=$(tf_extract_wildfly_instance_id &quot;a&quot;)
+# Result:
+#   The WildFly EC2 instance ID for stack &quot;a&quot; is returned.
+tf_extract_wildfly_instance_id() {
+    local stack=$1
+    local wildfly_instance_id=$(jq -r &apos;.outputs[&quot;wildfly-ec2-id&quot;].value&apos; terraform_${stack}.tfstate)
+    echo &quot;${wildfly_instance_id}&quot;
+}
+
+EOF</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
   </builders>
   <publishers>
     <hudson.tasks.ArtifactArchiver>
-      <artifacts>target_group_attachment_functions.sh, role_functions.sh, pic_sure_rds_snapshot.sh, jwt_token.sh, database_migration_functions.sh, secret_functions.sh, database_functions.sh, helper_functions.sh</artifacts>
+      <artifacts>target_group_attachment_functions.sh, role_functions.sh, pic_sure_rds_snapshot.sh, jwt_token.sh, database_migration_functions.sh, secret_functions.sh, database_functions.sh, helper_functions.sh, application_functions.sh, terraform_functions.sh</artifacts>
       <allowEmptyArchive>false</allowEmptyArchive>
       <onlyIfSuccessful>false</onlyIfSuccessful>
       <fingerprint>false</fingerprint>
