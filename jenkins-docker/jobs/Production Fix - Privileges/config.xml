@@ -116,7 +116,7 @@ pipeline {
                 script {
                     def result = build job: &apos;Database Migrations&apos;, parameters: [
                         [$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash],
-                        [$class: &apos;BooleanParameterValue&apos;, name: &apos;DROP_PICSURE_TABLES&apos;, value: params.DROP_PICSURE_TABLES],
+                        [$class: &apos;BooleanParameterValue&apos;, name: &apos;DROP_PICSURE_TABLES&apos;, value: false],
                         [$class: &apos;BooleanParameterValue&apos;, name: &apos;DROP_AUTH_TABLES&apos;, value: params.DROP_AUTH_TABLES],
                         [$class: &apos;StringParameterValue&apos;, name: &apos;COPY_APPLICATION_TOKEN_FROM_DB&apos;, value: &quot;auth2&quot;]]
                 }
