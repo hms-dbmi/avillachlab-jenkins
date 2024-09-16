@@ -58,7 +58,7 @@ for script_file in &quot;$source_scripts_folder&quot;*.sh; do
 done
 
 ### Pull data set to rekey.
-assume_role &quot;arn:aws:iam::736265540791:role/curated-datasets-s3-role&quot;
+assume_role &quot;$curated_datasets_s3_role&quot;
 
 ### Get the s3 source location for the dump archive from the build-spec.json
 S3_SOURCE_LOCATION=`grep source_dictionary_db_s3_url build-spec.json | cut -d &apos;:&apos; -f 2,3 | sed &apos;s/&quot;//g&apos;`
@@ -77,14 +77,14 @@ find temp_extract -type f -exec mv {} dump_files/ \;
 assume_role
 
 # Fetch and extract credentials
-db_plsql_user_secrets=$(fetch_secret &quot;$database_plsql_admin_user_secret_name&quot;)
-conn_user=$(extract_field &quot;$db_plsql_user_secrets&quot; &quot;username&quot;)
-conn_pass=$(extract_field &quot;$db_plsql_user_secrets&quot; &quot;password&quot;)
+db_psql_user_secrets=$(fetch_secret &quot;$database_psql_root_user_secret_name&quot;)
+conn_user=$(extract_field &quot;$db_psql_user_secrets&quot; &quot;username&quot;)
+conn_pass=$(extract_field &quot;$db_psql_user_secrets&quot; &quot;password&quot;)
 
 # Test the connection
 echo &quot;Testing connection...&quot;
 PGPASSWORD=&quot;$conn_pass&quot; psql \
-    --host=&quot;$database_plsql_host_address&quot; \
+    --host=&quot;$database_psql_host_address&quot; \
     --port=&quot;5432&quot; \
     --username=&quot;$conn_user&quot; \
     --dbname=&quot;picsure&quot; \
@@ -98,11 +98,11 @@ fi
 echo &quot;Connection test successful!&quot;
 
 # Run pg_restore using the dump files provided in the dump_files workspace directory
-PGPASSWORD=&quot;$(extract_field &quot;$db_plsql_user_secrets&quot; &apos;password&apos;)&quot; \
+PGPASSWORD=&quot;$(extract_field &quot;$db_psql_user_secrets&quot; &apos;password&apos;)&quot; \
 pg_restore \
-   --host=&quot;${database_plsql_host_address}&quot; \
+   --host=&quot;${database_psql_host_address}&quot; \
    --port=&quot;5432&quot; \
-   --username=&quot;$(extract_field &quot;$db_plsql_user_secrets&quot; &apos;username&apos;)&quot; \
+   --username=&quot;$(extract_field &quot;$db_psql_user_secrets&quot; &apos;username&apos;)&quot; \
    --dbname=&quot;picsure&quot; \
    --format=d \
    --jobs=10 \
