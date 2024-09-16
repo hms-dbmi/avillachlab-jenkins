@@ -1,0 +1,135 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties/>
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.1">
+    <configVersion>2</configVersion>
+    <userRemoteConfigs>
+      <hudson.plugins.git.UserRemoteConfig>
+        <url>${release_control_git_repo}</url>
+      </hudson.plugins.git.UserRemoteConfig>
+    </userRemoteConfigs>
+    <branches>
+      <hudson.plugins.git.BranchSpec>
+        <name>${release_control_git_hash}</name>
+      </hudson.plugins.git.BranchSpec>
+    </branches>
+    <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+    <submoduleCfg class="empty-list"/>
+    <extensions/>
+  </scm>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <jdk>(System)</jdk>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.plugins.groovy.SystemGroovy plugin="groovy@457.v99900cb_85593">
+      <source class="hudson.plugins.groovy.StringSystemScriptSource">
+        <script plugin="script-security@1358.vb_26663c13537">
+          <script>import jenkins.*
+import jenkins.model.*
+import hudson.*
+import hudson.model.*
+
+def bashFunctionsJob = Jenkins.instance.getItemByFullName(&quot;Bash_Functions&quot;).scheduleBuild2(0).get()</script>
+          <sandbox>false</sandbox>
+        </script>
+      </source>
+    </hudson.plugins.groovy.SystemGroovy>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+set -e
+# Source folder containing the scripts
+source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+ls -la &quot;$source_scripts_folder&quot;
+
+# Iterate through the files in the folder and source them
+for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+    chmod +x &quot;$script_file&quot;
+    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+        echo &quot;sourcing $script_file&quot;
+        source &quot;$script_file&quot;
+    fi
+done
+
+### Pull data set to rekey.
+assume_role &quot;arn:aws:iam::736265540791:role/curated-datasets-s3-role&quot;
+
+### Get the s3 source location for the dump archive from the build-spec.json
+S3_SOURCE_LOCATION=`grep source_dictionary_db_s3_url build-spec.json | cut -d &apos;:&apos; -f 2,3 | sed &apos;s/&quot;//g&apos;`
+echo $S3_SOURCE_LOCATION
+aws s3 cp $S3_SOURCE_LOCATION dictionary_db.tar
+
+reset_role
+
+# extract archive and move dump files to set workspace location called dump_files
+mkdir temp_extract
+tar -xvf dictionary_db.tar -C temp_extract
+
+mkdir dump_files
+find temp_extract -type f -exec mv {} dump_files/ \;
+
+assume_role
+
+# Fetch and extract credentials
+db_plsql_user_secrets=$(fetch_secret &quot;$database_plsql_admin_user_secret_name&quot;)
+conn_user=$(extract_field &quot;$db_plsql_user_secrets&quot; &quot;username&quot;)
+conn_pass=$(extract_field &quot;$db_plsql_user_secrets&quot; &quot;password&quot;)
+
+# Test the connection
+echo &quot;Testing connection...&quot;
+PGPASSWORD=&quot;$conn_pass&quot; psql \
+    --host=&quot;$database_plsql_host_address&quot; \
+    --port=&quot;5432&quot; \
+    --username=&quot;$conn_user&quot; \
+    --dbname=&quot;picsure&quot; \
+    -c &quot;\q&quot;  # This command tests the connection and exits
+
+if [ $? -ne 0 ]; then
+    echo &quot;Connection test failed!&quot;
+    exit 1
+fi
+
+echo &quot;Connection test successful!&quot;
+
+# Run pg_restore using the dump files provided in the dump_files workspace directory
+PGPASSWORD=&quot;$(extract_field &quot;$db_plsql_user_secrets&quot; &apos;password&apos;)&quot; \
+pg_restore \
+   --host=&quot;${database_plsql_host_address}&quot; \
+   --port=&quot;5432&quot; \
+   --username=&quot;$(extract_field &quot;$db_plsql_user_secrets&quot; &apos;username&apos;)&quot; \
+   --dbname=&quot;picsure&quot; \
+   --format=d \
+   --jobs=10 \
+   --clean \
+   --verbose \
+   --no-owner \
+   --no-privileges \
+   --no-tablespaces \
+   --no-comments \
+   --no-publications \
+   --no-subscriptions \
+   --no-security-labels \
+   --no-table-access-method \
+   --schema=&quot;dict&quot; \
+   &quot;dump_files/&quot;
+
+</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.46">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
+</project>
