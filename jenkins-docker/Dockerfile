@@ -24,9 +24,11 @@ USER root
 RUN echo deb http://archive.debian.org/debian stretch-backports main >> /etc/apt/sources.list
 RUN echo deb http://archive.debian.org/debian stretch main >> /etc/apt/sources.list
 
-RUN apt-get update
+RUN apt-get update -Y
 
-#RUN apt-get -y -t stretch-backports install openjdk-11-jdk-headless
+# Install postgres client.
+RUN apt update -y
+RUN apt install -y postgresql
 
 RUN apt-get -y install apt-transport-https \
     python3-pip \
