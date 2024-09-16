@@ -27,6 +27,11 @@ RUN echo deb http://archive.debian.org/debian stretch main >> /etc/apt/sources.l
 RUN apt-get update -Y
 
 # Install postgres client.
+# to get latest postgresql-common to add the automated repo script provided by postgres
+RUN apt update -y 
+RUN apt install -y postgresql-common
+# Adds repo to get latest postgresql client
+RUN /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
 RUN apt update -y
 RUN apt install -y postgresql
 
