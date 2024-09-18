@@ -5,12 +5,13 @@ pipeline {
 
     parameters {
         string(name: 'GROOVY_LIB_BRANCH', defaultValue: 'release-new-ui', description: 'The branch of the Groovy library to use')
-        string(name: 'DISPLAY', defaultValue: '3', description: 'Weight for concept_node.DISPLAY')
+        string(name: 'DISPLAY', defaultValue: '2', description: 'Weight for concept_node.DISPLAY')
         string(name: 'CONCEPT_PATH', defaultValue: '2', description: 'Weight for concept_node.CONCEPT_PATH')
         string(name: 'FULL_NAME', defaultValue: '1', description: 'Weight for dataset.FULL_NAME')
         string(name: 'DESCRIPTION', defaultValue: '1', description: 'Weight for dataset.DESCRIPTION')
         string(name: 'PARENT_DISPLAY', defaultValue: '1', description: 'Weight for parent.DISPLAY')
         string(name: 'GRANDPARENT_DISPLAY', defaultValue: '1', description: 'Weight for grandparent.DISPLAY')
+        string(name: 'META_STRING', defaultValue: '1', description: 'Weight for concept_node_meta_str')
         string(name: 'GIT_REPO_URL', defaultValue: 'https://github.com/hms-dbmi/picsure-dictionary.git', description: 'The GitHub repository URL')
         string(name: 'GIT_BRANCH', defaultValue: 'release', description: 'The Git branch to checkout')
         string(name: 'DOCKER_REPO', defaultValue: 'avillach', description: 'The Docker repository name')
@@ -32,6 +33,7 @@ pipeline {
                     dataset.DESCRIPTION,${params.DESCRIPTION}
                     parent.DISPLAY,${params.PARENT_DISPLAY}
                     grandparent.DISPLAY,${params.GRANDPARENT_DISPLAY}
+                    concept_node_meta_str,${params.META_STRING}
                     """
 
                     writeFile file: 'weights.csv', text: csvContent
