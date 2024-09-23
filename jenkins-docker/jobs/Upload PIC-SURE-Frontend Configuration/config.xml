@@ -1,0 +1,76 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.FileParameterDefinition>
+          <name>bdc.env</name>
+          <description>Upload a bdc.env file that has been configured and will be used to configure the PIC-SURE-Frontend app</description>
+        </hudson.model.FileParameterDefinition>
+        <hudson.model.FileParameterDefinition>
+          <name>configuration.json</name>
+        </hudson.model.FileParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.scm.NullSCM"/>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <jdk>(System)</jdk>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+
+set -e
+# Source folder containing the scripts
+source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+ls -la &quot;$source_scripts_folder&quot;
+
+# Iterate through the files in the folder and source them
+for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+    chmod +x &quot;$script_file&quot;
+    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+        echo &quot;sourcing $script_file&quot;
+        source &quot;$script_file&quot;
+    fi
+done
+
+# Check if bdc.env exists and is not empty
+BDC_ENV=&quot;bdc.env&quot;
+CONFIG_JSON=&quot;configuration.json&quot;
+
+# Check if bdc.env exists and is not empty
+if [[ -f &quot;$BDC_ENV&quot; &amp;&amp; -s &quot;$BDC_ENV&quot; ]]; then
+  echo &quot;Uploading $BDC_ENV to S3...&quot;
+  aws s3 --sse=AES256 cp &quot;$BDC_ENV&quot; &quot;s3://$stack_s3_bucket/configs/pic-sure-frontend/$BDC_ENV&quot;
+else
+  echo &quot;Warning: $BDC_ENV is either empty or does not exist. Skipping upload.&quot;
+fi
+
+# Check if configuration.json exists and is not empty
+if [[ -f &quot;$CONFIG_JSON&quot; &amp;&amp; -s &quot;$CONFIG_JSON&quot; ]]; then
+  echo &quot;Uploading $CONFIG_JSON to S3...&quot;
+  aws s3 --sse=AES256 cp &quot;$CONFIG_JSON&quot; &quot;s3://$stack_s3_bucket/configs/pic-sure-frontend/$CONFIG_JSON&quot;
+else
+  echo &quot;Warning: $CONFIG_JSON is either empty or does not exist. Skipping upload.&quot;
+fi</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.46">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
+</project>
