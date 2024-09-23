@@ -29,7 +29,7 @@ for script_file in &quot;$source_scripts_folder&quot;*.sh; do
     fi
 done
 
-# Upload the psama.env file to S3
+# Upload the picsure-dictionary.env file to S3
 aws s3 --sse=AES256 cp s3://$stack_s3_bucket/configs/picsure-dictionary/picsure-dictionary.env picsure-dictionary.env</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
