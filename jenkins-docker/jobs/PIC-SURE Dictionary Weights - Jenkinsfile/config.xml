@@ -127,7 +127,7 @@
       <extensions/>
     </scm>
     <scriptPath>jenkins-docker/jobs/PIC-SURE Dictionary Weights - Jenkinsfile/jenkinsfile</scriptPath>
-    <lightweight>true</lightweight>
+    <lightweight>false</lightweight>
   </definition>
   <triggers/>
   <disabled>false</disabled>
