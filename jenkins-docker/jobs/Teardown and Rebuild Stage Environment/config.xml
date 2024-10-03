@@ -226,6 +226,8 @@ if $isDestroyOnly; then
      -var=&quot;pic_sure_resource_id=${picsure_resource_uuid}&quot; \
      -var=&quot;app_acct_id=${app_acct_id}&quot; \
      -var=&quot;app_user_secret_name=${database_app_user_secret_name}&quot; \
+     -var=&quot;app_psql_user_secret_name=${database_psql_app_user_secret_name}&quot; \
+     -var=&quot;app_user_secret_name=${database_app_user_secret_name}&quot; \
      -var=&quot;ras_client_id=${ras_client_id}&quot; \
      -var=&quot;ras_okta_idp_id=${ras_okta_idp_id}&quot; \
      -var=&quot;ras_idp_provider_uri=${ras_idp_provider_uri}&quot; \
@@ -278,6 +280,8 @@ else
      -var=&quot;pic_sure_resource_id=${picsure_resource_uuid}&quot; \
      -var=&quot;app_acct_id=${app_acct_id}&quot; \
      -var=&quot;app_user_secret_name=${database_app_user_secret_name}&quot; \
+     -var=&quot;app_psql_user_secret_name=${database_psql_app_user_secret_name}&quot; \
+     -var=&quot;app_user_secret_name=${database_app_user_secret_name}&quot; \
      -var=&quot;ras_client_id=${ras_client_id}&quot; \
      -var=&quot;ras_okta_idp_id=${ras_okta_idp_id}&quot; \
      -var=&quot;ras_idp_provider_uri=${ras_idp_provider_uri}&quot; \
@@ -324,6 +328,8 @@ else
      -var=&quot;pic_sure_resource_id=${picsure_resource_uuid}&quot; \
      -var=&quot;app_acct_id=${app_acct_id}&quot; \
      -var=&quot;app_user_secret_name=${database_app_user_secret_name}&quot; \
+     -var=&quot;app_psql_user_secret_name=${database_psql_app_user_secret_name}&quot; \
+     -var=&quot;app_user_secret_name=${database_app_user_secret_name}&quot; \
      -var=&quot;ras_client_id=${ras_client_id}&quot; \
      -var=&quot;ras_okta_idp_id=${ras_okta_idp_id}&quot; \
      -var=&quot;ras_idp_provider_uri=${ras_idp_provider_uri}&quot; \
@@ -345,6 +351,8 @@ else
   aws s3 --sse=AES256 cp configs/banner_config.json s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/banner_config.json
   aws s3 --sse=AES256 cp scripts/wildfly-docker.sh s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/wildfly-docker.sh
   aws s3 --sse=AES256 cp scripts/psama-docker.sh s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/psama-docker.sh
+  aws s3 --sse=AES256 cp scripts/dictionary-docker.sh s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/dictionary-docker.sh
+  aws s3 --sse=AES256 cp scripts/httpd-docker.sh s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/httpd-docker.sh
 
   # These files are uploaded to s3 because user-scripts download them.  The user scripts are already running
   # so this is a race condition at this point as terraform has been applied
@@ -360,7 +368,7 @@ fi</command>
   </builders>
   <publishers/>
   <buildWrappers>
-    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.45">
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.46">
       <deleteDirs>false</deleteDirs>
       <cleanupParameter></cleanupParameter>
       <externalDelete></externalDelete>
