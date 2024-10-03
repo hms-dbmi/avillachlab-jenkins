@@ -7,18 +7,21 @@
       <triggers/>
       <parameters>
         <string>IMAGE_NAME</string>
-        <string>META_STR</string>
+        <string>META_STRING</string>
         <string>CONCEPT_PATH</string>
         <string>SPRING_PROFILE</string>
         <string>DISPLAY</string>
         <string>DOCKER_IMAGE_VERSION</string>
+        <string>GRANDPARENT_DISPLAY</string>
         <string>DESCRIPTION</string>
         <string>DOCKER_REPO</string>
         <string>FULL_NAME</string>
         <string>GIT_BRANCH</string>
         <string>DATASOURCE_USERNAME</string>
         <string>DATASOURCE_URL</string>
+        <string>PARENT_DISPLAY</string>
         <string>GIT_REPO_URL</string>
+        <string>GROOVY_LIB_BRANCH</string>
       </parameters>
       <options/>
     </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
@@ -29,9 +32,15 @@
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
+          <name>GROOVY_LIB_BRANCH</name>
+          <description>The branch of the Groovy library to use</description>
+          <defaultValue>release-new-ui</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
           <name>DISPLAY</name>
           <description>Weight for concept_node.DISPLAY</description>
-          <defaultValue>3</defaultValue>
+          <defaultValue>2</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
@@ -53,7 +62,19 @@
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>META_STR</name>
+          <name>PARENT_DISPLAY</name>
+          <description>Weight for parent.DISPLAY</description>
+          <defaultValue>1</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>GRANDPARENT_DISPLAY</name>
+          <description>Weight for grandparent.DISPLAY</description>
+          <defaultValue>1</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>META_STRING</name>
           <description>Weight for concept_node_meta_str</description>
           <defaultValue>1</defaultValue>
           <trim>false</trim>
@@ -67,7 +88,7 @@
         <hudson.model.StringParameterDefinition>
           <name>GIT_BRANCH</name>
           <description>The Git branch to checkout</description>
-          <defaultValue>ALS-7051</defaultValue>
+          <defaultValue>main</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
@@ -103,7 +124,7 @@
         <hudson.model.StringParameterDefinition>
           <name>DATASOURCE_USERNAME</name>
           <description>Datasource username</description>
-          <defaultValue>${database_psql_app_user_secret_name}</defaultValue>
+          <defaultValue>${database_psql_root_user_secret_name}</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
