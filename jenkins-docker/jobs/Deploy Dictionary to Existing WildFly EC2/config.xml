@@ -1,0 +1,80 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>S3_BUCKET_NAME</name>
+          <defaultValue>${stack_s3_bucket}</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>target_stack</name>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.scm.NullSCM"/>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <jdk>(System)</jdk>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+
+# Source folder containing the scripts
+source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+ls -la &quot;$source_scripts_folder&quot;
+
+# Iterate through the files in the folder and source them
+for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+    chmod +x &quot;$script_file&quot;
+    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+        echo &quot;sourcing $script_file&quot;
+        source &quot;$script_file&quot;
+    fi
+done
+
+assume_role
+
+# Download the terraform state file
+echo &quot;Download terraform.tfstate file for $target_stack stack&quot;
+aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/$target_stack/terraform.tfstate terraform.tfstate
+
+# Extract the Wildfly EC2 instance ID
+echo &quot;Extract WildFly instance ID for $target_stack stack&quot;
+wildfly_instance_id=$(jq -r &apos;.outputs[&quot;wildfly-ec2-id&quot;].value&apos; terraform.tfstate)
+echo &quot;WildFly Instance ID: ${wildfly_instance_id}&quot;
+
+update_dictionary_container=&quot;sudo /home/centos/dictionary-docker.sh $stack_s3_bucket&quot;
+echo &quot;$update_dictionary_container&quot;
+
+update_dictionary_container_json=$(jq -n --arg cmd &quot;$update_dictionary_container&quot; &apos;{commands: [$cmd]}&apos;)
+echo &quot;JSON version of run command: $update_dictionary_container_json&quot;
+
+command_id=$(aws ssm send-command \
+  --instance-ids &quot;${wildfly_instance_id}&quot; \
+  --document-name &quot;AWS-RunShellScript&quot; \
+  --comment &quot;Deploy httpd in place&quot; \
+  --parameters &quot;$update_dictionary_container_json&quot; \
+  --query &quot;Command.CommandId&quot; \
+  --output text)
+
+wait_for_command ${command_id} ${wildfly_instance_id}
+
+reset_role
+</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers/>
+</project>
