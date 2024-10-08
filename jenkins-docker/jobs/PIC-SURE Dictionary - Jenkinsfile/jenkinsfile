@@ -9,7 +9,7 @@ pipeline {
         string(name: 'DOCKER_IMAGE_VERSION', defaultValue: 'latest', description: 'The Docker image version/tag')
         string(name: 'SPRING_PROFILE', defaultValue: 'bdc', description: 'The Spring profile')
         string(name: 'DATASOURCE_URL', description: 'Datasource URL', defaultValue: '${database_psql_host_address}')
-        string(name: 'DATASOURCE_USERNAME', description: 'Datasource username', defaultValue: '${database_psql_app_user_secret_name}')
+        string(name: 'DATASOURCE_USERNAME', description: 'Datasource username', defaultValue: '${database_psql_root_user_secret_name}')
     }
 
     stages {
