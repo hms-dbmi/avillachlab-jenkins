@@ -24,16 +24,17 @@ USER root
 RUN echo deb http://archive.debian.org/debian stretch-backports main >> /etc/apt/sources.list
 RUN echo deb http://archive.debian.org/debian stretch main >> /etc/apt/sources.list
 
-RUN apt-get update -y
+
 
 # Install postgres client.
 # to get latest postgresql-common to add the automated repo script provided by postgres
+RUN apt-get update -y
 
 RUN apt-get install -y postgresql-common
 # Adds repo to get latest postgresql client
 RUN /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
 RUN apt-get update -y
-RUN apt-get install -y postgresql
+RUN apt-get install -y postgresql-client-16
 
 RUN psql --version
 RUN pg_restore --version
