@@ -13,13 +13,17 @@ pipeline {
         string(name: 'GRANDPARENT_DISPLAY', defaultValue: '1', description: 'Weight for grandparent.DISPLAY')
         string(name: 'META_STRING', defaultValue: '1', description: 'Weight for concept_node_meta_str')
         string(name: 'GIT_REPO_URL', defaultValue: '${git_base_url}/picsure-dictionary.git', description: 'The GitHub repository URL')
-        string(name: 'GIT_BRANCH', defaultValue: 'main', description: 'The Git branch to checkout')
+        string(name: 'GIT_BRANCH', defaultValue: '', description: 'The Git branch to checkout')
         string(name: 'DOCKER_REPO', defaultValue: 'avillach', description: 'The Docker repository name')
         string(name: 'SPRING_PROFILE', defaultValue: 'bdc', description: 'The Spring profile')
         string(name: 'IMAGE_NAME', defaultValue: 'dictionary_weights', description: 'The name of the Docker image')
         string(name: 'DOCKER_IMAGE_VERSION', defaultValue: 'latest', description: 'The Docker image tag')
         string(name: 'DATASOURCE_URL', description: 'Datasource URL', defaultValue: '${database_psql_host_address}')
         string(name: 'DATASOURCE_USERNAME', description: 'Datasource username', defaultValue: '${database_psql_root_user_secret_name}')
+    }
+
+    environment {
+        gitHash = ''
     }
 
     stages {
@@ -47,10 +51,41 @@ pipeline {
             }
         }
 
+        stage('Retrieve Build Spec') {
+            steps {
+                script {
+                    // Trigger the 'Retrieve Build Spec' job and get the build number
+                    def projectName = 'Retrieve Build Spec'
+
+                    def result = build job: projectName
+                    def retrieveBuildSpecId = result.number
+
+                    // Copy the artifacts from the triggered job
+                    copyArtifacts filter: '*', projectName: projectName, selector: specific("${retrieveBuildSpecId}")
+
+                    // Display the content of the files for debugging
+                    sh 'cat build-spec.json'
+
+
+                }
+            }
+        }
+
         stage('Clone Repository') {
             steps {
                 script {
-                    def ref = "${params.GIT_BRANCH}"
+                    // Define the path for the build spec file and project name
+                    def buildSpecFile = 'build-spec.json'
+                    def projectName = 'PIC-SURE Dictionary Build'
+
+                    // Extract the git_hash using jq and store it in a global variable
+                    gitHash = sh(
+                        script: "jq -r '.application[] | select(.project_name == \"${projectName}\") | .git_hash' ${buildSpecFile}",
+                        returnStdout: true
+                    ).trim()
+
+                    def ref = "${params.GIT_BRANCH}" ? gitHash: "${params.GIT_BRANCH}"
+
                     checkout([$class: 'GitSCM',
                         branches: [[name: ref]],
                         userRemoteConfigs: [[url: "${params.GIT_REPO_URL}"]],
