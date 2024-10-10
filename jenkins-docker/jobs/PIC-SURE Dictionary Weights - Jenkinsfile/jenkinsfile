@@ -1,5 +1,3 @@
-@Library('avillach_lab_pic_sure@ALS-7599') _
-
 pipeline {
     agent any
 
@@ -121,12 +119,24 @@ pipeline {
         stage('Run Docker Container') {
             steps {
                 script {
-                    def awsHelper = new AWSHelper("${app_acct_id}", "${jenkins_provisioning_assume_role_name}", { msg -> echo msg })
-                    awsHelper.assumeRole()
+                    // Set the role ARN and session name
+                    def roleArn = "arn:aws:iam::${env.app_acct_id}:role/${env.jenkins_provisioning_assume_role_name}"
+                    def sessionName = "jenkins-session-${env.BUILD_ID}"
 
-                    def (accessKeyId, secretAccessKey, sessionToken) = awsHelper.fetchAwsCredentials()
+                    // Assume the role using AWS CLI
+                    def assumeRoleResponse = sh(script: """
+                        aws sts assume-role \
+                          --role-arn "${roleArn}" \
+                          --role-session-name "${sessionName}" \
+                          --output json
+                    """, returnStdout: true).trim()
 
-                    sh """
+                    // Parse the JSON response to extract credentials
+                    def json = readJSON text: assumeRoleResponse
+                    def accessKeyId = json.Credentials.AccessKeyId
+                    def secretAccessKey = json.Credentials.SecretAccessKey
+                    def sessionToken = json.Credentials.SessionToken
+
                     echo "Running Docker container..."
                     docker run \
                           --rm \
