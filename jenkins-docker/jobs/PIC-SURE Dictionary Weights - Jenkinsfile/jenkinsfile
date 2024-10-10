@@ -131,11 +131,21 @@ pipeline {
                          --output json
                    """, returnStdout: true).trim()
 
-                   // Parse the JSON response to extract credentials
-                   def json = readJSON text: assumeRoleResponse
-                   def accessKeyId = json.Credentials.AccessKeyId
-                   def secretAccessKey = json.Credentials.SecretAccessKey
-                   def sessionToken = json.Credentials.SessionToken
+            // Parse the JSON response to extract credentials using jq
+            def accessKeyId = sh(
+                script: "echo '${assumeRoleResponse}' | jq -r '.Credentials.AccessKeyId'",
+                returnStdout: true
+            ).trim()
+
+            def secretAccessKey = sh(
+                script: "echo '${assumeRoleResponse}' | jq -r '.Credentials.SecretAccessKey'",
+                returnStdout: true
+            ).trim()
+
+            def sessionToken = sh(
+                script: "echo '${assumeRoleResponse}' | jq -r '.Credentials.SessionToken'",
+                returnStdout: true
+            ).trim()
 
                    echo "Running Docker container..."
 
