@@ -96,7 +96,7 @@ pipeline {
                                 [path: 'dictionaryweights']
                             ]],
                             [$class: 'CheckoutOption', timeout: 10],
-                            [$class: 'CloneOption', depth: 1, noTags: true, shallow: true]
+                            [$class: 'CloneOption', depth: 1, noTags: false, shallow: true]
                         ]
                     ])
                 }
