@@ -116,43 +116,45 @@ pipeline {
         }
 
 
-        stage('Run Docker Container') {
-            steps {
-                script {
-                    // Set the role ARN and session name
-                    def roleArn = "arn:aws:iam::${env.app_acct_id}:role/${env.jenkins_provisioning_assume_role_name}"
-                    def sessionName = "jenkins-session-${env.BUILD_ID}"
+       stage('Run Docker Container') {
+           steps {
+               script {
+                   // Set the role ARN and session name
+                   def roleArn = "arn:aws:iam::${env.app_acct_id}:role/${env.jenkins_provisioning_assume_role_name}"
+                   def sessionName = "jenkins-session-${env.BUILD_ID}"
 
-                    // Assume the role using AWS CLI
-                    def assumeRoleResponse = sh(script: """
-                        aws sts assume-role \
-                          --role-arn "${roleArn}" \
-                          --role-session-name "${sessionName}" \
-                          --output json
-                    """, returnStdout: true).trim()
+                   // Assume the role using AWS CLI
+                   def assumeRoleResponse = sh(script: """
+                       aws sts assume-role \
+                         --role-arn "${roleArn}" \
+                         --role-session-name "${sessionName}" \
+                         --output json
+                   """, returnStdout: true).trim()
 
-                    // Parse the JSON response to extract credentials
-                    def json = readJSON text: assumeRoleResponse
-                    def accessKeyId = json.Credentials.AccessKeyId
-                    def secretAccessKey = json.Credentials.SecretAccessKey
-                    def sessionToken = json.Credentials.SessionToken
+                   // Parse the JSON response to extract credentials
+                   def json = readJSON text: assumeRoleResponse
+                   def accessKeyId = json.Credentials.AccessKeyId
+                   def secretAccessKey = json.Credentials.SecretAccessKey
+                   def sessionToken = json.Credentials.SessionToken
 
-                    echo "Running Docker container..."
-                    docker run \
-                          --rm \
-                          -t \
-                          --name dictionary-weights \
-                          -v ./weights.csv:/weights.csv \
-                          -e AWS_ACCESS_KEY_ID=${accessKeyId} \
-                          -e AWS_SECRET_ACCESS_KEY=${secretAccessKey} \
-                          -e AWS_SESSION_TOKEN=${sessionToken} \
-                          -e AWS_DEFAULT_REGION=us-east-1 \
-                          ${params.DOCKER_REPO}/${params.IMAGE_NAME}:${params.DOCKER_IMAGE_VERSION}
-                    """
+                   echo "Running Docker container..."
 
-                    awsHelper = null
-                }
-            }
-        }
+                   // Use the Docker run command correctly
+                   sh """
+                       docker run \
+                         --rm \
+                         -t \
+                         --name dictionary-weights \
+                         -v ./weights.csv:/weights.csv \
+                         -e AWS_ACCESS_KEY_ID=${accessKeyId} \
+                         -e AWS_SECRET_ACCESS_KEY=${secretAccessKey} \
+                         -e AWS_SESSION_TOKEN=${sessionToken} \
+                         -e AWS_DEFAULT_REGION=us-east-1 \
+                         ${params.DOCKER_REPO}/${params.IMAGE_NAME}:${params.DOCKER_IMAGE_VERSION}
+                   """
+               }
+           }
+       }
+
     }
 }
