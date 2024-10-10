@@ -1,4 +1,4 @@
-@Library('avillach_lab_pic_sure@release-new-ui') _
+@Library('avillach_lab_pic_sure@ALS-7599') _
 
 pipeline {
     agent any
