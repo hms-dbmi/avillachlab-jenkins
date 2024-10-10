@@ -116,8 +116,8 @@ pipeline {
         }
 
 
-       stage('Run Docker Container') {
-           steps {
+        stage('Run Docker Container') {
+            steps {
                script {
                    // Set the role ARN and session name
                    def roleArn = "arn:aws:iam::${env.app_acct_id}:role/${env.jenkins_provisioning_assume_role_name}"
@@ -131,21 +131,21 @@ pipeline {
                          --output json
                    """, returnStdout: true).trim()
 
-            // Parse the JSON response to extract credentials using jq
-            def accessKeyId = sh(
-                script: "echo '${assumeRoleResponse}' | jq -r '.Credentials.AccessKeyId'",
-                returnStdout: true
-            ).trim()
+                   // Parse the JSON response to extract credentials using jq
+                   def accessKeyId = sh(
+                       script: "echo '${assumeRoleResponse}' | jq -r '.Credentials.AccessKeyId'",
+                       returnStdout: true
+                   ).trim()
 
-            def secretAccessKey = sh(
-                script: "echo '${assumeRoleResponse}' | jq -r '.Credentials.SecretAccessKey'",
-                returnStdout: true
-            ).trim()
+                   def secretAccessKey = sh(
+                       script: "echo '${assumeRoleResponse}' | jq -r '.Credentials.SecretAccessKey'",
+                       returnStdout: true
+                   ).trim()
 
-            def sessionToken = sh(
-                script: "echo '${assumeRoleResponse}' | jq -r '.Credentials.SessionToken'",
-                returnStdout: true
-            ).trim()
+                   def sessionToken = sh(
+                       script: "echo '${assumeRoleResponse}' | jq -r '.Credentials.SessionToken'",
+                       returnStdout: true
+                   ).trim()
 
                    echo "Running Docker container..."
 
@@ -163,8 +163,7 @@ pipeline {
                          ${params.DOCKER_REPO}/${params.IMAGE_NAME}:${params.DOCKER_IMAGE_VERSION}
                    """
                }
-           }
-       }
-
+            }
+        }
     }
 }
