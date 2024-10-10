@@ -84,9 +84,10 @@ pipeline {
                         returnStdout: true
                     ).trim()
 
-                    def ref = "${params.GIT_BRANCH}" ? gitHash: "${params.GIT_BRANCH}"
-                    println ref
-                    println gitHash
+                    def ref = (params.GIT_BRANCH?.trim()) ? params.GIT_BRANCH : gitHash
+                    println "Ref: ${ref}"
+                    println "Git Hash: ${gitHash}"
+
                     checkout([$class: 'GitSCM',
                         branches: [[name: ref]],
                         userRemoteConfigs: [[url: "${params.GIT_REPO_URL}"]],
