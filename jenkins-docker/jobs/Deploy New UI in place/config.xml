@@ -53,7 +53,7 @@ pipeline {
     agent any
     parameters {
         string(name: &apos;TARGET_STACK&apos;, defaultValue: &apos;b&apos;, description: &apos;The stack you want to deploy to. a or b.&apos;)
-        string(name: &apos;BRANCH&apos;, defaultValue: &apos;dev&apos;, description: &apos;If you want to a specific branch. Leave blank to use the release control&apos;)
+        string(name: &apos;BRANCH&apos;, defaultValue: &apos;&apos;, description: &apos;If you want to a specific branch. Leave blank to use the release control&apos;)
     }
     stages {
         stage(&apos;Retrieve Build Spec&apos;) {
