@@ -4,7 +4,7 @@
   <description></description>
   <keepDependencies>false</keepDependencies>
   <properties/>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.0">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.6.0">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
@@ -25,12 +25,13 @@
   <disabled>false</disabled>
   <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
   <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <jdk>(System)</jdk>
   <triggers/>
   <concurrentBuild>false</concurrentBuild>
   <builders>
-    <hudson.plugins.groovy.SystemGroovy plugin="groovy@453.vcdb_a_c5c99890">
+    <hudson.plugins.groovy.SystemGroovy plugin="groovy@457.v99900cb_85593">
       <source class="hudson.plugins.groovy.StringSystemScriptSource">
-        <script plugin="script-security@1275.v23895f409fb_d">
+        <script plugin="script-security@1362.v67dc1f0e1b_b_3">
           <script>import jenkins.*
 import jenkins.model.*
 import hudson.*
@@ -64,7 +65,7 @@ Jenkins.instance.getItemByFullName(&quot;PIC-SURE Pipeline&quot;)
 
 LAST_DATASET_MODIFICATION_COMMIT=`git blame --abbrev=39 build-spec.json | grep source_dataset_s3_url | cut -f 1 -d &apos; &apos;`
 
-aws s3api head-object --bucket $stack_s3_bucket --key &quot;data/${LAST_DATASET_MODIFICATION_COMMIT}/javabins_rekeyed.tar.gz&quot; || not_exist=true
+aws s3api head-object --bucket $stack_s3_bucket --key &quot;data/${LAST_DATASET_MODIFICATION_COMMIT}/javabins_rekeyed.tar&quot; || not_exist=true
 if [ $not_exist ]; then
   echo $LAST_DATASET_MODIFICATION_COMMIT &gt; toBeRekeyed.txt
   echo &quot;Will rekey new dataset.&quot;
@@ -76,7 +77,7 @@ fi
 
 LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT=`git blame --abbrev=39 build-spec.json | grep source_destigmatized_dataset_s3_url | cut -f 1 -d &apos; &apos;`
 
-aws s3api head-object --bucket $stack_s3_bucket --key &quot;data/${LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT}/destigmatized_javabins_rekeyed.tar.gz&quot; || not_exist_destig=false
+aws s3api head-object --bucket $stack_s3_bucket --key &quot;data/${LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT}/destigmatized_javabins_rekeyed.tar&quot; || not_exist_destig=false
 
 if [ $not_exist_destig ]; then
   echo $LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT &gt; destigmatized_toBeRekeyed.txt
@@ -92,9 +93,9 @@ echo $LAST_GENOMIC_DATASET_MODIFICATION_COMMIT &gt; genomicDatasetKey.txt
 </command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
-    <hudson.plugins.groovy.SystemGroovy plugin="groovy@453.vcdb_a_c5c99890">
+    <hudson.plugins.groovy.SystemGroovy plugin="groovy@457.v99900cb_85593">
       <source class="hudson.plugins.groovy.StringSystemScriptSource">
-        <script plugin="script-security@1275.v23895f409fb_d">
+        <script plugin="script-security@1362.v67dc1f0e1b_b_3">
           <script>import jenkins.*
 import jenkins.model.*
 import hudson.*
@@ -154,7 +155,7 @@ Jenkins.instance.getItemByFullName(&quot;Deployment Pipeline&quot;)
   </builders>
   <publishers/>
   <buildWrappers>
-    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.45">
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.47">
       <deleteDirs>false</deleteDirs>
       <cleanupParameter></cleanupParameter>
       <externalDelete></externalDelete>
