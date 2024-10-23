@@ -1,8 +1,8 @@
 <?xml version='1.1' encoding='UTF-8'?>
-<flow-definition plugin="workflow-job@1400.v7fd111b_ec82f">
+<flow-definition plugin="workflow-job@1459.v6c531091efcd">
   <actions>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2175.v76a_fff0a_2618"/>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2175.v76a_fff0a_2618">
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2214.vb_b_34b_2ea_9b_83"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2214.vb_b_34b_2ea_9b_83">
       <jobProperties/>
       <triggers/>
       <parameters/>
@@ -33,7 +33,7 @@
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3853.vb_a_490d892963">
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3975.v567e2a_1ffa_22">
     <script>import groovy.json.JsonSlurper;
 
 def retrieveDepStateId
@@ -74,11 +74,22 @@ pipeline {
                 }
             }
         }
-        stage(&apos;Create Database Snapshot&apos;) {
+        stage(&apos;Create Auth &amp; Picsure Database Backups&apos;) {
             steps {
-                script {
-                    def result = build job: &apos;Create Database Snapshot&apos;
-                }
+                parallel (
+                    authSchema: {
+                        script {
+                            def authSchema = &quot;auth&quot;
+                            def result = build job: &apos;Database - Backup&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;SOURCE_DATABASE&apos;, value: authSchema]]
+                        }
+                    },
+                    picsureSchema: {
+                        script {
+                            def picsureSchema = &quot;picsure&quot;
+                            def result = build job: &apos;Database - Backup&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;SOURCE_DATABASE&apos;, value: picsureSchema]]
+                        }
+                    }
+                )
             }
         }
         stage(&apos;Database Migrations&apos;) {
