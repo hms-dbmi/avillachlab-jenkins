@@ -225,7 +225,6 @@ if $isDestroyOnly; then
      -var=&quot;picsure_db_host=${picsure_db_host}&quot; \
      -var=&quot;pic_sure_resource_id=${picsure_resource_uuid}&quot; \
      -var=&quot;app_acct_id=${app_acct_id}&quot; \
-     -var=&quot;app_user_secret_name=${database_app_user_secret_name}&quot; \
      -var=&quot;app_psql_user_secret_name=${database_psql_app_user_secret_name}&quot; \
      -var=&quot;app_user_secret_name=${database_app_user_secret_name}&quot; \
      -var=&quot;ras_client_id=${ras_client_id}&quot; \
@@ -279,7 +278,6 @@ else
      -var=&quot;picsure_db_host=${picsure_db_host}&quot; \
      -var=&quot;pic_sure_resource_id=${picsure_resource_uuid}&quot; \
      -var=&quot;app_acct_id=${app_acct_id}&quot; \
-     -var=&quot;app_user_secret_name=${database_app_user_secret_name}&quot; \
      -var=&quot;app_psql_user_secret_name=${database_psql_app_user_secret_name}&quot; \
      -var=&quot;app_user_secret_name=${database_app_user_secret_name}&quot; \
      -var=&quot;ras_client_id=${ras_client_id}&quot; \
@@ -327,7 +325,6 @@ else
      -var=&quot;picsure_db_host=${picsure_db_host}&quot; \
      -var=&quot;pic_sure_resource_id=${picsure_resource_uuid}&quot; \
      -var=&quot;app_acct_id=${app_acct_id}&quot; \
-     -var=&quot;app_user_secret_name=${database_app_user_secret_name}&quot; \
      -var=&quot;app_psql_user_secret_name=${database_psql_app_user_secret_name}&quot; \
      -var=&quot;app_user_secret_name=${database_app_user_secret_name}&quot; \
      -var=&quot;ras_client_id=${ras_client_id}&quot; \
