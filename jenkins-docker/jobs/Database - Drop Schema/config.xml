@@ -1,0 +1,81 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>DROP_SCHEMA_NAME</name>
+          <description>Be extremely careful with this function. It will drop the entire provided schema.</description>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.scm.NullSCM"/>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <jdk>(System)</jdk>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+
+# Check if the database root user has been set
+if [ -z &quot;$database_root_user_secret_name&quot; ]; then
+    echo &quot;The &apos;database_root_user_secret_name&apos; must be set in the global configuration&quot;
+    exit 1
+fi
+
+# Source folder containing the scripts
+source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+ls -la &quot;$source_scripts_folder&quot;
+
+# Iterate through the files in the folder and source them
+for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+chmod +x &quot;$script_file&quot;
+if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+    echo &quot;sourcing $script_file&quot;
+    source &quot;$script_file&quot;
+fi
+done
+
+assume_role
+
+# Getting db admin user secret value by secret name
+db_admin_user_json=$(fetch_secret &quot;$database_root_user_secret_name&quot;)
+
+# DB admin user information
+db_admin_user_username=$(extract_field &quot;$db_admin_user_json&quot; &quot;username&quot;)
+db_admin_user_password=$(extract_field &quot;$db_admin_user_json&quot; &quot;password&quot;)
+db_admin_user_host=$database_host_address
+
+# Check if any of the variables are empty
+if [ -z &quot;$db_admin_user_username&quot; ] || [ -z &quot;$db_admin_user_password&quot; ] || [ -z &quot;$db_admin_user_host&quot; ]; then
+    echo &quot;Error: One or more required database variables are empty.&quot; &gt;&amp;2
+    exit 1
+fi
+
+initialize_shared_db_config &quot;${db_admin_user_host%:3306}&quot; &quot;$db_admin_user_username&quot; &quot;$db_admin_user_password&quot;
+drop_schema &quot;$DROP_SCHEMA_NAME&quot;
+
+unset_shared_db_config
+reset_role</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.46">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
+</project>

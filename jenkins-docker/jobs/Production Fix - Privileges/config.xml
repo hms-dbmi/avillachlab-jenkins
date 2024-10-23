@@ -32,12 +32,7 @@
         <hudson.model.BooleanParameterDefinition>
           <name>DROP_AUTH_TABLES</name>
           <description>Drop tables during migration</description>
-          <defaultValue>false</defaultValue>
-        </hudson.model.BooleanParameterDefinition>
-        <hudson.model.BooleanParameterDefinition>
-          <name>DROP_PICSURE_TABLES</name>
-          <description>Drop tables during migration</description>
-          <defaultValue>false</defaultValue>
+          <defaultValue>true</defaultValue>
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>TARGET_STACK</name>
@@ -80,8 +75,8 @@ pipeline {
                     sh &apos;cat build-spec.json&apos;
                     sh &apos;cat pipeline_git_commit.txt&apos;
                     sh &apos;pwd&apos;
-                    def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/Deploy PSAMA in place/build-spec.json&apos;))
-                    pipelineBuildId = new File(&apos;/var/jenkins_home/workspace/Deploy PSAMA in place/pipeline_git_commit.txt&apos;).text.trim()
+                    def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/Production Fix - Privileges/build-spec.json&apos;))
+                    pipelineBuildId = new File(&apos;/var/jenkins_home/workspace/Production Fix - Privileges/pipeline_git_commit.txt&apos;).text.trim()
                     for(def build : buildSpec.application){
                         build_hashes[build.project_job_git_key] = build.git_hash
                     }
@@ -89,10 +84,27 @@ pipeline {
                 }
             }
         }
-        stage(&apos;PSAMA&apos;) {
+        stage(&apos;Update Bash Functions&apos;) {
             steps {
-                script{
-                    def result = build job: &apos;PIC-SURE Auth Micro-App Build - Jenkinsfile&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSAMA&apos;]]]
+                script {
+                    def result = build job: &apos;Bash_Functions&apos;
+                }
+            }
+        }
+        stage(&apos;Database - Dump&apos;) {
+            steps {
+                script {
+                    def result = build job: &apos;Database - Copy&apos;, parameters: 
+                    [[$class: &apos;StringParameterValue&apos;, name: &apos;SOURCE_DATABASE&apos;, value: &quot;auth&quot;]]
+                }
+            }
+        }
+        stage(&apos;Database - Copy&apos;) {
+            steps {
+                script {
+                    def result = build job: &apos;Database - Copy&apos;, parameters: 
+                    [[$class: &apos;StringParameterValue&apos;, name: &apos;SOURCE_DATABASE&apos;, value: &quot;auth&quot;],
+                    [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_DATABASE&apos;, value: &quot;auth2&quot;]]
                 }
             }
         }
@@ -102,8 +114,11 @@ pipeline {
             }
             steps {
                 script {
-                    def result = build job: &apos;Database Migrations&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash],
-                    [$class: &apos;BooleanParameterValue&apos;, name: &apos;DROP_PICSURE_TABLES&apos;, value: params.DROP_PICSURE_TABLES],[$class: &apos;BooleanParameterValue&apos;, name: &apos;DROP_AUTH_TABLES&apos;, value: params.DROP_AUTH_TABLES]]
+                    def result = build job: &apos;Database Migrations&apos;, parameters: [
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash],
+                        [$class: &apos;BooleanParameterValue&apos;, name: &apos;DROP_PICSURE_TABLES&apos;, value: false],
+                        [$class: &apos;BooleanParameterValue&apos;, name: &apos;DROP_AUTH_TABLES&apos;, value: params.DROP_AUTH_TABLES],
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;COPY_APPLICATION_TOKEN_FROM_DB&apos;, value: &quot;auth2&quot;]]
                 }
             }
         }

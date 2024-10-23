@@ -24,8 +24,6 @@ USER root
 RUN echo deb http://archive.debian.org/debian stretch-backports main >> /etc/apt/sources.list
 RUN echo deb http://archive.debian.org/debian stretch main >> /etc/apt/sources.list
 
-
-
 # Install postgres client.
 # to get latest postgresql-common to add the automated repo script provided by postgres
 RUN apt-get update -y

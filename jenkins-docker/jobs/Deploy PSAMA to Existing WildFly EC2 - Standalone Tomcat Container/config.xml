@@ -71,9 +71,11 @@ command_id=$(aws ssm send-command \
   --query &quot;Command.CommandId&quot; \
   --output text)
 
- wait_for_command ${command_id} ${wildfly_instance_id}
+wait_for_command ${command_id} ${wildfly_instance_id}
 
- reset_role</command>
+wait_for_spring_boot_ssm_logs ${wildfly_instance_id} &quot;psama&quot;
+
+reset_role</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>

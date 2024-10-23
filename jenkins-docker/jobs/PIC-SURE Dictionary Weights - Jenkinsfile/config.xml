@@ -88,6 +88,7 @@
         <hudson.model.StringParameterDefinition>
           <name>GIT_BRANCH</name>
           <description>The Git branch to checkout</description>
+          <defaultValue>main</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
