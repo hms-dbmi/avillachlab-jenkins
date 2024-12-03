@@ -1,8 +1,8 @@
 <?xml version='1.1' encoding='UTF-8'?>
-<flow-definition plugin="workflow-job@1385.vb_58b_86ea_fff1">
+<flow-definition plugin="workflow-job@1459.v6c531091efcd">
   <actions>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2205.vc9522a_9d5711"/>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2205.vc9522a_9d5711">
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2214.vb_b_34b_2ea_9b_83"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2214.vb_b_34b_2ea_9b_83">
       <jobProperties/>
       <triggers/>
       <parameters>
@@ -26,7 +26,7 @@
         <hudson.model.StringParameterDefinition>
           <name>GIT_REPO_URL</name>
           <description>The GitHub repository URL</description>
-          <defaultValue>https://github.com/hms-dbmi/picsure-dictionary.git</defaultValue>
+          <defaultValue>${git_base_url}/picsure-dictionary.git</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
@@ -74,8 +74,8 @@
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition" plugin="workflow-cps@3908.vd6b_b_5a_a_54010">
-    <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.1">
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition" plugin="workflow-cps@3975.v567e2a_1ffa_22">
+    <scm class="hudson.plugins.git.GitSCM" plugin="git@5.6.0">
       <configVersion>2</configVersion>
       <userRemoteConfigs>
         <hudson.plugins.git.UserRemoteConfig>
