@@ -1,0 +1,85 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description>This job will destroy a terraform state for the specified stack passed in. &#xd;
+&#xd;
+This job presumes the stack is running and is registered with a target group.</description>
+  <keepDependencies>false</keepDependencies>
+  <properties/>
+  <scm class="hudson.scm.NullSCM"/>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <jdk>(System)</jdk>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+
+# Source folder containing the scripts
+source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+ls -la &quot;$source_scripts_folder&quot;
+
+# Iterate through the files in the folder and source them
+for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+    chmod +x &quot;$script_file&quot;
+    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+        echo &quot;Sourcing $script_file&quot;
+        source &quot;$script_file&quot;
+    fi
+done
+cd app-infrastructure
+
+# Local vars
+assume_role
+
+# ARNS
+staging_target_group_arn=$(get_target_group_arn_by_name &quot;$staging_tg_name&quot;)
+live_target_group_arn=$(get_target_group_arn_by_name &quot;$live_tg_name&quot;)
+
+# Fetch unhealthy IPs for staging
+staging_unhealthy_ips=($(aws elbv2 describe-target-health \
+    --target-group-arn $staging_target_group_arn \
+    --query &quot;TargetHealthDescriptions[?TargetHealth.State==&apos;unhealthy&apos;].Target.Id&quot; \
+    --output text))
+
+# Fetch unhealthy IPs for live
+live_unhealthy_ips=($(aws elbv2 describe-target-health \
+    --target-group-arn $live_target_group_arn \
+    --query &quot;TargetHealthDescriptions[?TargetHealth.State==&apos;unhealthy&apos;].Target.Id&quot; \
+    --output text))
+
+# Check and deregister unhealthy IPs from staging target group
+if [ ${#staging_unhealthy_ips[@]} -eq 0 ]; then
+    echo &quot;No unhealthy IPs in Staging Target Group to deregister.&quot;
+else
+    echo &quot;Deregistering from Staging Target Group:&quot;
+    echo &quot;${staging_unhealthy_ips[@]}&quot;
+    deregister_targets &quot;$staging_group_vpc&quot; &quot;$staging_target_group_arn&quot; &quot;${staging_unhealthy_ips[@]}&quot;
+fi
+
+# Check and deregister unhealthy IPs from live target group
+if [ ${#live_unhealthy_ips[@]} -eq 0 ]; then
+    echo &quot;No unhealthy IPs in Live Target Group to deregister.&quot;
+else
+    echo &quot;Deregistering from Live Target Group:&quot;
+    echo &quot;${live_unhealthy_ips[@]}&quot;
+    deregister_targets &quot;$live_group_vpc&quot; &quot;$live_target_group_arn&quot; &quot;${live_unhealthy_ips[@]}&quot;
+fi
+
+reset_role</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.48">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
+</project>
