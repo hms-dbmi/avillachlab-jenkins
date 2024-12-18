@@ -122,8 +122,8 @@ if [[ &quot;$destroy_green&quot; == &quot;true&quot; ]]; then
     reset_role
 
    if [[ -z $staging_stack ]]; then
-      echo &quot;ERROR: no stack registered or found in the staging target group - $staging_target_group_arn&quot;
-      exit 1
+      echo &quot;No stack registered or found in the staging target group - $staging_target_group_arn&quot;
+      exit 0
    fi
    echo &quot;Deregistering from Staging Target Group&quot;
    
@@ -198,8 +198,8 @@ if [[ &quot;$destroy_blue&quot; == &quot;true&quot; &amp;&amp; &quot;${environme
 
    reset_role
    if [[ -z $live_stack ]]; then
-      echo &quot;ERROR: no stack registered or found in the live target group - $live_target_group_arn&quot;
-      exit 1
+      echo &quot;No stack registered or found in the live target group - $live_target_group_arn&quot;
+      exit 0
    fi
    echo &quot;Deregistering from live Target Group&quot;
    
@@ -252,7 +252,7 @@ fi</command>
   </builders>
   <publishers/>
   <buildWrappers>
-    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.47">
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.48">
       <deleteDirs>false</deleteDirs>
       <cleanupParameter></cleanupParameter>
       <externalDelete></externalDelete>
