@@ -81,12 +81,7 @@ pipeline {
                 )
             }
         }
-        stage(&apos;PIC-SURE HPDS and PIC-SURE Wildfly&apos;) {
-            steps {
-
-            }
-        }
-        stage(&apos;Wildfly Build and BDC UI&apos;){
+        stage(&apos;PIC-SURE Wildfly Image Build and PIC-SURE Dictionary - Jenkinsfile&apos;){
             steps {
                 parallel (
                     wildfly:{
