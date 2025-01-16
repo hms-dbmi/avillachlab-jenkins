@@ -192,7 +192,6 @@ if $isDestroyOnly; then
      -var=&quot;destigmatized_dataset_s3_object_key=${destigmatized_dataset_s3_object_key}&quot;  \
      -var=&quot;genomic_dataset_s3_object_key=${genomic_dataset_s3_object_key}&quot; \
      -var=&quot;target_stack=${target_stack}&quot; \
-     -var=&quot;picsure_rds_snapshot_id=${picsure_rds_snapshot_id}&quot; \
      -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; \
      -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
      -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
@@ -245,7 +244,6 @@ else
      -var=&quot;destigmatized_dataset_s3_object_key=${destigmatized_dataset_s3_object_key}&quot;  \
      -var=&quot;genomic_dataset_s3_object_key=${genomic_dataset_s3_object_key}&quot; \
      -var=&quot;target_stack=${target_stack}&quot; \
-     -var=&quot;picsure_rds_snapshot_id=${picsure_rds_snapshot_id}&quot; \
      -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; \
      -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
      -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \
@@ -292,7 +290,6 @@ else
      -var=&quot;destigmatized_dataset_s3_object_key=${destigmatized_dataset_s3_object_key}&quot;  \
      -var=&quot;genomic_dataset_s3_object_key=${genomic_dataset_s3_object_key}&quot; \
      -var=&quot;target_stack=${target_stack}&quot; \
-     -var=&quot;picsure_rds_snapshot_id=${picsure_rds_snapshot_id}&quot; \
      -var=&quot;stack_githash=`echo ${deployment_git_hash} |cut -c1-7`&quot; \
      -var=&quot;stack_githash_long=${deployment_git_hash}&quot; \
      -var=&quot;env_public_dns_name=${env_public_dns_name}&quot; \

@@ -52,24 +52,16 @@
   <triggers/>
   <concurrentBuild>false</concurrentBuild>
   <builders>
-    <hudson.tasks.Maven>
-      <targets>clean install -DskipTests</targets>
-      <mavenName>Maven</mavenName>
-      <usePrivateRepository>false</usePrivateRepository>
-      <settings class="jenkins.mvn.DefaultSettingsProvider"/>
-      <globalSettings class="jenkins.mvn.DefaultGlobalSettingsProvider"/>
-      <injectBuildVariables>false</injectBuildVariables>
-    </hudson.tasks.Maven>
     <hudson.tasks.Shell>
       <command>GIT_BRANCH_SHORT=`echo ${GIT_BRANCH} | cut -d &quot;/&quot; -f 2` 
 GIT_COMMIT_SHORT=`echo ${GIT_COMMIT} | cut -c1-7`
 
-cp service/target/service-*-SNAPSHOT.jar docker/pic-sure-hpds/
-cd docker/pic-sure-hpds
-docker build -t hms-dbmi/pic-sure-hpds:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
-cd ../pic-sure-hpds-etl
-docker build -t hms-dbmi/pic-sure-hpds-etl:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
-cd ../../
+# This is done because we need artifacts created during the PIC-SURE API Build, and they are only available in our local .m2
+cp -r /root/.m2 .m2
+
+docker build -f docker/pic-sure-hpds/Dockerfile -t hms-dbmi/pic-sure-hpds:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
+docker build -f docker/pic-sure-hpds-etl/Dockerfile -t hms-dbmi/pic-sure-hpds-etl:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
+
 mkdir -p docker_image_output
 cd docker_image_output
 docker save hms-dbmi/pic-sure-hpds:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-hpds.tar.gz
