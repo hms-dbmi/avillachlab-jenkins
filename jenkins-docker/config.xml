@@ -131,7 +131,7 @@
         <string>Destroy Old Jenkins Server</string>
         <string>List Instance Profiles</string>
         <string>PIC-SURE Auth Micro-App Build</string>
-        <string>PIC-SURE Wildfly Image Build</string>
+        <string>PIC-SURE WildFly Build</string>
         <string>PIC-SURE-API Build</string>
         <string>PIC-SURE-HPDS Build</string>
         <string>PIC-SURE-Frontend Build</string>

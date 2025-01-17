@@ -11,8 +11,8 @@
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
-          <name>pipeline_build_id</name>
-          <defaultValue>MANUAL_RUN</defaultValue>
+          <name>TARGET_STACK</name>
+          <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
@@ -65,9 +65,9 @@ docker build -f docker/pic-sure-hpds-etl/Dockerfile -t hms-dbmi/pic-sure-hpds-et
 mkdir -p docker_image_output
 cd docker_image_output
 docker save hms-dbmi/pic-sure-hpds:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-hpds.tar.gz
-aws s3 --sse=AES256 cp pic-sure-hpds.tar.gz s3://$S3_BUCKET_NAME/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds.tar.gz
+aws s3 --sse=AES256 cp pic-sure-hpds.tar.gz s3://$S3_BUCKET_NAME/$TARGET_STACK/containers/pic-sure-hpds.tar.gz
 docker save hms-dbmi/pic-sure-hpds-etl:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-hpds-etl.tar.gz
-aws s3 --sse=AES256 cp pic-sure-hpds-etl.tar.gz s3://$S3_BUCKET_NAME/releases/jenkins_pipeline_build_${pipeline_build_id}/pic-sure-hpds-etl.tar.gz
+aws s3 --sse=AES256 cp pic-sure-hpds-etl.tar.gz s3://$S3_BUCKET_NAME/$TARGET_STACK/containers/pic-sure-hpds-etl.tar.gz
 </command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>

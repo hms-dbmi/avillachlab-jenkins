@@ -81,7 +81,7 @@ pipeline {
                 script{
                     def gitHash = BRANCH ? BRANCH : build_hashes[&apos;PSD&apos;]
                     
-                    def dictionaryBuildResult = build job: &apos;PIC-SURE Dictionary - Jenkinsfile&apos;, parameters: [
+                    def dictionaryBuildResult = build job: &apos;PIC-SURE Dictionary Build&apos;, parameters: [
                         [$class: &apos;StringParameterValue&apos;, name: &apos;GIT_BRANCH&apos;, value: BRANCH]
                     ]
                 }
@@ -90,7 +90,7 @@ pipeline {
         stage(&apos;Update Dictionary on Wildfly&apos;) {
             steps {
                 script {
-                    def result = build job: &apos;Deploy Dictionary to Existing WildFly EC2&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: TARGET_STACK]]
+                    def result = build job: &apos;PIC-SURE Dictionary Deploy&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: TARGET_STACK]]
                 }
             }
         }

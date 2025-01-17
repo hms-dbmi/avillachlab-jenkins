@@ -91,7 +91,7 @@
       <submoduleCfg class="empty-list"/>
       <extensions/>
     </scm>
-    <scriptPath>jenkins-docker/jobs/PIC-SURE Dictionary - Jenkinsfile/jenkinsfile</scriptPath>
+    <scriptPath>jenkins-docker/jobs/PIC-SURE Dictionary Build/jenkinsfile</scriptPath>
     <lightweight>false</lightweight>
   </definition>
   <triggers/>

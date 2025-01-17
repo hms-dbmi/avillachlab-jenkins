@@ -10,6 +10,7 @@
         <string>TARGET_STACK</string>
         <string>DROP_PICSURE_TABLES</string>
         <string>RUN_DATABASE_MIGRATIONS</string>
+        <string>BRANCH</string>
       </parameters>
       <options/>
     </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
@@ -32,12 +33,23 @@
         <hudson.model.BooleanParameterDefinition>
           <name>DROP_AUTH_TABLES</name>
           <description>Drop tables during migration</description>
-          <defaultValue>true</defaultValue>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>DROP_PICSURE_TABLES</name>
+          <description>Drop tables during migration</description>
+          <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>TARGET_STACK</name>
           <description>The stack you want to deploy to. a or b.</description>
           <defaultValue>b</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>BRANCH</name>
+          <description>The branch you want to deploy. Leave blank to use the build-spec.</description>
+          <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
@@ -65,6 +77,9 @@ pipeline {
     }
     stages {
         stage(&apos;Retrieve Build Spec&apos;) {
+            when {
+                    expression { return params.BRANCH == '' }
+            }
             steps {
                 script {
                     def result = build job: &apos;Retrieve Build Spec&apos;
@@ -75,8 +90,8 @@ pipeline {
                     sh &apos;cat build-spec.json&apos;
                     sh &apos;cat pipeline_git_commit.txt&apos;
                     sh &apos;pwd&apos;
-                    def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/Production Fix - Privileges/build-spec.json&apos;))
-                    pipelineBuildId = new File(&apos;/var/jenkins_home/workspace/Production Fix - Privileges/pipeline_git_commit.txt&apos;).text.trim()
+                    def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/Build and Deploy - PIC-SURE Auth Micro App/build-spec.json&apos;))
+                    pipelineBuildId = new File(&apos;/var/jenkins_home/workspace/Build and Deploy - PIC-SURE Auth Micro App/pipeline_git_commit.txt&apos;).text.trim()
                     for(def build : buildSpec.application){
                         build_hashes[build.project_job_git_key] = build.git_hash
                     }
@@ -84,27 +99,10 @@ pipeline {
                 }
             }
         }
-        stage(&apos;Update Bash Functions&apos;) {
+        stage(&apos;PIC-SURE Auth Micro-App Build&apos;) {
             steps {
-                script {
-                    def result = build job: &apos;Bash_Functions&apos;
-                }
-            }
-        }
-        stage(&apos;Database - Dump&apos;) {
-            steps {
-                script {
-                    def result = build job: &apos;Database - Copy&apos;, parameters: 
-                    [[$class: &apos;StringParameterValue&apos;, name: &apos;SOURCE_DATABASE&apos;, value: &quot;auth&quot;]]
-                }
-            }
-        }
-        stage(&apos;Database - Copy&apos;) {
-            steps {
-                script {
-                    def result = build job: &apos;Database - Copy&apos;, parameters: 
-                    [[$class: &apos;StringParameterValue&apos;, name: &apos;SOURCE_DATABASE&apos;, value: &quot;auth&quot;],
-                    [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_DATABASE&apos;, value: &quot;auth2&quot;]]
+                script{
+                    def result = build job: &apos;PIC-SURE Auth Micro-App Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSAMA&apos;]]]
                 }
             }
         }
@@ -114,18 +112,22 @@ pipeline {
             }
             steps {
                 script {
-                    def result = build job: &apos;Database Migrations&apos;, parameters: [
-                        [$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash],
-                        [$class: &apos;BooleanParameterValue&apos;, name: &apos;DROP_PICSURE_TABLES&apos;, value: false],
-                        [$class: &apos;BooleanParameterValue&apos;, name: &apos;DROP_AUTH_TABLES&apos;, value: params.DROP_AUTH_TABLES],
-                        [$class: &apos;StringParameterValue&apos;, name: &apos;COPY_APPLICATION_TOKEN_FROM_DB&apos;, value: &quot;auth2&quot;]]
+                    def result = build job: &apos;Database Migrations&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash],
+                    [$class: &apos;BooleanParameterValue&apos;, name: &apos;DROP_PICSURE_TABLES&apos;, value: params.DROP_PICSURE_TABLES],[$class: &apos;BooleanParameterValue&apos;, name: &apos;DROP_AUTH_TABLES&apos;, value: params.DROP_AUTH_TABLES]]
                 }
             }
         }
-        stage(&apos;Update PSAMA on WildFly&apos;) {
+        stage(&apos;PIC-SURE Auth Micro App Deploy&apos;) {
             steps {
                 script {
-                    def result = build job: &apos;PIC-SURE Auth Micro App Deploy&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: TARGET_STACK],[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId]]
+                    def result = build job: &apos;PIC-SURE Auth Micro App Deploy&apos;, parameters:
+                        [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: TARGET_STACK],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;DATASET_S3_OBJECT_KEY&apos;, value: DATASET_S3_OBJECT_KEY],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;STACK_S3_BUCKET&apos;, value: STACK_S3_BUCKET],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;SPRING_PROFILE&apos;, value: SPRING_PROFILE],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;ENABLE_DEBUG&apos;, value: ENABLE_DEBUG]
+                        ]
                 }
             }
         }

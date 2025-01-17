@@ -12,12 +12,21 @@
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>pipeline_build_id</name>
-          <defaultValue>MANUAL_RUN</defaultValue>
+          <name>TARGET_STACK</name>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>target_stack</name>
+          <name>DATASET_S3_OBJECT_KEY</name>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>ENABLE_DEBUG</name>
+          <defaultValue>false</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>SPRING_PROFILE</name>
+          <defaultValue>prod</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
@@ -59,7 +68,14 @@ echo &quot;Extract Wildfly instance ID for $target_stack stack&quot;
 wildfly_instance_id=$(jq -r &apos;.outputs[&quot;wildfly-ec2-id&quot;].value&apos; terraform.tfstate)
 echo &quot;${wildfly_instance_id}&quot;
 
-update_psama_container=&quot;sudo /home/centos/psama-docker.sh $stack_s3_bucket $pipeline_build_id&quot;
+update_psama_container=&quot;sudo /home/centos/psama-docker.sh \
+        --stack_s3_bucket $S3_BUCKET_NAME \
+        --target_stack $TARGET_STACK \
+        --$dataset_s3_object_key $DATASET_S3_OBJECT_KEY \
+        --$enable_debug $ENABLE_DEBUG \
+        --$spring_profile $SPRING_PROFILE&quot;
+
+
 echo &quot;$update_psama_container&quot;
 update_psama_container_json=$(jq -n --arg cmd &quot;$update_psama_container&quot; &apos;{commands: [$cmd]}&apos;)
 

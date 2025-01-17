@@ -93,7 +93,7 @@ pipeline {
             steps {
                 script {
                     def buildID = BRANCH ? BRANCH : pipelineBuildId
-                    def result = build job: &apos;Deploy Frontend to Existing Httpd EC2&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: TARGET_STACK],[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: buildID]]
+                    def result = build job: &apos;PIC-SURE Frontend Deploy&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: TARGET_STACK],[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: buildID]]
                 }
             }
         }

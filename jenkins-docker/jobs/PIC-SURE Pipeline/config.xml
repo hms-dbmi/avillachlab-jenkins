@@ -55,12 +55,12 @@ pipeline {
                 }
             }
         }
-        stage(&apos;PIC-SURE-API Build, PIC-SURE Frontend Build, PIC-SURE Auth Micro-App Build - Jenkinsfile, PIC-SURE Dictionary Build&apos;){
+        stage(&apos;PIC-SURE-API Build, PIC-SURE Frontend Build, PIC-SURE Auth Micro-App Build, PIC-SURE Dictionary Build&apos;){
             steps {
                 parallel (
                     picsureapi:{
                         script {
-                            def result = build job: &apos;PIC-SURE-API Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSA&apos;]]]
+                            def result = build job: &apos;PIC-SURE API Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSA&apos;]]]
                         }
                     },
                     picsurefrontend:{
@@ -70,30 +70,28 @@ pipeline {
                     },
                     picsureauth:{
                         script{
-                            def result = build job: &apos;PIC-SURE Auth Micro-App Build - Jenkinsfile&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSAMA&apos;]]]
+                            def result = build job: &apos;PIC-SURE Auth Micro App Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSAMA&apos;]]]
                         }
                     },
                     dictionary:{
                         script {
-                            def dictionaryBuildResult = build job: &apos;PIC-SURE Dictionary - Jenkinsfile&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;GIT_BRANCH&apos;, value: build_hashes[&apos;PSD&apos;]]]
+                            def dictionaryBuildResult = build job: &apos;PIC-SURE Dictionary Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;GIT_BRANCH&apos;, value: build_hashes[&apos;PSD&apos;]]]
                         }
                     }
                 )
             }
         }
-        stage(&apos;PIC-SURE Wildfly Image Build and PIC-SURE Dictionary - Jenkinsfile&apos;){
+        stage(&apos;PIC-SURE WildFly Build and PIC-SURE Dictionary Build&apos;){
             steps {
                 parallel (
                     wildfly:{
                         script {
-                            def result = build job: &apos;PIC-SURE Wildfly Image Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId]]
+                            def result = build job: &apos;PIC-SURE WildFly Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId]]
                         }
                     },
                     hpds:{
                         script {
-                            def dictionaryBuildResult = build job: &apos;PIC-SURE Dictionary - Jenkinsfile&apos;, parameters: [
-                                [$class: &apos;StringParameterValue&apos;, name: &apos;GIT_BRANCH&apos;, value: build_hashes[&apos;PSD&apos;]]
-                            ]
+                            def result = build job: &apos;PIC-SURE-HPDS Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSH&apos;]]]
                         }
                     }
                )
