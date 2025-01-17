@@ -70,8 +70,8 @@ return files</script>
               <sandbox>false</sandbox>
             </secureFallbackScript>
           </script>
-          <projectName>Database - Restore</projectName>
-          <projectFullName>Database - Restore</projectFullName>
+          <projectName>Database Restore</projectName>
+          <projectFullName>Database Restore</projectFullName>
           <choiceType>PT_SINGLE_SELECT</choiceType>
           <filterable>false</filterable>
           <filterLength>1</filterLength>

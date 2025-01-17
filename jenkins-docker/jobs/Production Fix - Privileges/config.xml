@@ -94,15 +94,15 @@ pipeline {
         stage(&apos;Database - Dump&apos;) {
             steps {
                 script {
-                    def result = build job: &apos;Database - Copy&apos;, parameters: 
+                    def result = build job: &apos;Database Copy&apos;, parameters:
                     [[$class: &apos;StringParameterValue&apos;, name: &apos;SOURCE_DATABASE&apos;, value: &quot;auth&quot;]]
                 }
             }
         }
-        stage(&apos;Database - Copy&apos;) {
+        stage(&apos;Database Copy&apos;) {
             steps {
                 script {
-                    def result = build job: &apos;Database - Copy&apos;, parameters: 
+                    def result = build job: &apos;Database Copy&apos;, parameters:
                     [[$class: &apos;StringParameterValue&apos;, name: &apos;SOURCE_DATABASE&apos;, value: &quot;auth&quot;],
                     [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_DATABASE&apos;, value: &quot;auth2&quot;]]
                 }
