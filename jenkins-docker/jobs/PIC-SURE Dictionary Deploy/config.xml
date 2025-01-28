@@ -12,7 +12,7 @@
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>target_stack</name>
+          <name>TARGET_STACK</name>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
@@ -46,15 +46,15 @@ done
 assume_role
 
 # Download the terraform state file
-echo &quot;Download terraform.tfstate file for $target_stack stack&quot;
-aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/$target_stack/terraform.tfstate terraform.tfstate
+echo &quot;Download terraform.tfstate file for $TARGET_STACK stack&quot;
+aws s3 cp s3://$S3_BUCKET_NAME/deployment_state_metadata/$TARGET_STACK/terraform.tfstate terraform.tfstate
 
 # Extract the Wildfly EC2 instance ID
-echo &quot;Extract WildFly instance ID for $target_stack stack&quot;
+echo &quot;Extract WildFly instance ID for $TARGET_STACK stack&quot;
 wildfly_instance_id=$(jq -r &apos;.outputs[&quot;wildfly-ec2-id&quot;].value&apos; terraform.tfstate)
 echo &quot;WildFly Instance ID: ${wildfly_instance_id}&quot;
 
-update_dictionary_container=&quot;sudo /home/centos/dictionary-docker.sh $stack_s3_bucket&quot;
+update_dictionary_container=&quot;sudo /home/centos/dictionary-docker.sh --stack_s3_bucket $S3_BUCKET_NAME --target_stack=$TARGET_STACK&quot;
 echo &quot;$update_dictionary_container&quot;
 
 update_dictionary_container_json=$(jq -n --arg cmd &quot;$update_dictionary_container&quot; &apos;{commands: [$cmd]}&apos;)

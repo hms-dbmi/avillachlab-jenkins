@@ -49,9 +49,23 @@
         <hudson.model.StringParameterDefinition>
           <name>BRANCH</name>
           <description>The branch you want to deploy. Leave blank to use the build-spec.</description>
-          <defaultValue></defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>DATASET_S3_OBJECT_KEY</name>
+          <description>Optional. If provided this will update the fence_mapping.json</description>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+          <hudson.model.BooleanParameterDefinition>
+              <name>ENABLE_DEBUG</name>
+              <description>Optional. If provided this will update the fence_mapping.json</description>
+              <trim>false</trim>
+          </hudson.model.BooleanParameterDefinition>
+          <hudson.model.StringParameterDefinition>
+              <name>SPRING_PROFILE</name>
+              <description>Optional. Will override the default spring profile for PSAMA.</description>
+              <trim>false</trim>
+          </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -73,7 +87,10 @@ pipeline {
         booleanParam(name: &apos;RUN_DATABASE_MIGRATIONS&apos;, defaultValue: true, description: &apos;Run database migrations&apos;)
         booleanParam(name: &apos;DROP_AUTH_TABLES&apos;, defaultValue: false, description: &apos;Drop tables during migration&apos;)
         booleanParam(name: &apos;DROP_PICSURE_TABLES&apos;, defaultValue: false, description: &apos;Drop tables during migration&apos;)
-        string(name: &apos;TARGET_STACK&apos;, defaultValue: &apos;b&apos;, description: &apos;The stack you want to deploy to. a or b.&apos;)
+        string(name: &apos;TARGET_STACK&apos;, defaultValue: &apos;b&apos;, description: &apos;The stack you want to deploy to a or b.&apos;)
+        string(name: &apos;DATASET_S3_OBJECT_KEY&apos;, defaultValue: &apos;&apos;, description: &apos;&apos;)
+        string(name: &apos;STACK_S3_BUCKET&apos;, defaultValue: &apos;&apos;, description: &apos;&apos;)
+        string(name: &apos;ENABLE_DEBUG&apos;, defaultValue: &apos;false&apos;, description: &apos;Enable to setup remote debugging. Debugging will use port 9000.&apos;)
     }
     stages {
         stage(&apos;Retrieve Build Spec&apos;) {
@@ -122,11 +139,10 @@ pipeline {
                 script {
                     def result = build job: &apos;PIC-SURE Auth Micro App Deploy&apos;, parameters:
                         [
-                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: TARGET_STACK],
-                            [$class: &apos;StringParameterValue&apos;, name: &apos;DATASET_S3_OBJECT_KEY&apos;, value: DATASET_S3_OBJECT_KEY],
-                            [$class: &apos;StringParameterValue&apos;, name: &apos;STACK_S3_BUCKET&apos;, value: STACK_S3_BUCKET],
-                            [$class: &apos;StringParameterValue&apos;, name: &apos;SPRING_PROFILE&apos;, value: SPRING_PROFILE],
-                            [$class: &apos;StringParameterValue&apos;, name: &apos;ENABLE_DEBUG&apos;, value: ENABLE_DEBUG]
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: params.TARGET_STACK],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;DATASET_S3_OBJECT_KEY&apos;, value: params.DATASET_S3_OBJECT_KEY],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;SPRING_PROFILE&apos;, value: params.SPRING_PROFILE],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;ENABLE_DEBUG&apos;, value: params.ENABLE_DEBUG]
                         ]
                 }
             }

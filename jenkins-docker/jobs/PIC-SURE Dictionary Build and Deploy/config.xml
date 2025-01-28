@@ -58,6 +58,9 @@ pipeline {
     stages {
         stage(&apos;Retrieve Build Spec&apos;) {
             steps {
+                when {
+                    expression { return params.BRANCH == '' }
+                }
                 script {
                     def result = build job: &apos;Retrieve Build Spec&apos;
                     retrieveBuildSpecId = result.number
@@ -76,7 +79,7 @@ pipeline {
                 }
             }
         }
-        stage(&apos;Dictionary Build &amp; Upload&apos;) {
+        stage(&apos;PIC-SURE Dictionary Build&apos;) {
             steps {
                 script{
                     def gitHash = BRANCH ? BRANCH : build_hashes[&apos;PSD&apos;]
@@ -87,10 +90,12 @@ pipeline {
                 }
             }
         }
-        stage(&apos;Update Dictionary on Wildfly&apos;) {
+        stage(&apos;PIC-SURE Dictionary Deploy&apos;) {
             steps {
                 script {
-                    def result = build job: &apos;PIC-SURE Dictionary Deploy&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: TARGET_STACK]]
+                    def result = build job: &apos;PIC-SURE Dictionary Deploy&apos;, parameters: [
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: params.TARGET_STACK]
+                    ]
                 }
             }
         }
