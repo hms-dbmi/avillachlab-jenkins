@@ -11,6 +11,9 @@
         <string>DROP_PICSURE_TABLES</string>
         <string>RUN_DATABASE_MIGRATIONS</string>
         <string>BRANCH</string>
+        <string>DATASET_S3_OBJECT_KEY</string>
+        <booleanParam>ENABLE_DEBUG</booleanParam>
+        <string>SPRING_PROFILE</string>
       </parameters>
       <options/>
     </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
