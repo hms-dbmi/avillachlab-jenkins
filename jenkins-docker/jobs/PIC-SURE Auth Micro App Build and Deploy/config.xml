@@ -59,16 +59,16 @@
           <description>Optional. If provided this will update the fence_mapping.json</description>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
-          <hudson.model.BooleanParameterDefinition>
-              <name>ENABLE_DEBUG</name>
-              <description>Optional. If provided this will update the fence_mapping.json</description>
-              <trim>false</trim>
-          </hudson.model.BooleanParameterDefinition>
-          <hudson.model.StringParameterDefinition>
-              <name>SPRING_PROFILE</name>
-              <description>Optional. Will override the default spring profile for PSAMA.</description>
-              <trim>false</trim>
-          </hudson.model.StringParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+            <name>ENABLE_DEBUG</name>
+            <description>Optional. If provided this will update the fence_mapping.json</description>
+            <trim>false</trim>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+            <name>SPRING_PROFILE</name>
+            <description>Optional. Will override the default spring profile for PSAMA.</description>
+            <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -94,13 +94,14 @@ pipeline {
         string(name: &apos;DATASET_S3_OBJECT_KEY&apos;, defaultValue: &apos;&apos;, description: &apos;&apos;)
         string(name: &apos;STACK_S3_BUCKET&apos;, defaultValue: &apos;&apos;, description: &apos;&apos;)
         string(name: &apos;ENABLE_DEBUG&apos;, defaultValue: &apos;false&apos;, description: &apos;Enable to setup remote debugging. Debugging will use port 9000.&apos;)
+        string(name: &apos;BRANCH&apos;, defaultValue: &apos;&apos;, description: Leave empty to use Build Spec&apos;&apos;)
     }
     stages {
         stage(&apos;Retrieve Build Spec&apos;) {
-            when {
-                    expression { return params.BRANCH == '' }
-            }
             steps {
+                when {
+                    expression { return params.BRANCH == '' }
+                }
                 script {
                     def result = build job: &apos;Retrieve Build Spec&apos;
                     retrieveBuildSpecId = result.number
@@ -110,8 +111,8 @@ pipeline {
                     sh &apos;cat build-spec.json&apos;
                     sh &apos;cat pipeline_git_commit.txt&apos;
                     sh &apos;pwd&apos;
-                    def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/Build and Deploy - PIC-SURE Auth Micro App/build-spec.json&apos;))
-                    pipelineBuildId = new File(&apos;/var/jenkins_home/workspace/Build and Deploy - PIC-SURE Auth Micro App/pipeline_git_commit.txt&apos;).text.trim()
+                    def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/PIC-SURE Auth Micro App Build and Deploy/build-spec.json&apos;))
+                    pipelineBuildId = new File(&apos;/var/jenkins_home/workspace/PIC-SURE Auth Micro App Build and Deploy/pipeline_git_commit.txt&apos;).text.trim()
                     for(def build : buildSpec.application){
                         build_hashes[build.project_job_git_key] = build.git_hash
                     }
@@ -122,7 +123,8 @@ pipeline {
         stage(&apos;PIC-SURE Auth Micro-App Build&apos;) {
             steps {
                 script{
-                    def result = build job: &apos;PIC-SURE Auth Micro-App Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSAMA&apos;]]]
+                    def gitHash = BRANCH ? BRANCH : build_hashes[&apos;PSAMA&apos;]
+                    def result = build job: &apos;PIC-SURE Auth Micro-App Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: params.TARGET_STACK],[$class: &apos;StringParameterValue&apos;, name: &apos;BRANCH&apos;, value: gitHash]]
                 }
             }
         }

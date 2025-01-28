@@ -58,6 +58,9 @@ pipeline {
     stages {
         stage(&apos;Retrieve Build Spec&apos;) {
             steps {
+                when {
+                    expression { return params.BRANCH == '' }
+                }
                 script {
                     def result = build job: &apos;Retrieve Build Spec&apos;
                     retrieveBuildSpecId = result.number
@@ -80,11 +83,10 @@ pipeline {
             steps {
                 script{
                     def gitHash = BRANCH ? BRANCH : build_hashes[&apos;PSF&apos;]
-                    def buildID = BRANCH ? BRANCH : pipelineBuildId
-                    def result = build job: &apos;PIC-SURE Frontend Build&apos;, 
+                    def result = build job: &apos;PIC-SURE Frontend Build&apos;,
                         parameters: [
-                            [$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: buildID],
-                            [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: gitHash]
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: params.TARGET_STACK],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;BRANCH&apos;, value: gitHash]
                         ]
                 }
             }
@@ -92,8 +94,9 @@ pipeline {
         stage(&apos;Update Frontend on Httpd&apos;) {
             steps {
                 script {
-                    def buildID = BRANCH ? BRANCH : pipelineBuildId
-                    def result = build job: &apos;PIC-SURE Frontend Deploy&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: TARGET_STACK],[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: buildID]]
+                    def result = build job: &apos;PIC-SURE Frontend Deploy&apos;, parameters: [
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: params.TARGET_STACK]
+                    ]
                 }
             }
         }

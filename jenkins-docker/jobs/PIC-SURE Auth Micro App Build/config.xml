@@ -51,17 +51,12 @@
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>pipeline_build_id</name>
-          <defaultValue>MANUAL_RUN</defaultValue>
+          <name>BRANCH</name>
+          <defaultValue>main</defaultValue>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>git_hash</name>
-          <defaultValue>feature/java-21-Merge-Fence</defaultValue>
-          <trim>true</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>S3_BUCKET_NAME</name>
+          <name>STACK_S3_BUCKET</name>
           <defaultValue>${stack_s3_bucket}</defaultValue>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
@@ -78,7 +73,7 @@
       </userRemoteConfigs>
       <branches>
         <hudson.plugins.git.BranchSpec>
-          <name>${git_hash}</name>
+          <name>${BRANCH}</name>
         </hudson.plugins.git.BranchSpec>
       </branches>
       <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
