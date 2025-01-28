@@ -26,7 +26,7 @@
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.6.0">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.7.0">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
@@ -103,7 +103,7 @@ head /dev/urandom | tr -dc a-f0-9 | head -c 32 &gt; &quot;$WORKSPACE&quot;/local
 
 #### Execute rekey
 # volume mount pwd that contains original data files as /opt/local/source/
-docker run -i -v &quot;${WORKSPACE}&quot;/local:/opt/local -e LOADER_NAME=RekeyDataset $HPDS_ETL_IMAGE
+docker run -i -e HEAPSIZE=20480 -e JAVA_OPTS=&quot;-Xms4g -XX:+UseG1GC&quot; -v &quot;${WORKSPACE}&quot;/local:/opt/local -e LOADER_NAME=RekeyDataset $HPDS_ETL_IMAGE
 
 ### If destigmatized data set, remove concepts
 if [ &quot;${isDestigmatized}&quot; = &apos;true&apos; ]; then
@@ -115,7 +115,7 @@ fi
 
 cd &quot;$WORKSPACE&quot;/local/hpds/
 
-# Leave the data set artifact as non-compressed for the rest of it's lifecycle
+# Leave the data set artifact as non-compressed for the rest of it&apos;s lifecycle
 tar -cvf &quot;${output_file_name}.tar&quot; *.javabin encryption_key metadata.json
 
 aws s3 --sse=AES256 cp &quot;${output_file_name}.tar&quot; s3://${stack_s3_bucket}/data/${destination_bucket_hash}/${output_file_name}.tar --quiet
@@ -126,7 +126,7 @@ aws s3 --sse=AES256 cp metadata.json s3://${stack_s3_bucket}/data/${destination_
   </builders>
   <publishers/>
   <buildWrappers>
-    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.47">
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.48">
       <deleteDirs>false</deleteDirs>
       <cleanupParameter></cleanupParameter>
       <externalDelete></externalDelete>
