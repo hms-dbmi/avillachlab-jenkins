@@ -1,24 +1,29 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
   <actions/>
-  <description></description>
+  <description>Runs the &quot;deploy-auth-hpds.sh&quot; script on the Auth HPDS EC2 server.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
-          <name>S3_BUCKET_NAME</name>
+          <name>STACK_S3_BUCKET</name>
           <defaultValue>${stack_s3_bucket}</defaultValue>
-          <trim>false</trim>
+          <trim>true</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>pipeline_build_id</name>
-          <defaultValue>MANUAL_RUN</defaultValue>
-          <trim>false</trim>
+          <name>TARGET_STACK</name>
+          <trim>true</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>target_stack</name>
-          <trim>false</trim>
+          <name>DATA_S3_OBJECT_KEY</name>
+          <description>Optional. Setting this value will update related files, folders, datasets, etc.</description>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>GENOMIC_DATASET_S3_OBJECT_KEY</name>
+          <description>Optional. Setting this value will update related files, folders, datasets, etc.</description>
+          <trim>true</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
@@ -55,26 +60,30 @@ echo &quot;Download terraform.tfstate file for $target_stack stack&quot;
 aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/$target_stack/terraform.tfstate terraform.tfstate
 
 # Extract the Wildfly EC2 instance ID
-echo &quot;Extract HTTPD instance ID for $target_stack stack&quot;
-httpd_instance_id=$(jq -r &apos;.outputs[&quot;httpd-ec2-id&quot;].value&apos; terraform.tfstate)
-echo &quot;${httpd_instance_id}&quot;
+echo &quot;Extract HPDS instance ID for $target_stack stack&quot;
+auth-hpds_instance_id=$(jq -r &apos;.outputs[&quot;auth-hpds-ec2-id&quot;].value&apos; terraform.tfstate)
+echo &quot;${auth-hpds_instance_id}&quot;
 
-update_httpd_container=&quot;sudo /home/centos/httpd-docker.sh \&quot;$stack_s3_bucket\&quot; \&quot;$pipeline_build_id\&quot;&quot;
-echo &quot;$update_httpd_container&quot;
+update_auth-hpds_container=&quot;sudo /home/centos/deploy-auth-hpds.sh \
+        --stack_s3_bucket $STACK_S3_BUCKET \
+        --dataset_s3_object_key $DATASET_S3_OBJECT_KEY \
+        --genomic_dataset_s3_object_key $GENOMIC_DATASET_S3_OBJECT_KEY \
+        --target_stack $TARGET_STACK&quot;
 
-update_httpd_container_json=$(jq -n --arg cmd &quot;$update_httpd_container&quot; &apos;{commands: [$cmd]}&apos;)
-echo &quot;JSON version of run command: $update_httpd_container_json&quot;
+echo &quot;$update_auth-hpds_container&quot;
+update_auth-hpds_container_json=$(jq -n --arg cmd &quot;$update_auth-hpds_container&quot; &apos;{commands: [$cmd]}&apos;)
+echo &quot;JSON version of run command: $update_auth-hpds_container_json&quot;
 
 command_id=$(aws ssm send-command \
-  --instance-ids &quot;${httpd_instance_id}&quot; \
+  --instance-ids &quot;${auth-auth-hpds_instance_id}&quot; \
   --document-name &quot;AWS-RunShellScript&quot; \
-  --comment &quot;Deploy httpd in place&quot; \
-  --parameters &quot;$update_httpd_container_json&quot; \
+  --comment &quot;Deploy auth-hpds in place&quot; \
+  --parameters &quot;$update_auth-hpds_container_json&quot; \
   --query &quot;Command.CommandId&quot; \
   --output text \
   --debug)
 
-wait_for_command ${command_id} ${httpd_instance_id}
+wait_for_command ${command_id} ${auth-hpds_instance_id}
 
 reset_role
 </command>

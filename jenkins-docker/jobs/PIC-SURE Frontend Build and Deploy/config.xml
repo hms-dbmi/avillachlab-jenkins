@@ -70,8 +70,8 @@ pipeline {
                     sh &apos;cat build-spec.json&apos;
                     sh &apos;cat pipeline_git_commit.txt&apos;
                     sh &apos;pwd&apos;
-                    def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/Deploy New UI in place/build-spec.json&apos;))
-                    pipelineBuildId = new File(&apos;/var/jenkins_home/workspace/Deploy New UI in place/pipeline_git_commit.txt&apos;).text.trim()
+                    def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/PIC-SURE Frontend Build and Deploy/build-spec.json&apos;))
+                    pipelineBuildId = new File(&apos;/var/jenkins_home/workspace/PIC-SURE Frontend Build and Deploy/pipeline_git_commit.txt&apos;).text.trim()
                     for(def build : buildSpec.application){
                         build_hashes[build.project_job_git_key] = build.git_hash
                     }

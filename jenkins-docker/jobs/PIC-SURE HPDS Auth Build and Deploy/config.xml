@@ -31,8 +31,22 @@
         <hudson.model.StringParameterDefinition>
           <name>BRANCH</name>
           <description>If you want to a specific branch. Leave blank to use the release control</description>
-          <defaultValue></defaultValue>
           <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>STACK_S3_BUCKET</name>
+          <defaultValue>${stack_s3_bucket}</defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>DATA_S3_OBJECT_KEY</name>
+          <description>Optional. Setting this value will update related files, folders, datasets, etc.</description>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>GENOMIC_DATASET_S3_OBJECT_KEY</name>
+          <description>Optional. Setting this value will update related files, folders, datasets, etc.</description>
+          <trim>true</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
@@ -79,24 +93,26 @@ pipeline {
                 }
             }
         }
-        stage(&apos;Frontend&apos;) {
+        stage(&apos;PIC-SURE HPDS Build&apos;) {
             steps {
                 script {
                     def gitHash = BRANCH ? BRANCH : build_hashes[&apos;PSF&apos;]
-                    def buildID = BRANCH ? BRANCH : pipelineBuildId
                     def result = build job: &apos;PIC-SURE HPDS Build&apos;,
                         parameters: [
                             [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: TARGET_STACK],
-                            [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: gitHash]
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;BRANCH&apos;, value: gitHash]
                         ]
                 }
             }
         }
-        stage(&apos;Update Frontend on Httpd&apos;) {
+        stage(&apos;PIC-SURE HPDS Auth Deploy&apos;) {
             steps {
                 script {
-                    def buildID = BRANCH ? BRANCH : pipelineBuildId
-                    def result = build job: &apos;PIC-SURE HPDS Auth Deploy&apos;, parameters: [[]]
+                    def result = build job: &apos;PIC-SURE HPDS Auth Deploy&apos;, parameters: [
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: TARGET_STACK],
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;STACK_S3_BUCKET&apos;, value: STACK_S3_BUCKET],
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;DATA_S3_OBJECT_KEY&apos;, value: DATA_S3_OBJECT_KEY],
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;GENOMIC_DATASET_S3_OBJECT_KEY&apos;, value: GENOMIC_DATASET_S3_OBJECT_KEY]
                 }
             }
         }
