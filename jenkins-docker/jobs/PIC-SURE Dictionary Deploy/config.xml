@@ -54,7 +54,7 @@ echo &quot;Extract WildFly instance ID for $TARGET_STACK stack&quot;
 wildfly_instance_id=$(jq -r &apos;.outputs[&quot;wildfly-ec2-id&quot;].value&apos; terraform.tfstate)
 echo &quot;WildFly Instance ID: ${wildfly_instance_id}&quot;
 
-update_dictionary_container=&quot;sudo /home/centos/dictionary-docker.sh --stack_s3_bucket $S3_BUCKET_NAME --target_stack=$TARGET_STACK&quot;
+update_dictionary_container=&quot;sudo /home/centos/deploy-dictionary.sh --stack_s3_bucket $S3_BUCKET_NAME --target_stack=$TARGET_STACK&quot;
 echo &quot;$update_dictionary_container&quot;
 
 update_dictionary_container_json=$(jq -n --arg cmd &quot;$update_dictionary_container&quot; &apos;{commands: [$cmd]}&apos;)

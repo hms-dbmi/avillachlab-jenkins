@@ -9,7 +9,7 @@
         <string>DOCKER_IMAGE_VERSION</string>
         <string>DOCKER_REPO</string>
         <string>API_IMAGE_NAME</string>
-        <string>GIT_BRANCH</string>
+        <string>BRANCH</string>
         <string>SPRING_PROFILE</string>
         <string>DATASOURCE_USERNAME</string>
         <string>DATASOURCE_URL</string>
@@ -30,7 +30,7 @@
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>GIT_BRANCH</name>
+          <name>BRANCH</name>
           <description>The Git branch to checkout</description>
           <defaultValue>main</defaultValue>
           <trim>false</trim>
@@ -69,6 +69,10 @@
           <name>DATASOURCE_USERNAME</name>
           <description>Datasource username</description>
           <defaultValue>${database_psql_app_user_secret_name}</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>TARGET_STACK</name>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
