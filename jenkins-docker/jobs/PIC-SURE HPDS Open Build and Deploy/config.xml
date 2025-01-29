@@ -39,12 +39,7 @@
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>DATA_S3_OBJECT_KEY</name>
-          <description>Optional. Setting this value will update related files, folders, datasets, etc.</description>
-          <trim>true</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>GENOMIC_DATASET_S3_OBJECT_KEY</name>
+          <name>DESTIGMATIZED_DATASET_S3_OBJECT_KEY</name>
           <description>Optional. Setting this value will update related files, folders, datasets, etc.</description>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
@@ -84,8 +79,8 @@ pipeline {
                     sh &apos;cat build-spec.json&apos;
                     sh &apos;cat pipeline_git_commit.txt&apos;
                     sh &apos;pwd&apos;
-                    def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/PIC-SURE HPDS Auth Build and Deploy/build-spec.json&apos;))
-                    pipelineBuildId = new File(&apos;/var/jenkins_home/workspace/PIC-SURE HPDS Auth Build and Deploy/pipeline_git_commit.txt&apos;).text.trim()
+                    def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/PIC-SURE HPDS Open Build and Deploy/build-spec.json&apos;))
+                    pipelineBuildId = new File(&apos;/var/jenkins_home/workspace/PIC-SURE HPDS Open Build and Deploy/pipeline_git_commit.txt&apos;).text.trim()
                     for(def build : buildSpec.application){
                         build_hashes[build.project_job_git_key] = build.git_hash
                     }
@@ -105,14 +100,13 @@ pipeline {
                 }
             }
         }
-        stage(&apos;PIC-SURE HPDS Auth Deploy&apos;) {
+        stage(&apos;PIC-SURE HPDS Open Deploy&apos;) {
             steps {
                 script {
-                    def result = build job: &apos;PIC-SURE HPDS Auth Deploy&apos;, parameters: [
+                    def result = build job: &apos;PIC-SURE HPDS Open Deploy&apos;, parameters: [
                         [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: TARGET_STACK],
                         [$class: &apos;StringParameterValue&apos;, name: &apos;STACK_S3_BUCKET&apos;, value: STACK_S3_BUCKET],
-                        [$class: &apos;StringParameterValue&apos;, name: &apos;DATA_S3_OBJECT_KEY&apos;, value: DATA_S3_OBJECT_KEY],
-                        [$class: &apos;StringParameterValue&apos;, name: &apos;GENOMIC_DATASET_S3_OBJECT_KEY&apos;, value: GENOMIC_DATASET_S3_OBJECT_KEY]
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;DESTIGMATIZED_DATASET_S3_OBJECT_KEY&apos;, value: DESTIGMATIZED_DATASET_S3_OBJECT_KEY],
                 }
             }
         }
