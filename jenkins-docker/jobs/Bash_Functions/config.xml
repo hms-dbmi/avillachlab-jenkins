@@ -958,6 +958,25 @@ wait_for_command() {
     fi
   done
 }
+
+get_stack() {
+    local target_stack=$1
+    local json_file=&quot;s3://${S3_BUCKET_NAME}/deployment_state_metadata/stacks.json&quot;
+
+    # Fetch JSON content directly from S3 without downloading
+    local stacks_json
+    stacks_json=$(aws s3 cp &quot;$json_file&quot; - 2&gt;/dev/null)
+
+    local staging_stack live_stack
+    staging_stack=$(echo &quot;$stacks_json&quot; | jq -r &apos;.environments.next_prod&apos;)
+    live_stack=$(echo &quot;$stacks_json&quot; | jq -r &apos;.environments.prod&apos;)
+
+    if [[ &quot;$target_stack&quot; == &quot;live&quot; ]]; then
+        echo &quot;$live_stack&quot;
+    else
+        echo &quot;$staging_stack&quot;
+    fi
+}
 EOF</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
@@ -1163,7 +1182,7 @@ EOF</command>
     </hudson.tasks.ArtifactArchiver>
   </publishers>
   <buildWrappers>
-    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.47">
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.48">
       <deleteDirs>false</deleteDirs>
       <cleanupParameter></cleanupParameter>
       <externalDelete></externalDelete>
