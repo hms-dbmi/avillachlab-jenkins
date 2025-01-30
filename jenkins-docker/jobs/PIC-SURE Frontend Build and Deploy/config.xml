@@ -84,7 +84,7 @@ pipeline {
                     done
 
                     # The PIC-SURE Pipeline is always used to deploy to staging.
-                    get_stack \&quot;staging\&quot;
+                    get_stack \&quot;${TARGET_STACK}\&quot;
                     &apos;
                     &quot;&quot;&quot;, returnStdout: true).trim()
 
