@@ -7,7 +7,9 @@
       <triggers/>
       <parameters>
         <string>BRANCH</string>
-        <string>TARGET_STACK</string>
+        <choice>TARGET_STACK</choice>
+        <string>STACK_S3_BUCKET</string>
+        <string>DESTIGMATIZED_DATASET_S3_OBJECT_KEY</string>
       </parameters>
       <options/>
     </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
