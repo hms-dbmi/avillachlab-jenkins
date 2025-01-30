@@ -338,26 +338,29 @@ else
   # terraform destroy will not destroy anything as it points to old state and apply will fail as objects may already exist
   # Will have to manually destroy and delete roles, ec2s, etc. in that scenario
   aws s3 cp terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate
+
   # roles are now in the same state as their related resources..
   #aws s3 cp ../s3-deployment-roles/terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate_roles
 
   # Files that are needed, but are do not need to rendered by terraform.
-  aws s3 --sse=AES256 cp configs/banner_config.json s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/banner_config.json
-  aws s3 --sse=AES256 cp scripts/docker/wildfly-docker.sh s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/deploy-wildfly.sh
-  aws s3 --sse=AES256 cp scripts/docker/psama-docker.sh s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/deploy-psama.sh
-  aws s3 --sse=AES256 cp scripts/docker/dictionary-docker.sh s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/deploy-dictionary.sh
-  aws s3 --sse=AES256 cp scripts/docker/httpd-docker.sh s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/deploy-httpd.sh
-  aws s3 --sse=AES256 cp scripts/docker/deploy-auth-hpds.sh s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/deploy-auth-hpds.sh
-  aws s3 --sse=AES256 cp scripts/docker/deploy-open-hpds.sh s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/deploy-open-hpds.sh
+  aws s3 --sse=AES256 cp scripts/deploy/deploy-wildfly.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-wildfly.sh
+  aws s3 --sse=AES256 cp scripts/deploy/deploy-psama.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-psama.sh
+  aws s3 --sse=AES256 cp scripts/deploy/deploy-dictionary.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-dictionary.sh
+  aws s3 --sse=AES256 cp scripts/deploy/deploy-httpd.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-httpd.sh
+  aws s3 --sse=AES256 cp scripts/deploy/deploy-auth-hpds.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-auth-hpds.sh
+  aws s3 --sse=AES256 cp scripts/deploy/deploy-open-hpds.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-open-hpds.sh
 
-  # These files are uploaded to s3 because user-scripts download them.  The user scripts are already running
+  # These files are uploaded to s3 because user-scripts download them. The user scripts are already running
   # so this is a race condition at this point as terraform has been applied
   #  have terraform provision these to the ec2 and remove the aws cli stuff from the user-scripts and here
-  aws s3 --sse=AES256 cp picsureui-settings.json s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/picsureui_settings.json
-  aws s3 --sse=AES256 cp standalone.xml s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/standalone.xml
-  aws s3 --sse=AES256 cp httpd-vhosts.conf s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/httpd-vhosts.conf
-  aws s3 --sse=AES256 cp aggregate-resource.properties s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/aggregate-resource.properties
-  aws s3 --sse=AES256 cp visualization-resource.properties s3://$stack_s3_bucket/configs/jenkins_pipeline_build_${deployment_git_hash}/visualization-resource.properties
+  aws s3 --sse=AES256 cp picsureui-settings.json s3://$stack_s3_bucket/$target_stack/configs/httpd/picsureui_settings.json
+  aws s3 --sse=AES256 cp httpd-vhosts.conf s3://$stack_s3_bucket/$target_stack/configs/httpd/httpd-vhosts.conf
+  aws s3 --sse=AES256 cp standalone.xml s3://$stack_s3_bucket/$target_stack/configs/wildfly/standalone.xml
+  aws s3 --sse=AES256 cp aggregate-resource.properties s3://$stack_s3_bucket/$target_stack/configs/wildfly/aggregate-resource.properties
+  aws s3 --sse=AES256 cp visualization-resource.properties s3://$stack_s3_bucket/$target_stack/configs/wildfly/visualization-resource.properties
+
+  # Because this file is not "rendered" it isn't placed in the root of the job workspace.
+  aws s3 --sse=AES256 cp configs/banner_config.json s3://$stack_s3_bucket/$target_stack/configs/httpd/banner_config.json
 fi</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
