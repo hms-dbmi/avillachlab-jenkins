@@ -73,6 +73,7 @@ def targetStack;
 
 pipeline {
     agent any
+
     parameters {
         choice(name: &apos;TARGET_STACK&apos;, choices: ['staging','live'], description: &apos;Based on selection we determine if is a or b stack.&apos;)
         string(name: &apos;BRANCH&apos;, defaultValue: &apos;&apos;, description: &apos;If you want to a specific branch. Leave blank to use the release control&apos;)
@@ -80,6 +81,11 @@ pipeline {
         string(name: &apos;DATA_S3_OBJECT_KEY&apos;, defaultValue: &apos;&apos;, description: &apos;Optional. Setting this value will update related files, folders, datasets, etc.&apos;)
         string(name: &apos;BRANCH&apos;, defaultValue: &apos;&apos;, description: &apos;If you want to a specific branch. Leave blank to use the release control&apos;)
     }
+
+    environment {
+        SOURCE_SCRIPTS_FOLDER = &quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+    }
+
     stages {
         stage(&apos;Retrieve Stack&apos;) {
             steps {

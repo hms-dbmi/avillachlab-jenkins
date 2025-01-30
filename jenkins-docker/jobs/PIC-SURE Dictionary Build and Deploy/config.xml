@@ -61,6 +61,10 @@ pipeline {
         choice(name: &apos;TARGET_STACK&apos;, choices: ['staging','live'], description: &apos;Based on selection we determine if is a or b stack.&apos;)
     }
 
+    environment {
+        SOURCE_SCRIPTS_FOLDER = &quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+    }
+
     stages {
         stage(&apos;Retrieve Stack&apos;) {
             steps {

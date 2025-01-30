@@ -100,6 +100,11 @@ pipeline {
         booleanParam(name: &apos;DROP_AUTH_TABLES&apos;, defaultValue: false, description: &apos;Drop tables during migration&apos;)
         booleanParam(name: &apos;DROP_PICSURE_TABLES&apos;, defaultValue: false, description: &apos;Drop tables during migration&apos;)
     }
+
+    environment {
+        SOURCE_SCRIPTS_FOLDER = &quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+    }
+
     stages {
         stage(&apos;Retrieve Stack&apos;) {
             steps {

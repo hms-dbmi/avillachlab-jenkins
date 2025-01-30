@@ -12,7 +12,7 @@
       <options/>
     </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
   </actions>
-  <description></description>
+    <description/>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.plugins.copyartifact.CopyArtifactPermissionProperty plugin="copyartifact@749.vfb_dca_a_9b_6549">
@@ -60,6 +60,11 @@ pipeline {
         choice(name: &apos;TARGET_STACK&apos;, choices: ['staging','live'], description: &apos;Based on selection we determine if is a or b stack.&apos;)
         string(name: &apos;BRANCH&apos;, defaultValue: &apos;&apos;, description: &apos;If you want to a specific branch. Leave blank to use the release control&apos;)
     }
+
+    environment {
+        SOURCE_SCRIPTS_FOLDER = &quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+    }
+
     stages {
         stage(&apos;Retrieve Stack&apos;) {
             steps {

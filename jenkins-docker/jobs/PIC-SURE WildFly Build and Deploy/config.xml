@@ -9,7 +9,7 @@
       <options/>
     </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
   </actions>
-  <description></description>
+    <description/>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.plugins.copyartifact.CopyArtifactPermissionProperty plugin="copyartifact@749.vfb_dca_a_9b_6549">
@@ -68,6 +68,11 @@ pipeline {
         string(name: &apos;STACK_S3_BUCKET&apos;, defaultValue: &apos;&apos;, description: &apos;&apos;)
         booleanParam(name: &apos;RUN_DATABASE_MIGRATIONS&apos;, defaultValue: true, description: &apos;Run database migrations&apos;)
     }
+
+    environment {
+        SOURCE_SCRIPTS_FOLDER = &quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+    }
+
     stages {
         stage(&apos;Retrieve Stack&apos;) {
             steps {
