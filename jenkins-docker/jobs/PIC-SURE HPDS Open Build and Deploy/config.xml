@@ -22,12 +22,16 @@
     </hudson.plugins.copyartifact.CopyArtifactPermissionProperty>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
-        <hudson.model.StringParameterDefinition>
-          <name>TARGET_STACK</name>
-          <description>The stack you want to deploy to. a or b.</description>
-          <defaultValue>b</defaultValue>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
+        <hudson.model.ChoiceParameterDefinition>
+            <name>TARGET_STACK</name>
+            <description>Based on selection we determine if it is the a or b stack.</description>
+            <choices class="java.util.Arrays$ArrayList">
+                <a class="string-array">
+                    <string>staging</string>
+                    <string>live</string>
+                </a>
+            </choices>
+        </hudson.model.ChoiceParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>BRANCH</name>
           <description>If you want to a specific branch. Leave blank to use the release control</description>
@@ -61,8 +65,10 @@ def infrastructure_git_hash
 pipeline {
     agent any
     parameters {
-        string(name: &apos;TARGET_STACK&apos;, defaultValue: &apos;b&apos;, description: &apos;The stack you want to deploy to. a or b.&apos;)
+        choice(name: &apos;TARGET_STACK&apos;, choices: ['staging','live'], description: &apos;Based on selection we determine if is a or b stack.&apos;)
         string(name: &apos;BRANCH&apos;, defaultValue: &apos;&apos;, description: &apos;If you want to a specific branch. Leave blank to use the release control&apos;)
+        string(name: &apos;STACK_S3_BUCKET&apos;, defaultValue: &apos;${stack_s3_bucket}&apos;, description: &apos;If you want to a specific branch. Leave blank to use the release control&apos;)
+        string(name: &apos;DESTIGMATIZED_DATASET_S3_OBJECT_KEY&apos;, defaultValue: &apos;&apos;, description: &apos;Optional. Setting this value will update related files, folders, datasets, etc.&apos;)
     }
     stages {
         stage(&apos;Retrieve Build Spec&apos;) {
