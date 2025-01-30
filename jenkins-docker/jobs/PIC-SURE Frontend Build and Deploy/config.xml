@@ -7,7 +7,7 @@
       <triggers/>
       <parameters>
         <string>BRANCH</string>
-        <string>TARGET_STACK</string>
+        <choice>TARGET_STACK</choice>
       </parameters>
       <options/>
     </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>

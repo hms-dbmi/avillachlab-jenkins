@@ -7,12 +7,12 @@
       <triggers/>
       <parameters>
         <string>DROP_AUTH_TABLES</string>
-        <string>TARGET_STACK</string>
+        <choice>TARGET_STACK</choice>
         <string>DROP_PICSURE_TABLES</string>
         <string>RUN_DATABASE_MIGRATIONS</string>
         <string>BRANCH</string>
         <string>DATASET_S3_OBJECT_KEY</string>
-        <booleanParam>ENABLE_DEBUG</booleanParam>
+        <bool>ENABLE_DEBUG</bool>
         <string>SPRING_PROFILE</string>
       </parameters>
       <options/>
