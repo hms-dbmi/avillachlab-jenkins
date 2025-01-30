@@ -22,12 +22,16 @@
     </hudson.plugins.copyartifact.CopyArtifactPermissionProperty>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
-        <hudson.model.StringParameterDefinition>
-          <name>TARGET_STACK</name>
-          <description>The stack you want to deploy to. a or b.</description>
-          <defaultValue>b</defaultValue>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
+        <hudson.model.ChoiceParameterDefinition>
+            <name>TARGET_STACK</name>
+            <description>Based on selection we determine if it is the a or b stack.</description>
+            <choices class="java.util.Arrays$ArrayList">
+                <a class="string-array">
+                    <string>staging</string>
+                    <string>live</string>
+                </a>
+            </choices>
+        </hudson.model.ChoiceParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>BRANCH</name>
           <description>If you want to a specific branch. Leave blank to use the release control</description>
@@ -47,15 +51,48 @@ def overrideUiBuildSpec;
 def pipelineBuildId;
 def build_hashes = {};
 def hasOverrideUI;
-def infrastructure_git_hash
+def infrastructure_git_hash;
+def targetStack;
 
 pipeline {
     agent any
     parameters {
-        string(name: &apos;TARGET_STACK&apos;, defaultValue: &apos;b&apos;, description: &apos;The stack you want to deploy to. a or b.&apos;)
         string(name: &apos;BRANCH&apos;, defaultValue: &apos;main&apos;, description: &apos;If you want to a specific branch. Leave blank to use the release control&apos;)
+        choice(name: &apos;TARGET_STACK&apos;, choices: ['staging','live'], description: &apos;Based on selection we determine if is a or b stack.&apos;)
     }
+
     stages {
+        stage(&apos;Retrieve Stack&apos;) {
+            steps {
+                script {
+                    targetStack = sh(script: &quot;&quot;&quot;
+                    bash -c &apos;
+                    set -x
+
+                    if [ ! -d &quot;$SOURCE_SCRIPTS_FOLDER&quot; ]; then
+                        echo &quot;Error: Source folder does not exist: $SOURCE_SCRIPTS_FOLDER&quot;
+                        exit 1
+                    fi
+
+                    ls -la &quot;$SOURCE_SCRIPTS_FOLDER&quot;
+
+                    for script_file in &quot;$SOURCE_SCRIPTS_FOLDER&quot;*.sh; do
+                        chmod +x &quot;\$script_file&quot;
+                        if [ -f &quot;\$script_file&quot; ] &amp;&amp; [ -x &quot;\$script_file&quot; ]; then
+                            echo &quot;Sourcing \$script_file&quot;
+                            . &quot;\$script_file&quot;  # Use dot (.) instead of `source`
+                        fi
+                    done
+
+                    # The PIC-SURE Pipeline is always used to deploy to staging.
+                    get_stack \&quot;staging\&quot;
+                    &apos;
+                    &quot;&quot;&quot;, returnStdout: true).trim()
+
+                    println &quot;TARGET_STACK: $targetStack&quot;
+                }
+            }
+        }
         stage(&apos;Retrieve Build Spec&apos;) {
             steps {
                 when {
@@ -94,7 +131,7 @@ pipeline {
             steps {
                 script {
                     def result = build job: &apos;PIC-SURE Dictionary Deploy&apos;, parameters: [
-                        [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: params.TARGET_STACK]
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
                     ]
                 }
             }
