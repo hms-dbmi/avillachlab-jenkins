@@ -12,7 +12,7 @@
       <options/>
     </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
   </actions>
-  <description></description>
+    <description/>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.plugins.copyartifact.CopyArtifactPermissionProperty plugin="copyartifact@749.vfb_dca_a_9b_6549">
@@ -85,7 +85,7 @@ pipeline {
                     done
 
                     # The PIC-SURE Pipeline is always used to deploy to staging.
-                    get_stack \&quot;${TARGET_STACK}\&quot;
+                    get_stack \&quot;staging\&quot;
                     &apos;
                     &quot;&quot;&quot;, returnStdout: true).trim()
 
@@ -120,7 +120,6 @@ pipeline {
             steps {
                 script{
                     def gitHash = BRANCH ? BRANCH : build_hashes[&apos;PSD&apos;]
-                    
                     def dictionaryBuildResult = build job: &apos;PIC-SURE Dictionary Build&apos;, parameters: [
                         [$class: &apos;StringParameterValue&apos;, name: &apos;GIT_BRANCH&apos;, value: BRANCH]
                     ]
