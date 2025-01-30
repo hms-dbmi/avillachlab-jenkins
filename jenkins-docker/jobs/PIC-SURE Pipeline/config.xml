@@ -31,6 +31,11 @@ def hasOverrideUI;
 def targetStack;
 pipeline {
     agent any
+
+    environment {
+        SOURCE_SCRIPTS_FOLDER = &quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+    }
+
     stages {
         stage(&apos;Retrieve Build Spec&apos;) {
             steps {
@@ -59,7 +64,7 @@ pipeline {
         stage(&apos;Retrieve Stack&apos;) {
             steps {
                 script {
-                    def targetStack = sh(script: &quot;&quot;&quot;
+                    targetStack = sh(script: &quot;&quot;&quot;
                     bash -c &apos;
                     set -x
 

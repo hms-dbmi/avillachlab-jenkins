@@ -43,6 +43,11 @@ def infrastructure_git_hash
 
 pipeline {
     agent any
+
+    environment {
+        SOURCE_SCRIPTS_FOLDER = &quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+    }
+
     stages {
         stage(&apos;Retrieve Build Spec&apos;) {
             steps {
