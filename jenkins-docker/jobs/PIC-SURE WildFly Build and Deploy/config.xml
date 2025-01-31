@@ -79,14 +79,12 @@ pipeline {
                 script {
                     targetStack = sh(script: &quot;&quot;&quot;
                     bash -c &apos;
-                    set -x
+                    set +x
 
                     if [ ! -d &quot;$SOURCE_SCRIPTS_FOLDER&quot; ]; then
                         echo &quot;Error: Source folder does not exist: $SOURCE_SCRIPTS_FOLDER&quot;
                         exit 1
                     fi
-
-                    ls -la &quot;$SOURCE_SCRIPTS_FOLDER&quot;
 
                     for script_file in &quot;$SOURCE_SCRIPTS_FOLDER&quot;*.sh; do
                         chmod +x &quot;\$script_file&quot;

@@ -961,7 +961,7 @@ wait_for_command() {
 
 get_stack() {
     local target_stack=$1
-    local json_file=&quot;s3://${S3_BUCKET_NAME}/deployment_state_metadata/stacks.json&quot;
+    local json_file=&quot;s3://${stack_s3_bucket}/deployment_state_metadata/stacks.json&quot;
 
     # Fetch JSON content directly from S3 without downloading
     local stacks_json
