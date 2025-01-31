@@ -11,6 +11,7 @@ pipeline {
         string(name: 'DATASOURCE_URL', description: 'Datasource URL', defaultValue: '${database_psql_host_address}')
         string(name: 'DATASOURCE_USERNAME', description: 'Datasource username', defaultValue: '${database_psql_app_user_secret_name}')
         string(name: 'TARGET_STACK', description: 'a or b. The target stack.')
+        string(name: 'STACK_S3_BUCKET', defaultValue: '${stack_s3_bucket}')
     }
 
     stages {
@@ -51,7 +52,7 @@ pipeline {
         stage('Upload TAR Files to S3') {
             steps {
                 script {
-                    sh "aws s3 cp dictionary-api.tar.gz s3://${params.STACK_S3_BUCKET}/${params.TARGET_STACK}containers/application/dictionary-api.tar.gz"
+                    sh "aws s3 cp dictionary-api.tar.gz s3://${params.STACK_S3_BUCKET}/${params.TARGET_STACK}/containers/dictionary-api.tar.gz"
                 }
             }
         }
