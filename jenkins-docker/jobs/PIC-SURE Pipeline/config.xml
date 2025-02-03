@@ -125,7 +125,7 @@ pipeline {
                     },
                     hpds:{
                         script {
-                            def result = build job: &apos;PIC-SURE-HPDS Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],[$class: &apos;StringParameterValue&apos;, name: &apos;BRANCH&apos;, value: build_hashes[&apos;PSH&apos;]]]
+                            def result = build job: &apos;PIC-SURE HPDS Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],[$class: &apos;StringParameterValue&apos;, name: &apos;BRANCH&apos;, value: build_hashes[&apos;PSH&apos;]]]
                         }
                     }
                )
