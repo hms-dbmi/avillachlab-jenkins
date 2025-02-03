@@ -92,12 +92,9 @@ pipeline {
                         exit 1
                     fi
 
-
-
                     for script_file in &quot;$SOURCE_SCRIPTS_FOLDER&quot;*.sh; do
                         chmod +x &quot;\$script_file&quot;
                         if [ -f &quot;\$script_file&quot; ] &amp;&amp; [ -x &quot;\$script_file&quot; ]; then
-                            echo &quot;Sourcing \$script_file&quot;
                             . &quot;\$script_file&quot;  # Use dot (.) instead of `source`
                         fi
                     done
