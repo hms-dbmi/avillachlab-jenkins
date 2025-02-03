@@ -66,7 +66,7 @@ docker build \
  -t hms-dbmi/pic-sure-wildfly:${wildfly_git_hash} \
  .
  
-docker save hms-dbmi/pic-sure-wildfly:${pipeline_build_id} &gt; pic-sure-wildfly.tar.gz
+docker save hms-dbmi/pic-sure-wildfly:${wildfly_git_hash} &gt; pic-sure-wildfly.tar.gz
 aws s3 --sse=AES256 cp pic-sure-wildfly.tar.gz s3://$S3_BUCKET_NAME/$TARGET_STACK/containers/pic-sure-wildfly.tar.gz
 
 </command>
