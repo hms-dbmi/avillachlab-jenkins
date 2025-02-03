@@ -64,19 +64,19 @@ GIT_COMMIT_SHORT=`echo ${GIT_COMMIT} | cut -c1-7`
 cd pic-sure-api-war
 docker build -t hms-dbmi/pic-sure-api:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
 docker save hms-dbmi/pic-sure-api:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-api.tar.gz
-aws s3 --sse=AES256 cp pic-sure-api.tar.gz s3://$S3_BUCKET_NAME/$TARGET_STACK/pic-sure-api.tar.gz
+aws s3 --sse=AES256 cp pic-sure-api.tar.gz s3://$S3_BUCKET_NAME/$TARGET_STACK/containers/pic-sure-api.tar.gz
 
 cd ../pic-sure-resources/pic-sure-aggregate-data-sharing-resource
 
 docker build -t hms-dbmi/pic-sure-aggregate-resource:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
 docker save hms-dbmi/pic-sure-aggregate-resource:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-aggregate-resource.tar.gz
-aws s3 --sse=AES256 cp pic-sure-aggregate-resource.tar.gz s3://$S3_BUCKET_NAME/$TARGET_STACK/pic-sure-aggregate-resource.tar.gz
+aws s3 --sse=AES256 cp pic-sure-aggregate-resource.tar.gz s3://$S3_BUCKET_NAME/$TARGET_STACK/containers/pic-sure-aggregate-resource.tar.gz
 
 cd ../pic-sure-visualization-resource
 
 docker build -t hms-dbmi/pic-sure-visualization-resource:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
 docker save hms-dbmi/pic-sure-visualization-resource:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-visualization-resource.tar.gz
-aws s3 --sse=AES256 cp pic-sure-visualization-resource.tar.gz s3://$S3_BUCKET_NAME/$TARGET_STACK/pic-sure-visualization-resource.tar.gz</command>
+aws s3 --sse=AES256 cp pic-sure-visualization-resource.tar.gz s3://$S3_BUCKET_NAME/$TARGET_STACK/containers/pic-sure-visualization-resource.tar.gz</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
