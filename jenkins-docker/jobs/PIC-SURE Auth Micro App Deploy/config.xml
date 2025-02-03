@@ -7,7 +7,7 @@
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
-          <name>S3_BUCKET_NAME</name>
+          <name>STACK_S3_BUCKET</name>
           <defaultValue>${stack_s3_bucket}</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
@@ -69,7 +69,7 @@ wildfly_instance_id=$(jq -r &apos;.outputs[&quot;wildfly-ec2-id&quot;].value&apo
 echo &quot;${wildfly_instance_id}&quot;
 
 update_psama_container=&quot;sudo /home/centos/deploy-psama.sh \
-        --stack_s3_bucket $S3_BUCKET_NAME \
+        --stack_s3_bucket $STACK_S3_BUCKET \
         --target_stack $TARGET_STACK \
         --$dataset_s3_object_key $DATASET_S3_OBJECT_KEY \
         --$enable_debug $ENABLE_DEBUG \
