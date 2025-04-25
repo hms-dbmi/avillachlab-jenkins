@@ -18,6 +18,7 @@ podman rm -f $CONTAINER_NAME || true
 podman run -d --privileged \
     --log-driver=journald \
     --log-opt tag=jenkins \
+    -v /var/jenkins_home/workspace/:/var/jenkins_home/workspace/ \
     -v /var/run/podman/podman.sock:/var/run/docker.sock \
     -p 443:8443 \
     --name $CONTAINER_NAME \
