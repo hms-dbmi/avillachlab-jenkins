@@ -1,7 +1,5 @@
 #!/bin/bash
 echo "ENABLE_PODMAN=true" | sudo tee /opt/srce/startup.config
-#echo "SPLUNK_INDEX=?" | sudo tee /opt/srce/startup.config
-#echo "NESSUS_GROUP=swb-${env}-1" | sudo tee -a /opt/srce/startup.config
 
 sh /opt/srce/scripts/start-gsstools.sh
 sudo yum -y update
