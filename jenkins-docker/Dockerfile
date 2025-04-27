@@ -3,6 +3,8 @@ FROM jenkins/jenkins:latest
 # user to swap easily between OS operations and jenkins configuration.
 ENV JENKINS_USERNAME=$USER
 
+ENV JAVA_OPTS -Djenkins.install.runSetupWizard=false
+
 ARG JENKINS_DOCKER_TERRAFORM_DISTRO
 ARG PLUGINS_FILE
 ARG CONFIG_XML_FILE
