@@ -7,6 +7,8 @@ sudo yum -y update
 # grab image tar
 aws s3 cp s3://${jenkins_tf_state_bucket}/containers/jenkins/jenkins.tar.gz jenkins.tar.gz
 
+mkdir -p /var/jenkins_home/workspace
+
 # load image
 load_result=$(podman load -i jenkins.tar.gz)
 image_tag=$(echo "$load_result" | grep -o -E "jenkins:[[:alnum:]_]+")
@@ -18,7 +20,7 @@ podman rm -f $CONTAINER_NAME || true
 podman run -d --privileged \
     --log-driver=journald \
     --log-opt tag=jenkins \
-    -v /var/jenkins_home/workspace/:/var/jenkins_home/workspace/ \
+    -v /var/jenkins_home/workspace:/var/jenkins_home/workspace/:Z \
     -v /var/run/podman/podman.sock:/var/run/docker.sock \
     -p 443:8443 \
     --name $CONTAINER_NAME \

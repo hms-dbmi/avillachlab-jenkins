@@ -516,9 +516,9 @@ run_flyway_migration() {
   local sql_path=$1
   local flyway_conf_path=$2
 
-  docker run --privileged --rm --network=host \
-    -v &quot;$(pwd)/${sql_path}:/flyway/sql&quot; \
-    -v &quot;$(pwd)/${flyway_conf_path}:/flyway/conf/flyway.conf&quot; \
+  docker run --rm --network=host \
+    -v &quot;$(pwd)/${sql_path}:/flyway/sql:Z&quot; \
+    -v &quot;$(pwd)/${flyway_conf_path}:/flyway/conf/flyway.conf:Z&quot; \
     flyway/flyway:10.8 -configFiles=/flyway/conf/flyway.conf -X migrate
 
   # Capture the exit status of the docker command
@@ -564,11 +564,11 @@ grant_user_permissions() {
   local grant_sql=&quot;GRANT SELECT, INSERT, UPDATE, DELETE ON ${database_name}.* TO &apos;${user_name}&apos;@&apos;%&apos;;&quot;
 
   # Execute the SQL command using Docker and MySQL client
-  docker run --privileged --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+  docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
     -e &quot;$grant_sql&quot; &quot;mysql&quot;
 
   # Apply the changes
-  docker run --privileged --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+  docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
     -e &quot;FLUSH PRIVILEGES;&quot; &quot;mysql&quot;
 }
 
@@ -580,7 +580,7 @@ create_database_if_not_exists() {
   CMD=$(printf &quot;mysql -h%s -u%s -p&apos;%s&apos; -e &apos;CREATE DATABASE IF NOT EXISTS %s;&apos;&quot; &quot;$RDS_ENDPOINT&quot; &quot;$DATABASE_USER&quot; &quot;$DATABASE_PASSWORD&quot; &quot;$1&quot;)
 
   # Run the command in a Docker container
-  docker run --privileged --rm $MYSQL_IMAGE /bin/bash -c &quot;$CMD&quot;
+  docker run --rm $MYSQL_IMAGE /bin/bash -c &quot;$CMD&quot;
 }
 
 # Function to drop all tables in a given database
@@ -595,7 +595,7 @@ drop_all_tables() {
     local schema_name=$1
 
     # Check if the schema exists
-    SCHEMA_EXISTS=$(docker run --privileged --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    SCHEMA_EXISTS=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
         -sse &quot;SELECT SCHEMA_NAME FROM information_schema.schemata WHERE SCHEMA_NAME = &apos;$schema_name&apos;;&quot; 2&gt;/dev/null)
 
     if [ -z &quot;$SCHEMA_EXISTS&quot; ]; then
@@ -607,14 +607,14 @@ drop_all_tables() {
     echo &quot;Dropping all tables in schema: $schema_name...&quot;
 
     # Fetch list of tables in the schema
-    TABLES=$(docker run --privileged --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    TABLES=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
         --database=$schema_name -Nse &quot;SHOW TABLES;&quot; 2&gt;/dev/null)
 
     # Drop each table
     for TABLE in $TABLES; do
         echo &quot;Dropping Table: $TABLE&quot;
         DROP_CMD=&quot;SET FOREIGN_KEY_CHECKS = 0; DROP TABLE IF EXISTS $TABLE; SET FOREIGN_KEY_CHECKS = 1;&quot;
-        docker run --privileged --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+        docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
             --database=$schema_name -e &quot;$DROP_CMD&quot; 2&gt;/dev/null
     done
 
@@ -633,7 +633,7 @@ drop_schema() {
     local schema_name=$1
 
     # Check if the schema exists
-    SCHEMA_EXISTS=$(docker run --privileged --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    SCHEMA_EXISTS=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
         -sse &quot;SELECT SCHEMA_NAME FROM information_schema.schemata WHERE SCHEMA_NAME = &apos;$schema_name&apos;;&quot; 2&gt;/dev/null)
 
     if [ -z &quot;$SCHEMA_EXISTS&quot; ]; then
@@ -645,7 +645,7 @@ drop_schema() {
     echo &quot;Dropping schema: $schema_name...&quot;
 
     DROP_SCHEMA_CMD=&quot;DROP SCHEMA IF EXISTS $schema_name;&quot;
-    docker run --privileged --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
         -e &quot;$DROP_SCHEMA_CMD&quot; 2&gt;/dev/null
 
     echo &quot;Schema $schema_name dropped.&quot;
@@ -655,7 +655,7 @@ drop_schema() {
 
 # create_top_admin &quot;email&quot; &quot;connection_id&quot;
 create_top_admin() {
-  docker run --privileged --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+  docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
   -e &quot;CALL CreateSuperUser(&apos;$1&apos;, &apos;$2&apos;);&quot; &quot;auth&quot;
 }
 
@@ -663,7 +663,7 @@ does_user_exists() {
 	# $1 email
     # $2 connection_id
 
-    local query_result=$(docker run --privileged --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    local query_result=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
     -s -r -e &quot;select email from user where email = &apos;$1&apos; and connectionId = (select uuid from connection where id = &apos;$2&apos;);&quot; &quot;auth&quot;)
 
     echo &quot;$query_result&quot;
@@ -676,7 +676,7 @@ update_token_by_uuid() {
   local target_database=&quot;${3:-auth}&quot;
 
   # Perform the update operation
-  docker run --privileged --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+  docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
     -e &quot;UPDATE application SET token=&apos;$new_token&apos; WHERE uuid=UNHEX(&apos;$uuid&apos;);&quot; &quot;auth&quot;
 }
 
@@ -689,7 +689,7 @@ get_token_by_uuid() {
   local query=&quot;SELECT token FROM application WHERE uuid=UNHEX(REPLACE(&apos;$uuid&apos;, &apos;-&apos;, &apos;&apos;));&quot;
 
   # Execute the query using Docker and MySQL client
-  local token=$(docker run --privileged --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+  local token=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
     -sse &quot;$query&quot; &quot;$schema&quot;)
 
   echo &quot;$token&quot;
@@ -708,7 +708,7 @@ run_sql_script() {
   fi
 
   # Run the SQL script in a Docker container
-  docker run --privileged --rm -v &quot;$1:/sql_script.sql&quot; $MYSQL_IMAGE \
+  docker run --rm -v &quot;$1:/sql_script.sql&quot; $MYSQL_IMAGE \
     mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; &quot;$2&quot; &lt; /sql_script.sql
 }
 
@@ -724,7 +724,7 @@ backup_schema() {
     local schema_to_backup=$1
     local backup_file=&quot;$(date +&quot;%Y%m%d%H%M%S&quot;)_${schema_to_backup}_backup.sql&quot;
 
-    docker run --privileged --rm -e MYSQL_PWD=$DATABASE_PASSWORD $MYSQL_IMAGE \
+    docker run --rm -e MYSQL_PWD=$DATABASE_PASSWORD $MYSQL_IMAGE \
         mysqldump --set-gtid-purged=OFF --single-transaction -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; $schema_to_backup &gt; &quot;$backup_file&quot;
 
     if [ $? -eq 0 ]; then
@@ -779,11 +779,11 @@ restore_schema() {
 
     # Drop the schema if it exists and recreate it
     DROP_SCHEMA_CMD=&quot;DROP SCHEMA IF EXISTS $schema_name; CREATE SCHEMA $schema_name;&quot;
-    docker run --privileged --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
         -e &quot;$DROP_SCHEMA_CMD&quot; 2&gt;/dev/null
 
     # Restore the schema from the downloaded dump file
-    docker run --privileged --rm -i $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; &quot;$schema_name&quot; &lt; &quot;$temp_dump_file&quot; 2&gt;/dev/null
+    docker run --rm -i $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; &quot;$schema_name&quot; &lt; &quot;$temp_dump_file&quot; 2&gt;/dev/null
 
     echo &quot;Schema $schema_name restored successfully from $backup_filename.&quot;
 
@@ -810,13 +810,13 @@ copy_database() {
     echo &quot;Starting database copy from $source_database to $target_database...&quot;
 
     # Step 1: Check if the target database exists
-    DATABASE_EXISTS=$(docker run --privileged --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    DATABASE_EXISTS=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
         -sse &quot;SELECT SCHEMA_NAME FROM information_schema.schemata WHERE SCHEMA_NAME = &apos;$target_database&apos;;&quot;)
 
     if [ -z &quot;$DATABASE_EXISTS&quot; ]; then
         # If the target database doesn&apos;t exist, create it
         echo &quot;Target database $target_database does not exist. Creating database...&quot;
-        docker run --privileged --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+        docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
             -e &quot;CREATE DATABASE IF NOT EXISTS $target_database;&quot;
 
         if [ $? -eq 0 ]; then
@@ -840,18 +840,18 @@ copy_database() {
     echo &quot;Copying all tables from $source_database to $target_database...&quot;
 
     # Get the list of tables from the source database and execute SQL commands to copy structure and data
-    TABLES=$(docker run --privileged --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    TABLES=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
         --skip-column-names -e &quot;SELECT table_name FROM information_schema.tables WHERE table_schema = &apos;$source_database&apos;;&quot;)
 
     for TABLE in $TABLES; do
         # Create table in the target database
         echo &quot;Creating table $TABLE in $target_database...&quot;
-        docker run --privileged --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+        docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
             -e &quot;CREATE TABLE $target_database.$TABLE LIKE $source_database.$TABLE;&quot;
 
         # Copy data from the source table to the target table
         echo &quot;Copying data from $source_database.$TABLE to $target_database.$TABLE...&quot;
-        docker run --privileged --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+        docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
             -e &quot;INSERT INTO $target_database.$TABLE SELECT * FROM $source_database.$TABLE;&quot;
     done
 
