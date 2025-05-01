@@ -16,7 +16,7 @@ data "template_file" "jenkins-user_data" {
 data "aws_ami" "centos" {
   most_recent = true
   owners      = ["752463128620"]
-  name_regex  = "^srce-centos7-golden-*"
+  name_regex  = "^srce-rhel9-golden-*"
 }
 
 data "template_cloudinit_config" "config" {

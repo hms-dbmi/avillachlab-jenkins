@@ -517,8 +517,8 @@ run_flyway_migration() {
   local flyway_conf_path=$2
 
   docker run --rm --network=host \
-    -v &quot;$(pwd)/${sql_path}:/flyway/sql&quot; \
-    -v &quot;$(pwd)/${flyway_conf_path}:/flyway/conf/flyway.conf&quot; \
+    -v &quot;$(pwd)/${sql_path}:/flyway/sql:Z&quot; \
+    -v &quot;$(pwd)/${flyway_conf_path}:/flyway/conf/flyway.conf:Z&quot; \
     flyway/flyway:10.8 -configFiles=/flyway/conf/flyway.conf -X migrate
 
   # Capture the exit status of the docker command

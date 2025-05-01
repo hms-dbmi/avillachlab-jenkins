@@ -43,7 +43,7 @@ variable "jenkins_ec2_instance_type" {
 
 variable "jenkins_tf_local_var_OS_dist" {
   type = string
-
+  default = "RHEL9"
   # in terraform .13 variable validations are no longer experimental and is production ready.
   # use this validations when upgrading to terraform .13
   # will not implement .12 experimental features
