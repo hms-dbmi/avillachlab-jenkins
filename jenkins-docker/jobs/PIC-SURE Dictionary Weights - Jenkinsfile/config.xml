@@ -148,9 +148,9 @@
           <spec></spec>
           <upstreamProjects>Database PSQL - Dictionary Import dump and pg_restore</upstreamProjects>
           <threshold>
-            <name>SUCCESS</name>
-            <ordinal>0</ordinal>
-            <color>BLUE</color>
+            <name>NONE</name>
+            <ordinal>-1</ordinal>
+            <color>GREY</color>
             <completeBuild>true</completeBuild>
           </threshold>
         </jenkins.triggers.ReverseBuildTrigger>
