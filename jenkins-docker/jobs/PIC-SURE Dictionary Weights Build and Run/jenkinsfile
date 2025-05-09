@@ -151,7 +151,7 @@ pipeline {
                          --rm \
                          -t \
                          --name dictionary-weights \
-                         -v ./weights.csv:/weights.csv \
+                         -v ./weights.csv:/weights.csv:Z \
                          -e AWS_ACCESS_KEY_ID=${accessKeyId} \
                          -e AWS_SECRET_ACCESS_KEY=${secretAccessKey} \
                          -e AWS_SESSION_TOKEN=${sessionToken} \

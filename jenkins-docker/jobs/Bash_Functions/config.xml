@@ -708,7 +708,7 @@ run_sql_script() {
   fi
 
   # Run the SQL script in a Docker container
-  docker run --rm -v &quot;$1:/sql_script.sql&quot; $MYSQL_IMAGE \
+  docker run --rm -v &quot;$1:/sql_script.sql:Z&quot; $MYSQL_IMAGE \
     mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; &quot;$2&quot; &lt; /sql_script.sql
 }
 
