@@ -68,7 +68,7 @@ echo &quot;Extract Wildfly instance ID for $target_stack stack&quot;
 wildfly_instance_id=$(jq -r &apos;.outputs[&quot;wildfly-ec2-id&quot;].value&apos; terraform.tfstate)
 echo &quot;${wildfly_instance_id}&quot;
 
-update_psama_container=&quot;sudo /home/centos/deploy-psama.sh \
+update_psama_container=&quot;sudo /opt/picsure/deploy-psama.sh \
         --stack_s3_bucket $STACK_S3_BUCKET \
         --target_stack $TARGET_STACK \
         --$dataset_s3_object_key $DATASET_S3_OBJECT_KEY \

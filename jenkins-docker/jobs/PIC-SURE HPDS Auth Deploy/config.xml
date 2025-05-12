@@ -64,7 +64,7 @@ echo &quot;Extract HPDS instance ID for $target_stack stack&quot;
 auth-hpds_instance_id=$(jq -r &apos;.outputs[&quot;auth-hpds-ec2-id&quot;].value&apos; terraform.tfstate)
 echo &quot;${auth-hpds_instance_id}&quot;
 
-update_auth-hpds_container=&quot;sudo /home/centos/deploy-auth-hpds.sh \
+update_auth-hpds_container=&quot;sudo /opt/picsure/deploy-auth-hpds.sh \
         --stack_s3_bucket $STACK_S3_BUCKET \
         --dataset_s3_object_key $DATASET_S3_OBJECT_KEY \
         --genomic_dataset_s3_object_key $GENOMIC_DATASET_S3_OBJECT_KEY \

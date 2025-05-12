@@ -59,7 +59,7 @@ echo &quot;Extract HPDS instance ID for $target_stack stack&quot;
 open-hpds_instance_id=$(jq -r &apos;.outputs[&quot;open-hpds-ec2-id&quot;].value&apos; terraform.tfstate)
 echo &quot;${open-hpds_instance_id}&quot;
 
-update_open-hpds_container=&quot;sudo /home/centos/deploy-open-hpds.sh \
+update_open-hpds_container=&quot;sudo /opt/picsure/deploy-open-hpds.sh \
         --stack_s3_bucket $STACK_S3_BUCKET \
         --destigmatized_dataset_s3_object_key $DESTIGMATIZED_DATASET_S3_OBJECT_KEY \
         --target_stack $TARGET_STACK&quot;

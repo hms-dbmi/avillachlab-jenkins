@@ -54,7 +54,7 @@ echo &quot;Extract HTTPD instance ID for $target_stack stack&quot;
 httpd_instance_id=$(jq -r &apos;.outputs[&quot;httpd-ec2-id&quot;].value&apos; terraform.tfstate)
 echo &quot;${httpd_instance_id}&quot;
 
-update_httpd_container=&quot;sudo /home/centos/deploy-httpd.sh --stack_s3_bucket $stack_s3_bucket --target_stack $target_stack&quot;
+update_httpd_container=&quot;sudo /opt/picsure/deploy-httpd.sh --stack_s3_bucket $stack_s3_bucket --target_stack $target_stack&quot;
 echo &quot;$update_httpd_container&quot;
 
 update_httpd_container_json=$(jq -n --arg cmd &quot;$update_httpd_container&quot; &apos;{commands: [$cmd]}&apos;)
