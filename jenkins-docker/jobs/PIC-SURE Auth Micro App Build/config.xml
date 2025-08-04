@@ -51,7 +51,7 @@
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>BRANCH</name>
+          <name>git_hash</name>
           <defaultValue>main</defaultValue>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>

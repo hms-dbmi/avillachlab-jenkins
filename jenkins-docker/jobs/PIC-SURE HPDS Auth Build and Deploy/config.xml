@@ -6,7 +6,7 @@
       <jobProperties/>
       <triggers/>
       <parameters>
-        <string>BRANCH</string>
+        <string>git_hash</string>
         <choice>TARGET_STACK</choice>
         <string>STACK_S3_BUCKET</string>
         <string>DATA_S3_OBJECT_KEY</string>
@@ -36,7 +36,7 @@
             </choices>
         </hudson.model.ChoiceParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>BRANCH</name>
+          <name>git_hash</name>
           <description>If you want to a specific branch. Leave blank to use the release control</description>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
@@ -76,7 +76,7 @@ pipeline {
 
     parameters {
         choice(name: &apos;TARGET_STACK&apos;, choices: ['staging','live'], description: &apos;Based on selection we determine if is a or b stack.&apos;)
-        string(name: &apos;BRANCH&apos;, defaultValue: &apos;&apos;, description: &apos;If you want to a specific branch. Leave blank to use the release control&apos;)
+        string(name: &apos;git_hash&apos;, defaultValue: &apos;&apos;, description: &apos;If you want to a specific branch. Leave blank to use the release control&apos;)
         string(name: &apos;STACK_S3_BUCKET&apos;, defaultValue: &apos;${stack_s3_bucket}&apos;, description: &apos;If you want to a specific branch. Leave blank to use the release control&apos;)
         string(name: &apos;DATA_S3_OBJECT_KEY&apos;, defaultValue: &apos;&apos;, description: &apos;Optional. Setting this value will update related files, folders, datasets, etc.&apos;)
         string(name: &apos;BRANCH&apos;, defaultValue: &apos;&apos;, description: &apos;If you want to a specific branch. Leave blank to use the release control&apos;)
@@ -120,7 +120,7 @@ pipeline {
         stage(&apos;Retrieve Build Spec&apos;) {
             steps {
                 when {
-                    expression { return params.BRANCH == '' }
+                    expression { return params.git_hash == '' }
                 }
                 script {
                     def result = build job: &apos;Retrieve Build Spec&apos;
@@ -143,11 +143,11 @@ pipeline {
         stage(&apos;PIC-SURE HPDS Build&apos;) {
             steps {
                 script {
-                    def gitHash = BRANCH ? BRANCH : build_hashes[&apos;PSF&apos;]
+                    def gitHash = git_hash ? git_hash : build_hashes[&apos;PSF&apos;]
                     def result = build job: &apos;PIC-SURE HPDS Build&apos;,
                         parameters: [
                             [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                            [$class: &apos;StringParameterValue&apos;, name: &apos;BRANCH&apos;, value: gitHash]
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: gitHash]
                         ]
                 }
             }

@@ -10,7 +10,7 @@
         <choice>TARGET_STACK</choice>
         <string>DROP_PICSURE_TABLES</string>
         <string>RUN_DATABASE_MIGRATIONS</string>
-        <string>BRANCH</string>
+        <string>git_hash</string>
         <string>DATASET_S3_OBJECT_KEY</string>
         <bool>ENABLE_DEBUG</bool>
         <string>SPRING_PROFILE</string>
@@ -39,7 +39,7 @@
             </choices>
         </hudson.model.ChoiceParameterDefinition>
         <hudson.model.StringParameterDefinition>
-            <name>BRANCH</name>
+            <name>git_hash</name>
             <description>The branch you want to deploy. Leave blank to use the build-spec.</description>
             <trim>false</trim>
         </hudson.model.StringParameterDefinition>

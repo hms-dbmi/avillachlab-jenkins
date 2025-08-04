@@ -6,7 +6,7 @@
       <jobProperties/>
       <triggers/>
       <parameters>
-        <string>BRANCH</string>
+        <string>git_hash</string>
         <choice>TARGET_STACK</choice>
       </parameters>
       <options/>
@@ -33,7 +33,7 @@
             </choices>
         </hudson.model.ChoiceParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>BRANCH</name>
+          <name>git_hash</name>
           <description>If you want to a specific branch. Leave blank to use the release control</description>
           <defaultValue>main</defaultValue>
           <trim>false</trim>

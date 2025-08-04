@@ -3,7 +3,7 @@ pipeline {
 
     parameters {
         string(name: 'GIT_REPO_URL', defaultValue: '${git_base_url}/picsure-dictionary.git', description: 'The GitHub repository URL')
-        string(name: 'BRANCH', defaultValue: 'main', description: 'The Git branch to checkout')
+        string(name: 'git_hash, defaultValue: 'main', description: 'The Git branch to checkout')
         string(name: 'DOCKER_REPO', defaultValue: 'avillach', description: 'The Docker repository name')
         string(name: 'API_IMAGE_NAME', defaultValue: 'dictionary-api', description: 'The Docker image name for the Dictionary API')
         string(name: 'DOCKER_IMAGE_VERSION', defaultValue: 'latest', description: 'The Docker image version/tag')
@@ -18,7 +18,7 @@ pipeline {
         stage('Clone Repository') {
             steps {
                 script {
-                    def ref = "${params.BRANCH}"
+                    def ref = "${params.git_hash}"
                     checkout([$class: 'GitSCM',
                         branches: [[name: ref]],
                         userRemoteConfigs: [[url: "${params.GIT_REPO_URL}"]]

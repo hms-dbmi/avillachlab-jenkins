@@ -9,7 +9,7 @@
         <string>DOCKER_IMAGE_VERSION</string>
         <string>DOCKER_REPO</string>
         <string>API_IMAGE_NAME</string>
-        <string>BRANCH</string>
+        <string>git_hash</string>
         <string>SPRING_PROFILE</string>
         <string>DATASOURCE_USERNAME</string>
         <string>DATASOURCE_URL</string>
@@ -30,7 +30,7 @@
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>BRANCH</name>
+          <name>git_hash</name>
           <description>The Git branch to checkout</description>
           <defaultValue>main</defaultValue>
           <trim>false</trim>

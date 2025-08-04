@@ -6,7 +6,7 @@
       <jobProperties/>
       <triggers/>
       <parameters>
-        <string>BRANCH</string>
+        <string>git_hash</string>
         <choice>TARGET_STACK</choice>
         <string>STACK_S3_BUCKET</string>
         <string>DESTIGMATIZED_DATASET_S3_OBJECT_KEY</string>
@@ -35,7 +35,7 @@
             </choices>
         </hudson.model.ChoiceParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>BRANCH</name>
+          <name>git_hash</name>
           <description>If you want to a specific branch. Leave blank to use the release control</description>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
