@@ -16,7 +16,7 @@
         <string>DESCRIPTION</string>
         <string>DOCKER_REPO</string>
         <string>FULL_NAME</string>
-        <string>GIT_BRANCH</string>
+        <string>GIT_HASH</string>
         <string>DATASOURCE_USERNAME</string>
         <string>DATASOURCE_URL</string>
         <string>PARENT_DISPLAY</string>
@@ -100,7 +100,7 @@
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>GIT_BRANCH</name>
+          <name>GIT_HASH</name>
           <description>The Git branch to checkout</description>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>

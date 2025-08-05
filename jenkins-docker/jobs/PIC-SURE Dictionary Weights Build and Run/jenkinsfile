@@ -11,7 +11,7 @@ pipeline {
         string(name: 'GRANDPARENT_DISPLAY', defaultValue: '1', description: 'Weight for grandparent.DISPLAY')
         string(name: 'META_STRING', defaultValue: '1', description: 'Weight for concept_node_meta_str')
         string(name: 'GIT_REPO_URL', defaultValue: '${git_base_url}/picsure-dictionary.git', description: 'The GitHub repository URL')
-        string(name: 'GIT_BRANCH', defaultValue: '', description: 'The Git branch to checkout')
+        string(name: 'GIT_HASH', defaultValue: '', description: 'The Git branch to checkout')
         string(name: 'DOCKER_REPO', defaultValue: 'avillach', description: 'The Docker repository name')
         string(name: 'SPRING_PROFILE', defaultValue: 'bdc', description: 'The Spring profile')
         string(name: 'IMAGE_NAME', defaultValue: 'dictionary_weights', description: 'The name of the Docker image')
@@ -78,7 +78,7 @@ pipeline {
                         returnStdout: true
                     ).trim()
 
-                    def ref = (params.GIT_BRANCH?.trim()) ? params.GIT_BRANCH : gitHash
+                    def ref = (params.GIT_HASH?.trim()) ? params.GIT_HASH : gitHash
                     println "Ref: ${ref}"
                     println "Git Hash: ${gitHash}"
 

@@ -57,7 +57,7 @@ def targetStack;
 pipeline {
     agent any
     parameters {
-        string(name: &apos;BRANCH&apos;, defaultValue: &apos;main&apos;, description: &apos;If you want to a specific branch. Leave blank to use the release control&apos;)
+        string(name: &apos;git_hash&apos;, defaultValue: &apos;main&apos;, description: &apos;If you want to a specific git_hash. Leave blank to use the release control&apos;)
         choice(name: &apos;TARGET_STACK&apos;, choices: ['staging','live'], description: &apos;Based on selection we determine if is a or b stack.&apos;)
     }
 
@@ -99,7 +99,7 @@ pipeline {
         stage(&apos;Retrieve Build Spec&apos;) {
             steps {
                 when {
-                    expression { return params.BRANCH == '' }
+                    expression { return params.git_hash == '' }
                 }
                 script {
                     def result = build job: &apos;Retrieve Build Spec&apos;
@@ -122,9 +122,9 @@ pipeline {
         stage(&apos;PIC-SURE Dictionary Build&apos;) {
             steps {
                 script{
-                    def gitHash = BRANCH ? BRANCH : build_hashes[&apos;PSD&apos;]
+                    def gitHash = git_hash ? git_hash : build_hashes[&apos;PSD&apos;]
                     def dictionaryBuildResult = build job: &apos;PIC-SURE Dictionary Build&apos;, parameters: [
-                        [$class: &apos;StringParameterValue&apos;, name: &apos;GIT_BRANCH&apos;, value: BRANCH]
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: git_hash]
                     ]
                 }
             }

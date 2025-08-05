@@ -1,19 +1,21 @@
 <?xml version='1.1' encoding='UTF-8'?>
-<flow-definition plugin="workflow-job@1459.v6c531091efcd">
+<flow-definition plugin="workflow-job@1540.v295eccc9778f">
   <actions>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2214.vb_b_34b_2ea_9b_83"/>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2214.vb_b_34b_2ea_9b_83">
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2258.v4e96d2b_da_f9b_"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2258.v4e96d2b_da_f9b_">
       <jobProperties/>
       <triggers/>
       <parameters>
         <string>DOCKER_IMAGE_VERSION</string>
+        <string>TARGET_STACK</string>
+        <string>STACK_S3_BUCKET</string>
         <string>DOCKER_REPO</string>
         <string>API_IMAGE_NAME</string>
-        <string>git_hash</string>
         <string>SPRING_PROFILE</string>
         <string>DATASOURCE_USERNAME</string>
         <string>DATASOURCE_URL</string>
         <string>GIT_REPO_URL</string>
+        <string>git_hash</string>
       </parameters>
       <options/>
     </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
@@ -73,13 +75,19 @@
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>TARGET_STACK</name>
+          <description>a or b. The target stack.</description>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>STACK_S3_BUCKET</name>
+          <defaultValue>${stack_s3_bucket}</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition" plugin="workflow-cps@3975.v567e2a_1ffa_22">
-    <scm class="hudson.plugins.git.GitSCM" plugin="git@5.6.0">
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition" plugin="workflow-cps@4175.ve65b_fa_663eed">
+    <scm class="hudson.plugins.git.GitSCM" plugin="git@5.7.0">
       <configVersion>2</configVersion>
       <userRemoteConfigs>
         <hudson.plugins.git.UserRemoteConfig>

@@ -164,7 +164,7 @@ pipeline {
                             if (params.INCLUDE_PIC_SURE_DICTIONARY) {
                                 def dictionaryBuildResult = build job: &apos;PIC-SURE Dictionary Build and Deploy&apos;, parameters: [
                                         [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                                        [$class: &apos;StringParameterValue&apos;, name: &apos;GIT_BRANCH&apos;, value: build_hashes[&apos;PSD&apos;]
+                                        [$class: &apos;StringParameterValue&apos;, name: &apos;GIT_HASH&apos;, value: build_hashes[&apos;PSD&apos;]
                                     ]
                             } else {
                                 echo "Skipping PIC-SURE Dictionary Build and Deploy"
@@ -176,7 +176,7 @@ pipeline {
                             if (params.INCLUDE_PIC_SURE_HPDS_AUTH) {
                                 def dictionaryBuildResult = build job: &apos;PIC-SURE HPDS Auth Build and Deploy&apos;, parameters: [
                                         [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                                        [$class: &apos;StringParameterValue&apos;, name: &apos;GIT_BRANCH&apos;, value: build_hashes[&apos;PSD&apos;],
+                                        [$class: &apos;StringParameterValue&apos;, name: &apos;GIT_HASH&apos;, value: build_hashes[&apos;PSD&apos;],
                                         [$class: &apos;StringParameterValue&apos;, name: &apos;DATA_S3_OBJECT_KEY&apos;, value: DATA_S3_OBJECT_KEY],
                                         [$class: &apos;StringParameterValue&apos;, name: &apos;GENOMIC_DATASET_S3_OBJECT_KEY&apos;, value: GENOMIC_DATASET_S3_OBJECT_KEY]
                                     ]
@@ -190,7 +190,7 @@ pipeline {
                             if (params.INCLUDE_PIC_SURE_HPDS_OPEN) {
                                 def dictionaryBuildResult = build job: &apos;PIC-SURE HPDS Open Build and Deploy&apos;, parameters: [
                                         [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                                        [$class: &apos;StringParameterValue&apos;, name: &apos;GIT_BRANCH&apos;, value: build_hashes[&apos;PSD&apos;],
+                                        [$class: &apos;StringParameterValue&apos;, name: &apos;GIT_HASH&apos;, value: build_hashes[&apos;PSD&apos;],
                                         [$class: &apos;StringParameterValue&apos;, name: &apos;DESTIGMATIZED_DATASET_S3_OBJECT_KEY&apos;, value: DESTIGMATIZED_DATASET_S3_OBJECT_KEY]
                                     ]
                             } else {

@@ -40,7 +40,7 @@
         </hudson.model.ChoiceParameterDefinition>
         <hudson.model.StringParameterDefinition>
             <name>git_hash</name>
-            <description>The branch you want to deploy. Leave blank to use the build-spec.</description>
+            <description>The git_hash you want to deploy. Leave blank to use the build-spec.</description>
             <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
@@ -92,7 +92,7 @@ pipeline {
     agent any
     parameters {
         choice(name: &apos;TARGET_STACK&apos;, choices: ['staging','live'], description: &apos;Based on selection we determine if is a or b stack.&apos;)
-        string(name: &apos;BRANCH&apos;, defaultValue: &apos;&apos;, description: Leave empty to use Build Spec&apos;&apos;)
+        string(name: &apos;git_hash&apos;, defaultValue: &apos;&apos;, description: Leave empty to use Build Spec&apos;&apos;)
         string(name: &apos;DATASET_S3_OBJECT_KEY&apos;, defaultValue: &apos;&apos;, description: &apos;&apos;)
         string(name: &apos;STACK_S3_BUCKET&apos;, defaultValue: &apos;&apos;, description: &apos;&apos;)
         string(name: &apos;ENABLE_DEBUG&apos;, defaultValue: &apos;false&apos;, description: &apos;Enable to setup remote debugging. Debugging will use port 9000.&apos;)
@@ -137,7 +137,7 @@ pipeline {
         stage(&apos;Retrieve Build Spec&apos;) {
             steps {
                 when {
-                    expression { return params.BRANCH == '' }
+                    expression { return params.git_hash == '' }
                 }
                 script {
                     def result = build job: &apos;Retrieve Build Spec&apos;
@@ -160,8 +160,8 @@ pipeline {
         stage(&apos;PIC-SURE Auth Micro-App Build&apos;) {
             steps {
                 script{
-                    def gitHash = BRANCH ? BRANCH : build_hashes[&apos;PSAMA&apos;]
-                    def result = build job: &apos;PIC-SURE Auth Micro-App Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],[$class: &apos;StringParameterValue&apos;, name: &apos;BRANCH&apos;, value: gitHash]]
+                    def gitHash = git_hash ? git_hash : build_hashes[&apos;PSAMA&apos;]
+                    def result = build job: &apos;PIC-SURE Auth Micro-App Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: gitHash]]
                 }
             }
         }
