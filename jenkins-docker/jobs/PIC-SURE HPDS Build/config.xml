@@ -54,8 +54,8 @@ GIT_COMMIT_SHORT=`echo ${GIT_COMMIT} | cut -c1-7`
 # This is done because we need artifacts created during the PIC-SURE API Build, and they are only available in our local .m2
 cp -r /root/.m2 .m2
 
-docker build -f docker/pic-sure-hpds/Dockerfile -t hms-dbmi/pic-sure-hpds:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
-docker build -f docker/pic-sure-hpds-etl/Dockerfile -t hms-dbmi/pic-sure-hpds-etl:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
+docker build --no-cache -f docker/pic-sure-hpds/Dockerfile -t hms-dbmi/pic-sure-hpds:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
+docker build --no-cache -f docker/pic-sure-hpds-etl/Dockerfile -t hms-dbmi/pic-sure-hpds-etl:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
 
 mkdir -p docker_image_output
 cd docker_image_output

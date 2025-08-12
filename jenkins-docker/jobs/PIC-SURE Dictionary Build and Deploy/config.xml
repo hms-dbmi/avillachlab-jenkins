@@ -1,47 +1,45 @@
 <?xml version='1.1' encoding='UTF-8'?>
-<flow-definition plugin="workflow-job@1385.vb_58b_86ea_fff1">
+<flow-definition plugin="workflow-job@1540.v295eccc9778f">
   <actions>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2205.vc9522a_9d5711"/>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2205.vc9522a_9d5711">
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2258.v4e96d2b_da_f9b_"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2258.v4e96d2b_da_f9b_">
       <jobProperties/>
       <triggers/>
       <parameters>
+        <string>TARGET_STACK</string>
         <string>git_hash</string>
-        <choice>TARGET_STACK</choice>
       </parameters>
       <options/>
     </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
   </actions>
-    <description/>
+  <description></description>
   <keepDependencies>false</keepDependencies>
   <properties>
-    <hudson.plugins.copyartifact.CopyArtifactPermissionProperty plugin="copyartifact@749.vfb_dca_a_9b_6549">
+    <hudson.plugins.copyartifact.CopyArtifactPermissionProperty plugin="copyartifact@770.va_6c69e063442">
       <projectNameList>
         <string>*</string>
       </projectNameList>
     </hudson.plugins.copyartifact.CopyArtifactPermissionProperty>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
-        <hudson.model.ChoiceParameterDefinition>
-            <name>TARGET_STACK</name>
-            <description>Based on selection we determine if it is the a or b stack.</description>
-            <choices class="java.util.Arrays$ArrayList">
-                <a class="string-array">
-                    <string>staging</string>
-                    <string>live</string>
-                </a>
-            </choices>
-        </hudson.model.ChoiceParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>git_hash</name>
-          <description>If you want to a specific branch. Leave blank to use the release control</description>
+          <description>If you want to a specific git_hash. Leave blank to use the release control</description>
           <defaultValue>main</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.ChoiceParameterDefinition>
+          <name>TARGET_STACK</name>
+          <description>Based on selection we determine if is a or b stack.</description>
+          <choices>
+            <string>staging</string>
+            <string>live</string>
+          </choices>
+        </hudson.model.ChoiceParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3908.vd6b_b_5a_a_54010">
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@4175.ve65b_fa_663eed">
     <script>import groovy.json.JsonSlurper;
 def bdc_ui_docker_tag;
 
@@ -58,7 +56,7 @@ pipeline {
     agent any
     parameters {
         string(name: &apos;git_hash&apos;, defaultValue: &apos;main&apos;, description: &apos;If you want to a specific git_hash. Leave blank to use the release control&apos;)
-        choice(name: &apos;TARGET_STACK&apos;, choices: ['staging','live'], description: &apos;Based on selection we determine if is a or b stack.&apos;)
+        choice(name: &apos;TARGET_STACK&apos;, choices: [&apos;staging&apos;,&apos;live&apos;], description: &apos;Based on selection we determine if is a or b stack.&apos;)
     }
 
     environment {
@@ -97,10 +95,10 @@ pipeline {
             }
         }
         stage(&apos;Retrieve Build Spec&apos;) {
-            steps {
-                when {
-                    expression { return params.git_hash == '' }
-                }
+            when {
+                    expression { return params.git_hash == &apos;&apos; }
+            }
+            steps {   
                 script {
                     def result = build job: &apos;Retrieve Build Spec&apos;
                     retrieveBuildSpecId = result.number

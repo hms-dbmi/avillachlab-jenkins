@@ -43,7 +43,6 @@
 # Source folder containing the scripts
 source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
 
-
 # Iterate through the files in the folder and source them
 for script_file in &quot;$source_scripts_folder&quot;*.sh; do
     chmod +x &quot;$script_file&quot;
@@ -55,35 +54,40 @@ done
 
 assume_role
 
+echo $stack_s3_bucket
+echo $TARGET_STACK
+echo &quot;dataset_s3_object_key ${DATASET_S3_OBJECT_KEY}&quot;
+echo &quot;genomic_dataset_s3_object_key ${GENOMIC_DATASET_S3_OBJECT_KEY}&quot;
+
 # Download the terraform state file
-echo &quot;Download terraform.tfstate file for $target_stack stack&quot;
-aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/$target_stack/terraform.tfstate terraform.tfstate
+echo &quot;Download terraform.tfstate file for $TARGET_STACK stack&quot;
+aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/$TARGET_STACK/terraform.tfstate terraform.tfstate
 
 # Extract the Wildfly EC2 instance ID
-echo &quot;Extract HPDS instance ID for $target_stack stack&quot;
-auth-hpds_instance_id=$(jq -r &apos;.outputs[&quot;auth-hpds-ec2-id&quot;].value&apos; terraform.tfstate)
-echo &quot;${auth-hpds_instance_id}&quot;
+echo &quot;Extract HPDS instance ID for $TARGET_STACK stack&quot;
+auth_hpds_instance_id=$(jq -r &apos;.outputs[&quot;hpds-ec2-auth-id&quot;].value&apos; terraform.tfstate)
+echo &quot;${auth_hpds_instance_id}&quot;
 
-update_auth-hpds_container=&quot;sudo /opt/picsure/deploy-auth-hpds.sh \
-        --stack_s3_bucket $STACK_S3_BUCKET \
-        --dataset_s3_object_key $DATASET_S3_OBJECT_KEY \
-        --genomic_dataset_s3_object_key $GENOMIC_DATASET_S3_OBJECT_KEY \
-        --target_stack $TARGET_STACK&quot;
+update_auth_hpds_container=&quot;sudo sh /opt/picsure/deploy-auth-hpds.sh \
+        --stack_s3_bucket &quot;$stack_s3_bucket&quot; \
+        --dataset_s3_object_key &quot;$DATASET_S3_OBJECT_KEY&quot; \
+        --genomic_dataset_s3_object_key &quot;$GENOMIC_DATASET_S3_OBJECT_KEY&quot; \
+        --target_stack &quot;$TARGET_STACK&quot;&quot;
 
-echo &quot;$update_auth-hpds_container&quot;
-update_auth-hpds_container_json=$(jq -n --arg cmd &quot;$update_auth-hpds_container&quot; &apos;{commands: [$cmd]}&apos;)
-echo &quot;JSON version of run command: $update_auth-hpds_container_json&quot;
+echo &quot;$update_auth_hpds_container&quot;
+update_auth_hpds_container_json=$(jq -n --arg cmd &quot;$update_auth_hpds_container&quot; &apos;{commands: [$cmd]}&apos;)
+echo &quot;JSON version of run command: $update_auth_hpds_container_json&quot;
 
 command_id=$(aws ssm send-command \
-  --instance-ids &quot;${auth-auth-hpds_instance_id}&quot; \
+  --instance-ids &quot;${auth_hpds_instance_id}&quot; \
   --document-name &quot;AWS-RunShellScript&quot; \
   --comment &quot;Deploy auth-hpds in place&quot; \
-  --parameters &quot;$update_auth-hpds_container_json&quot; \
+  --parameters &quot;$update_auth_hpds_container_json&quot; \
   --query &quot;Command.CommandId&quot; \
   --output text \
   --debug)
 
-wait_for_command ${command_id} ${auth-hpds_instance_id}
+wait_for_command ${command_id} ${auth_hpds_instance_id}
 
 reset_role
 </command>
@@ -91,5 +95,12 @@ reset_role
     </hudson.tasks.Shell>
   </builders>
   <publishers/>
-  <buildWrappers/>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.48">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
 </project>

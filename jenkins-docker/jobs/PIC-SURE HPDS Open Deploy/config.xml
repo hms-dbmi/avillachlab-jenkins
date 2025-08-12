@@ -51,33 +51,32 @@ done
 assume_role
 
 # Download the terraform state file
-echo &quot;Download terraform.tfstate file for $target_stack stack&quot;
-aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/$target_stack/terraform.tfstate terraform.tfstate
+echo &quot;Download terraform.tfstate file for $TARGET_STACK stack&quot;
+aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/$TARGET_STACK/terraform.tfstate terraform.tfstate
 
 # Extract the Wildfly EC2 instance ID
-echo &quot;Extract HPDS instance ID for $target_stack stack&quot;
-open-hpds_instance_id=$(jq -r &apos;.outputs[&quot;open-hpds-ec2-id&quot;].value&apos; terraform.tfstate)
-echo &quot;${open-hpds_instance_id}&quot;
+echo &quot;Extract HPDS instance ID for $TARGET_STACK stack&quot;
+open_hpds_instance_id=$(jq -r &apos;.outputs[&quot;hpds-ec2-open-id&quot;].value&apos; terraform.tfstate)
+echo &quot;${open_hpds_instance_id}&quot;
 
-update_open-hpds_container=&quot;sudo /opt/picsure/deploy-open-hpds.sh \
+update_open_hpds_container=&quot;sudo sh /opt/picsure/deploy-open-hpds.sh \
         --stack_s3_bucket $STACK_S3_BUCKET \
         --destigmatized_dataset_s3_object_key $DESTIGMATIZED_DATASET_S3_OBJECT_KEY \
         --target_stack $TARGET_STACK&quot;
 
-echo &quot;$update_open-hpds_container&quot;
-update_open-hpds_container_json=$(jq -n --arg cmd &quot;$update_open-hpds_container&quot; &apos;{commands: [$cmd]}&apos;)
-echo &quot;JSON version of run command: $update_open-hpds_container_json&quot;
+update_open_hpds_container_json=$(jq -n --arg cmd &quot;$update_open_hpds_container&quot; &apos;{commands: [$cmd]}&apos;)
+echo &quot;JSON version of run command: $update_open_hpds_container_json&quot;
 
 command_id=$(aws ssm send-command \
-  --instance-ids &quot;${open-hpds_instance_id}&quot; \
+  --instance-ids &quot;$open_hpds_instance_id&quot; \
   --document-name &quot;AWS-RunShellScript&quot; \
   --comment &quot;Deploy open-hpds in place&quot; \
-  --parameters &quot;$update_open-hpds_container_json&quot; \
+  --parameters &quot;$update_open_hpds_container_json&quot; \
   --query &quot;Command.CommandId&quot; \
   --output text \
   --debug)
 
-wait_for_command ${command_id} ${open-hpds_instance_id}
+wait_for_command ${command_id} ${open_hpds_instance_id}
 
 reset_role
 </command>
