@@ -1,8 +1,8 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <flow-definition plugin="workflow-job@1540.v295eccc9778f">
   <actions>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2258.v4e96d2b_da_f9b_"/>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2258.v4e96d2b_da_f9b_">
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2265.v140e610fe9d5"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2265.v140e610fe9d5">
       <jobProperties/>
       <triggers/>
       <parameters/>
@@ -89,10 +89,15 @@
           <name>DATA_S3_OBJECT_KEY</name>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>STACK_S3_BUCKET</name>
+          <defaultValue>${stack_s3_bucket}</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@4175.ve65b_fa_663eed">
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@4183.v94b_6fd39da_c1">
     <script>import groovy.json.JsonSlurper;
 
 def retrieveBuildSpecId = &apos;&apos;
@@ -312,7 +317,7 @@ pipeline {
               if (params.INCLUDE_PIC_SURE_HPDS_AUTH) {
                 build job: &apos;PIC-SURE HPDS Auth Deploy&apos;, parameters: [
                   [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;STACK_S3_BUCKET&apos;, value: String.valueOf(params.STACK_S3_BUCKET ?: &apos;&apos;)],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;STACK_S3_BUCKET&apos;, value: STACK_S3_BUCKET],
                   [$class: &apos;StringParameterValue&apos;, name: &apos;DATA_S3_OBJECT_KEY&apos;, value: String.valueOf(params.DATA_S3_OBJECT_KEY)],
                   [$class: &apos;StringParameterValue&apos;, name: &apos;GENOMIC_DATASET_S3_OBJECT_KEY&apos;, value: String.valueOf(params.GENOMIC_DATASET_S3_OBJECT_KEY)]
                 ]
@@ -326,7 +331,7 @@ pipeline {
               if (params.INCLUDE_PIC_SURE_HPDS_OPEN) {
                 build job: &apos;PIC-SURE HPDS Open Deploy&apos;, parameters: [
                   [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;STACK_S3_BUCKET&apos;, value: String.valueOf(params.STACK_S3_BUCKET ?: &apos;&apos;)],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;STACK_S3_BUCKET&apos;, value: STACK_S3_BUCKET],
                   [$class: &apos;StringParameterValue&apos;, name: &apos;DESTIGMATIZED_DATASET_S3_OBJECT_KEY&apos;, value: String.valueOf(params.DESTIGMATIZED_DATASET_S3_OBJECT_KEY)]
                 ]
               } else {
