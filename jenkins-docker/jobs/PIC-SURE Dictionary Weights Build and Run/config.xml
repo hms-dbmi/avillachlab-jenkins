@@ -1,8 +1,8 @@
 <?xml version='1.1' encoding='UTF-8'?>
-<flow-definition plugin="workflow-job@1447.v559b_c710cd2e">
+<flow-definition plugin="workflow-job@1540.v295eccc9778f">
   <actions>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2214.vb_b_34b_2ea_9b_83"/>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2214.vb_b_34b_2ea_9b_83">
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2265.v140e610fe9d5"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2265.v140e610fe9d5">
       <jobProperties/>
       <triggers/>
       <parameters>
@@ -14,9 +14,9 @@
         <string>DOCKER_IMAGE_VERSION</string>
         <string>GRANDPARENT_DISPLAY</string>
         <string>DESCRIPTION</string>
+        <string>GIT_HASH</string>
         <string>DOCKER_REPO</string>
         <string>FULL_NAME</string>
-        <string>GIT_HASH</string>
         <string>DATASOURCE_USERNAME</string>
         <string>DATASOURCE_URL</string>
         <string>PARENT_DISPLAY</string>
@@ -29,20 +29,6 @@
   <description></description>
   <keepDependencies>false</keepDependencies>
   <properties>
-    <org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
-      <triggers>
-        <jenkins.triggers.ReverseBuildTrigger>
-          <spec></spec>
-          <upstreamProjects>Database PSQL - Dictionary Import dump and pg_restore</upstreamProjects>
-          <threshold>
-            <name>SUCCESS</name>
-            <ordinal>0</ordinal>
-            <color>BLUE</color>
-            <completeBuild>true</completeBuild>
-          </threshold>
-        </jenkins.triggers.ReverseBuildTrigger>
-      </triggers>
-    </org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
@@ -148,17 +134,17 @@
           <spec></spec>
           <upstreamProjects>Database PSQL - Dictionary Import dump and pg_restore</upstreamProjects>
           <threshold>
-            <name>NONE</name>
-            <ordinal>-1</ordinal>
-            <color>GREY</color>
+            <name>SUCCESS</name>
+            <ordinal>0</ordinal>
+            <color>BLUE</color>
             <completeBuild>true</completeBuild>
           </threshold>
         </jenkins.triggers.ReverseBuildTrigger>
       </triggers>
     </org.jenkinsci.plugins.workflow.job.properties.PipelineTriggersJobProperty>
   </properties>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition" plugin="workflow-cps@3969.vdc9d3a_efcc6a_">
-    <scm class="hudson.plugins.git.GitSCM" plugin="git@5.6.0">
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition" plugin="workflow-cps@4183.v94b_6fd39da_c1">
+    <scm class="hudson.plugins.git.GitSCM" plugin="git@5.7.0">
       <configVersion>2</configVersion>
       <userRemoteConfigs>
         <hudson.plugins.git.UserRemoteConfig>
@@ -174,7 +160,7 @@
       <submoduleCfg class="empty-list"/>
       <extensions/>
     </scm>
-    <scriptPath>jenkins-docker/jobs/PIC-SURE Dictionary Weights - Jenkinsfile/jenkinsfile</scriptPath>
+    <scriptPath>jenkins-docker/jobs/PIC-SURE Dictionary Weights Build and Run/jenkinsfile</scriptPath>
     <lightweight>false</lightweight>
   </definition>
   <triggers/>
