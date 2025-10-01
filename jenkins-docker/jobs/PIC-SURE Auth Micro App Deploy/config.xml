@@ -1,0 +1,101 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>STACK_S3_BUCKET</name>
+          <defaultValue>${stack_s3_bucket}</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>TARGET_STACK</name>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>DATASET_S3_OBJECT_KEY</name>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>ENABLE_DEBUG</name>
+          <defaultValue>false</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>SPRING_PROFILE</name>
+          <defaultValue>prod</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.scm.NullSCM"/>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <jdk>(System)</jdk>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+
+# Source folder containing the scripts
+source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+ls -la &quot;$source_scripts_folder&quot;
+
+# Iterate through the files in the folder and source them
+for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+    chmod +x &quot;$script_file&quot;
+    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+        echo &quot;sourcing $script_file&quot;
+        source &quot;$script_file&quot;
+    fi
+done
+
+assume_role
+
+# Download the terraform state file
+echo &quot;Download terraform.tfstate file for ${TARGET_STACK} stack&quot;
+aws s3 cp s3://${STACK_S3_BUCKET}/deployment_state_metadata/${TARGET_STACK}/terraform.tfstate terraform.tfstate
+
+exit 0;
+# Extract the Wildfly EC2 instance ID
+echo &quot;Extract Wildfly instance ID for $TARGET_STACK stack&quot;
+wildfly_instance_id=$(jq -r &apos;.outputs[&quot;wildfly-ec2-id&quot;].value&apos; terraform.tfstate)
+echo &quot;${wildfly_instance_id}&quot;
+
+update_psama_container=&quot;sudo /opt/picsure/deploy-psama.sh \
+        --stack_s3_bucket $STACK_S3_BUCKET \
+        --target_stack $TARGET_STACK \
+        --dataset_s3_object_key $DATASET_S3_OBJECT_KEY \
+        --enable_debug $ENABLE_DEBUG \
+        --spring_profile $SPRING_PROFILE&quot;
+
+
+echo &quot;$update_psama_container&quot;
+update_psama_container_json=$(jq -n --arg cmd &quot;$update_psama_container&quot; &apos;{commands: [$cmd]}&apos;)
+
+command_id=$(aws ssm send-command \
+  --instance-ids &quot;${wildfly_instance_id}&quot; \
+  --document-name &quot;AWS-RunShellScript&quot; \
+  --comment &quot;Set JAVA_OPTS environment variable&quot; \
+  --parameters &quot;$update_psama_container_json&quot; \
+  --query &quot;Command.CommandId&quot; \
+  --output text)
+
+wait_for_command ${command_id} ${wildfly_instance_id}
+
+wait_for_spring_boot_ssm_logs ${wildfly_instance_id} &quot;psama&quot;
+
+reset_role</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers/>
+</project>

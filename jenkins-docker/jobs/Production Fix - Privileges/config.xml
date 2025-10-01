@@ -94,15 +94,15 @@ pipeline {
         stage(&apos;Database - Dump&apos;) {
             steps {
                 script {
-                    def result = build job: &apos;Database - Copy&apos;, parameters: 
+                    def result = build job: &apos;Database Copy&apos;, parameters:
                     [[$class: &apos;StringParameterValue&apos;, name: &apos;SOURCE_DATABASE&apos;, value: &quot;auth&quot;]]
                 }
             }
         }
-        stage(&apos;Database - Copy&apos;) {
+        stage(&apos;Database Copy&apos;) {
             steps {
                 script {
-                    def result = build job: &apos;Database - Copy&apos;, parameters: 
+                    def result = build job: &apos;Database Copy&apos;, parameters:
                     [[$class: &apos;StringParameterValue&apos;, name: &apos;SOURCE_DATABASE&apos;, value: &quot;auth&quot;],
                     [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_DATABASE&apos;, value: &quot;auth2&quot;]]
                 }
@@ -125,7 +125,7 @@ pipeline {
         stage(&apos;Update PSAMA on WildFly&apos;) {
             steps {
                 script {
-                    def result = build job: &apos;Deploy PSAMA to Existing WildFly EC2 - Standalone Tomcat Container&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: TARGET_STACK],[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId]]
+                    def result = build job: &apos;PIC-SURE Auth Micro App Deploy&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: TARGET_STACK],[$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId]]
                 }
             }
         }

@@ -131,7 +131,7 @@
         <string>Destroy Old Jenkins Server</string>
         <string>List Instance Profiles</string>
         <string>PIC-SURE Auth Micro-App Build</string>
-        <string>PIC-SURE Wildfly Image Build</string>
+        <string>PIC-SURE WildFly Build</string>
         <string>PIC-SURE-API Build</string>
         <string>PIC-SURE-HPDS Build</string>
         <string>PIC-SURE-Frontend Build</string>
@@ -165,6 +165,62 @@
           <string>Run Morning Jobs</string>
           <string>Run Nightly Jobs</string>
         </jobNames>
+    </listView>
+    <listView>
+      <owner class="hudson" reference="../../.."/>
+      <n>PIC-SURE Pipeline and Builds</n>
+      <filterExecutors>false</filterExecutors>
+      <filterQueue>false</filterQueue>
+      <properties class="hudson.model.View$PropertyList"/>
+      <jobNames>
+        <comparator class="hudson.util.CaseInsensitiveComparator"/>
+        <string>PIC-SURE Pipeline</string>
+        <string>PIC-SURE API Build</string>
+        <string>PIC-SURE Auth Micro App Build</string>
+        <string>PIC-SURE Dictionary Build</string>
+        <string>PIC-SURE Frontend Build</string>
+        <string>PIC-SURE HPDS Build</string>
+        <string>PIC-SURE WildFly Build</string>
+      </jobNames>
+      <jobFilters/>
+      <columns>
+        <hudson.views.StatusColumn/>
+        <hudson.views.WeatherColumn/>
+        <hudson.views.JobColumn/>
+        <hudson.views.LastSuccessColumn/>
+        <hudson.views.LastFailureColumn/>
+        <hudson.views.LastDurationColumn/>
+        <hudson.views.BuildButtonColumn/>
+      </columns>
+      <recurse>false</recurse>
+    </listView>
+    <listView>
+      <owner class="hudson" reference="../../.."/>
+      <n>Incremental Deployment</n>
+      <filterExecutors>false</filterExecutors>
+      <filterQueue>false</filterQueue>
+      <properties class="hudson.model.View$PropertyList"/>
+      <jobNames>
+        <comparator class="hudson.util.CaseInsensitiveComparator"/>
+        <string>PIC-SURE Auth Micro App Build and Deploy</string>
+        <string>PIC-SURE Dictionary Build and Deploy</string>
+        <string>PIC-SURE Frontend Build and Deploy</string>
+        <string>PIC-SURE HPDS Auth Build and Deploy</string>
+        <string>PIC-SURE HPDS Open Build and Deploy</string>
+        <string>PIC-SURE Pipeline Build and Deploy</string>
+        <string>PIC-SURE WildFly Build and Deploy</string>
+      </jobNames>
+      <jobFilters/>
+      <columns>
+        <hudson.views.StatusColumn/>
+        <hudson.views.WeatherColumn/>
+        <hudson.views.JobColumn/>
+        <hudson.views.LastSuccessColumn/>
+        <hudson.views.LastFailureColumn/>
+        <hudson.views.LastDurationColumn/>
+        <hudson.views.BuildButtonColumn/>
+      </columns>
+      <recurse>false</recurse>
     </listView>
   </views>
   <primaryView>Deployment</primaryView>

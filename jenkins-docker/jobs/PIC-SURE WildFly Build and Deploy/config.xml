@@ -1,0 +1,183 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job@1540.v295eccc9778f">
+  <actions>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2258.v4e96d2b_da_f9b_"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2258.v4e96d2b_da_f9b_">
+      <jobProperties/>
+      <triggers/>
+      <parameters>
+        <string>TARGET_STACK</string>
+        <string>STACK_S3_BUCKET</string>
+        <string>RUN_DATABASE_MIGRATIONS</string>
+        <string>DATASET_S3_OBJECT_KEY</string>
+        <string>git_hash</string>
+      </parameters>
+      <options/>
+    </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
+  </actions>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.plugins.copyartifact.CopyArtifactPermissionProperty plugin="copyartifact@770.va_6c69e063442">
+      <projectNameList>
+        <string>*</string>
+      </projectNameList>
+    </hudson.plugins.copyartifact.CopyArtifactPermissionProperty>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.ChoiceParameterDefinition>
+          <name>TARGET_STACK</name>
+          <description>Based on selection we determine if is a or b stack.</description>
+          <choices>
+            <string>staging</string>
+            <string>live</string>
+          </choices>
+        </hudson.model.ChoiceParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>git_hash</name>
+          <description>Leave empty to use Build Spec</description>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>DATASET_S3_OBJECT_KEY</name>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>STACK_S3_BUCKET</name>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>RUN_DATABASE_MIGRATIONS</name>
+          <description>Run database migrations</description>
+          <defaultValue>true</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@4175.ve65b_fa_663eed">
+    <script>import groovy.json.JsonSlurper;
+def bdc_ui_docker_tag;
+
+def retrieveBuildSpecId;
+def bdcUIBuildSpecId;
+def overrideUiBuildSpec;
+def pipelineBuildId;
+def build_hashes = {};
+def hasOverrideUI;
+def infrastructure_git_hash;
+def targetStack;
+pipeline {
+    agent any
+    parameters {
+        choice(name: &apos;TARGET_STACK&apos;, choices: [&apos;staging&apos;,&apos;live&apos;], description: &apos;Based on selection we determine if is a or b stack.&apos;)
+        string(name: &apos;git_hash&apos;, defaultValue: &apos;&apos;, description: &apos;Leave empty to use Build Spec&apos;)
+        string(name: &apos;DATASET_S3_OBJECT_KEY&apos;, defaultValue: &apos;&apos;, description: &apos;&apos;)
+        string(name: &apos;STACK_S3_BUCKET&apos;, defaultValue: &apos;&apos;, description: &apos;&apos;)
+        booleanParam(name: &apos;RUN_DATABASE_MIGRATIONS&apos;, defaultValue: true, description: &apos;Run database migrations&apos;)
+    }
+
+    environment {
+        SOURCE_SCRIPTS_FOLDER = &quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+    }
+
+    stages {
+        stage(&apos;Retrieve Stack&apos;) {
+            steps {
+                script {
+                    targetStack = sh(script: &quot;&quot;&quot;
+                    bash -c &apos;
+                    set +x
+
+                    if [ ! -d &quot;$SOURCE_SCRIPTS_FOLDER&quot; ]; then
+                        echo &quot;Error: Source folder does not exist: $SOURCE_SCRIPTS_FOLDER&quot;
+                        exit 1
+                    fi
+
+                    for script_file in &quot;$SOURCE_SCRIPTS_FOLDER&quot;*.sh; do
+                        chmod +x &quot;\$script_file&quot;
+                        if [ -f &quot;\$script_file&quot; ] &amp;&amp; [ -x &quot;\$script_file&quot; ]; then
+                            . &quot;\$script_file&quot;  # Use dot (.) instead of `source`
+                        fi
+                    done
+
+                    # The PIC-SURE Pipeline is always used to deploy to staging.
+                    get_stack \&quot;${TARGET_STACK}\&quot;
+                    &apos;
+                    &quot;&quot;&quot;, returnStdout: true).trim()
+
+                    println &quot;TARGET_STACK: $targetStack&quot;
+                }
+            }
+        }
+        stage(&apos;Retrieve Build Spec&apos;) {
+            when {
+                    expression { return params.git_hash == &apos;&apos; }
+            }
+            steps {
+                script {
+                    def result = build job: &apos;Retrieve Build Spec&apos;
+                    retrieveBuildSpecId = result.number
+                }
+                script {
+                    copyArtifacts filter: &apos;*&apos;, projectName: &apos;Retrieve Build Spec&apos;, selector: specific(&quot;&quot;+retrieveBuildSpecId)
+                    sh &apos;cat build-spec.json&apos;
+                    sh &apos;cat pipeline_git_commit.txt&apos;
+                    sh &apos;pwd&apos;
+                    def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/PIC-SURE WildFly Build and Deploy/build-spec.json&apos;))
+                    pipelineBuildId = new File(&apos;/var/jenkins_home/workspace/PIC-SURE WildFly Build and Deploy/pipeline_git_commit.txt&apos;).text.trim()
+                    for(def build : buildSpec.application){
+                        build_hashes[build.project_job_git_key] = build.git_hash
+                    }
+                    infrastructure_git_hash = buildSpec.infrastructure_git_hash
+                }
+            }
+        }
+        stage(&apos;Database Migrations&apos;) {
+            when {
+                expression { return params.RUN_DATABASE_MIGRATIONS }
+            }
+            steps {
+                script {
+                    def result = build job: &apos;Database Migrations&apos;, parameters: [
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash],
+                    ]
+                }
+            }
+        }
+        stage(&apos;PIC-SURE API Build&apos;) {
+            steps {
+                script{
+                    def gitHash = git_hash ? git_hash : build_hashes[&apos;PSA&apos;]
+                    def result = build job: &apos;PIC-SURE API Build&apos;, parameters: [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: gitHash]
+                    ]
+                }
+            }
+        }
+        stage(&apos;PIC-SURE WildFly Build&apos;) {
+            steps {
+                script{
+                    def result = build job: &apos;PIC-SURE WildFly Build&apos;, parameters: [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                    ]
+                }
+            }
+        }
+        stage(&apos;PIC-SURE WildFly Deploy&apos;) {
+            steps {
+                script {
+                    def result = build job: &apos;PIC-SURE WildFly Deploy&apos;, parameters:
+                        [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                        ]
+                }
+            }
+        }
+    }
+}</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>

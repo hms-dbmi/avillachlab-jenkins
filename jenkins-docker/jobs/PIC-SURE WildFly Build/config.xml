@@ -1,0 +1,78 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@320.v5a_0933a_e7d61">
+      <autoRebuild>false</autoRebuild>
+      <rebuildDisabled>false</rebuildDisabled>
+    </com.sonyericsson.rebuild.RebuildSettings>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>TARGET_STACK</name>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>S3_BUCKET_NAME</name>
+          <defaultValue>${stack_s3_bucket}</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.1.0">
+    <configVersion>2</configVersion>
+    <userRemoteConfigs>
+      <hudson.plugins.git.UserRemoteConfig>
+        <url>${wildfly_git_repo}</url>
+      </hudson.plugins.git.UserRemoteConfig>
+    </userRemoteConfigs>
+    <branches>
+      <hudson.plugins.git.BranchSpec>
+        <name>${wildfly_git_hash}</name>
+      </hudson.plugins.git.BranchSpec>
+    </branches>
+    <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+    <submoduleCfg class="empty-list"/>
+    <extensions/>
+  </scm>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>aws s3 --sse=AES256 cp s3://$S3_BUCKET_NAME/$TARGET_STACK/containers/pic-sure-api.tar.gz pic-sure-api.tar.gz
+aws s3 --sse=AES256 cp s3://$S3_BUCKET_NAME/$TARGET_STACK/containers/pic-sure-aggregate-resource.tar.gz pic-sure-aggregate-resource.tar.gz
+aws s3 --sse=AES256 cp s3://$S3_BUCKET_NAME/$TARGET_STACK/containers/pic-sure-visualization-resource.tar.gz pic-sure-visualization-resource.tar.gz
+
+PIC_SURE_API_VERSION=`docker load -i pic-sure-api.tar.gz |cut -d &apos;:&apos; -f 3`
+PIC_SURE_AGGREGATE_RESOURCE_VERSION=`docker load -i pic-sure-aggregate-resource.tar.gz |cut -d &apos;:&apos; -f 3`
+PIC_SURE_VISUALIZATION_VERSION=`docker load -i pic-sure-visualization-resource.tar.gz |cut -d &apos;:&apos; -f 3`
+
+echo $PIC_SURE_API_VERSION
+echo $PIC_SURE_AGGREGATE_RESOURCE_VERSION
+echo $PIC_SURE_VISUALIZATION_VERSION
+
+docker build \
+ -f pic-sure-with-aggregate-resource.Dockerfile \
+ --build-arg PIC_SURE_API_VERSION=$PIC_SURE_API_VERSION \
+ --build-arg PIC_SURE_AGGREGATE_VERSION=$PIC_SURE_AGGREGATE_RESOURCE_VERSION \
+ --build-arg PIC_SURE_VISUALIZATION_VERSION=$PIC_SURE_VISUALIZATION_VERSION \
+ -t hms-dbmi/pic-sure-wildfly:${wildfly_git_hash} \
+ .
+ 
+docker save hms-dbmi/pic-sure-wildfly:${wildfly_git_hash} &gt; pic-sure-wildfly.tar.gz
+aws s3 --sse=AES256 cp pic-sure-wildfly.tar.gz s3://$S3_BUCKET_NAME/$TARGET_STACK/containers/pic-sure-wildfly.tar.gz
+
+</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers/>
+</project>

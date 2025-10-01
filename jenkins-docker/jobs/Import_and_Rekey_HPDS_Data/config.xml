@@ -67,8 +67,10 @@ for script_file in &quot;$source_scripts_folder&quot;*.sh; do
     fi
 done
 
+stack=$(get_stack &quot;staging&quot;)
+
 ### Build ETL Image
-aws s3 --sse=AES256 cp s3://${stack_s3_bucket}/releases/jenkins_pipeline_build_${GIT_COMMIT}/pic-sure-hpds-etl.tar.gz pic-sure-hpds-etl.tar.gz
+aws s3 --sse=AES256 cp s3://${stack_s3_bucket}/${stack}/containers/pic-sure-hpds-etl.tar.gz pic-sure-hpds-etl.tar.gz
 
 HPDS_ETL_IMAGE=$(docker load &lt; ./pic-sure-hpds-etl.tar.gz | cut -d &apos; &apos; -f 3)
 echo $HPDS_ETL_IMAGE
@@ -126,7 +128,7 @@ aws s3 --sse=AES256 cp metadata.json s3://${stack_s3_bucket}/data/${destination_
   </builders>
   <publishers/>
   <buildWrappers>
-    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.48">
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.49">
       <deleteDirs>false</deleteDirs>
       <cleanupParameter></cleanupParameter>
       <externalDelete></externalDelete>

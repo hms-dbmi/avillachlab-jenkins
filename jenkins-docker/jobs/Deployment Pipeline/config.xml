@@ -43,6 +43,11 @@ def infrastructure_git_hash
 
 pipeline {
     agent any
+
+    environment {
+        SOURCE_SCRIPTS_FOLDER = &quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+    }
+
     stages {
         stage(&apos;Retrieve Build Spec&apos;) {
             steps {
@@ -80,13 +85,13 @@ pipeline {
                     authSchema: {
                         script {
                             def authSchema = &quot;auth&quot;
-                            def result = build job: &apos;Database - Backup&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;SOURCE_DATABASE&apos;, value: authSchema]]
+                            def result = build job: &apos;Database Backup&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;SOURCE_DATABASE&apos;, value: authSchema]]
                         }
                     },
                     picsureSchema: {
                         script {
                             def picsureSchema = &quot;picsure&quot;
-                            def result = build job: &apos;Database - Backup&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;SOURCE_DATABASE&apos;, value: picsureSchema]]
+                            def result = build job: &apos;Database Backup&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;SOURCE_DATABASE&apos;, value: picsureSchema]]
                         }
                     }
                 )

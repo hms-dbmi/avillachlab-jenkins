@@ -1,0 +1,352 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job@1540.v295eccc9778f">
+  <actions>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2265.v140e610fe9d5"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2265.v140e610fe9d5">
+      <jobProperties/>
+      <triggers/>
+      <parameters/>
+      <options/>
+    </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
+  </actions>
+  <description></description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.plugins.copyartifact.CopyArtifactPermissionProperty plugin="copyartifact@770.va_6c69e063442">
+      <projectNameList>
+        <string>*</string>
+      </projectNameList>
+    </hudson.plugins.copyartifact.CopyArtifactPermissionProperty>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>RELEASE_CONTROL_BRANCH</name>
+          <description>The release control branch you are using. ${release_control_git_hash} is set in the global parameters.</description>
+          <defaultValue>${release_control_git_hash}</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.ChoiceParameterDefinition>
+          <name>TARGET_STACK</name>
+          <description>Based on selection we determine if it is the a or b stack.</description>
+          <choices class="java.util.Arrays$ArrayList">
+            <a class="string-array">
+              <string>staging</string>
+              <string>live</string>
+            </a>
+          </choices>
+        </hudson.model.ChoiceParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>DATASET_S3_OBJECT_KEY</name>
+          <description>Optional. If provided this will update the fence_mapping.json</description>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>INCLUDE_PIC_SURE_API</name>
+          <description>Include PIC-SURE API in the build and deploy process</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>INCLUDE_PIC_SURE_FRONTEND</name>
+          <description>Include UI in the build and deploy process</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>INCLUDE_PIC_SURE_AUTH_MICRO_APP</name>
+          <description>Include PIC-SURE Auth Micro App (PSAMA) in the build and deploy process
+</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>INCLUDE_PIC_SURE_DICTIONARY</name>
+          <description>Include Dictionary in the build and deploy process</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>INCLUDE_PIC_SURE_HPDS_AUTH</name>
+          <description>Include Auth HPDS in the build and deploy process</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>INCLUDE_PIC_SURE_HPDS_OPEN</name>
+          <description>Include Open HPDS in the build and deploy process
+</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>RUN_DATABASE_MIGRATIONS</name>
+          <description>Run database migrations</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>DESTIGMATIZED_DATASET_S3_OBJECT_KEY</name>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>GENOMIC_DATASET_S3_OBJECT_KEY</name>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>DATA_S3_OBJECT_KEY</name>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>STACK_S3_BUCKET</name>
+          <defaultValue>${stack_s3_bucket}</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@4183.v94b_6fd39da_c1">
+    <script>import groovy.json.JsonSlurper;
+
+def retrieveBuildSpecId = &apos;&apos;
+def build_hashes = [:]
+def infrastructure_git_hash
+def targetStack
+def pipelineBuildId
+
+pipeline {
+  agent any
+
+  environment {
+    SOURCE_SCRIPTS_FOLDER = &quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+  }
+
+  stages {
+    stage(&apos;Retrieve Build Spec&apos;) {
+      steps {
+        script {
+          def result = build job: &apos;Retrieve Build Spec&apos;, parameters: [
+            [$class: &apos;StringParameterValue&apos;, name: &apos;RELEASE_CONTROL_BRANCH&apos;, value: RELEASE_CONTROL_BRANCH]
+          ]
+          retrieveBuildSpecId = result.number
+        }
+        script {
+          copyArtifacts filter: &apos;*&apos;, projectName: &apos;Retrieve Build Spec&apos;, selector: specific(&quot;&quot; + retrieveBuildSpecId)
+          sh &apos;cat build-spec.json&apos;
+          sh &apos;cat pipeline_git_commit.txt&apos;
+          def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/PIC-SURE Pipeline Build and Deploy/build-spec.json&apos;))
+          pipelineBuildId = new File(&apos;/var/jenkins_home/workspace/PIC-SURE Pipeline Build and Deploy/pipeline_git_commit.txt&apos;).text.trim()
+          for (def build : buildSpec.application) {
+            build_hashes[build.project_job_git_key] = build.git_hash
+          }
+          infrastructure_git_hash = buildSpec.infrastructure_git_hash
+        }
+      }
+    }
+
+    stage(&apos;Retrieve Stack&apos;) {
+        steps {
+            script {
+                targetStack = sh(script: &quot;&quot;&quot;
+                bash -c &apos;
+                set +x
+
+                if [ ! -d &quot;$SOURCE_SCRIPTS_FOLDER&quot; ]; then
+                    echo &quot;Error: Source folder does not exist: $SOURCE_SCRIPTS_FOLDER&quot;
+                    exit 1
+                fi
+
+                for script_file in &quot;$SOURCE_SCRIPTS_FOLDER&quot;*.sh; do
+                    chmod +x &quot;\$script_file&quot;
+                    if [ -f &quot;\$script_file&quot; ] &amp;&amp; [ -x &quot;\$script_file&quot; ]; then
+                        . &quot;\$script_file&quot;  # Use dot (.) instead of `source`
+                    fi
+                done
+
+                # The PIC-SURE Pipeline is always used to deploy to staging.
+                get_stack \&quot;${TARGET_STACK}\&quot;
+                &apos;
+                &quot;&quot;&quot;, returnStdout: true).trim()
+
+                println &quot;TARGET_STACK: $targetStack&quot;
+            }
+        }
+    }
+
+    stage(&apos;Database Migrations (once)&apos;) {
+      when {
+        expression { return params.RUN_DATABASE_MIGRATIONS &amp;&amp; (params.INCLUDE_PIC_SURE_API || params.INCLUDE_PIC_SURE_AUTH_MICRO_APP) }
+      }
+      steps {
+        script {
+          echo &quot;Running migrations with infrastructure_git_hash=${infrastructure_git_hash}&quot;
+          build job: &apos;Database Migrations&apos;, parameters: [
+            [$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash]
+          ]
+        }
+      }
+    }
+
+    stage(&apos;Application Builds (parallel)&apos;) {
+      steps {
+        parallel (
+          picsureapi: {
+            script {
+              def shouldBuildApi = params.INCLUDE_PIC_SURE_API || params.INCLUDE_PIC_SURE_HPDS_AUTH || params.INCLUDE_PIC_SURE_HPDS_OPEN
+              if (shouldBuildApi) {
+                def apiGit = build_hashes[&apos;PSA&apos;]
+                build job: &apos;PIC-SURE API Build&apos;, parameters: [
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: apiGit]
+                ]
+              } else {
+                echo &apos;Skipping PIC-SURE API Build&apos;
+              }
+
+              if (params.INCLUDE_PIC_SURE_API) {
+                build job: &apos;PIC-SURE WildFly Build&apos;, parameters: [
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
+                ]
+              } else {
+                echo &apos;Skipping WildFly Build (API not selected)&apos;
+              }
+            }
+          },
+
+          picsurefrontend: {
+            script {
+              if (params.INCLUDE_PIC_SURE_FRONTEND) {
+                def feGit = build_hashes[&apos;PSF&apos;]
+                build job: &apos;PIC-SURE Frontend Build&apos;, parameters: [
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: feGit]
+                ]
+              } else {
+                echo &apos;Skipping PIC-SURE Frontend Build&apos;
+              }
+            }
+          },
+
+          picsureauth: {
+            script {
+              if (params.INCLUDE_PIC_SURE_AUTH_MICRO_APP) {
+                def psamaGit = build_hashes[&apos;PSAMA&apos;]
+                build job: &apos;PIC-SURE Auth Micro App Build&apos;, parameters: [
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: psamaGit]
+                ]
+              } else {
+                echo &apos;Skipping PIC-SURE Auth Micro App Build&apos;
+              }
+            }
+          },
+
+          dictionary: {
+            script {
+              if (params.INCLUDE_PIC_SURE_DICTIONARY) {
+                def dictGit = build_hashes[&apos;PSD&apos;]
+                build job: &apos;PIC-SURE Dictionary Build&apos;, parameters: [
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: dictGit]
+                ]
+              } else {
+                echo &apos;Skipping PIC-SURE Dictionary Build&apos;
+              }
+            }
+          }
+        )
+      }
+    }
+
+    stage(&apos;HPDS Build (once)&apos;) {
+      when {
+        expression { return params.INCLUDE_PIC_SURE_HPDS_AUTH || params.INCLUDE_PIC_SURE_HPDS_OPEN }
+      }
+      steps {
+        script {
+          def hpdsGit = build_hashes[&apos;PSH&apos;]
+          build job: &apos;PIC-SURE HPDS Build&apos;, parameters: [
+            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+            [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: hpdsGit]
+          ]
+        }
+      }
+    }
+
+    stage(&apos;Application Deploys (parallel)&apos;) {
+      steps {
+        parallel (
+          wildfly_api_deploy: {
+            script {
+              if (params.INCLUDE_PIC_SURE_API) {
+                build job: &apos;PIC-SURE WildFly Deploy&apos;, parameters: [
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
+                ]
+              } else {
+                echo &apos;Skipping WildFly Deploy (API not selected)&apos;
+              }
+            }
+          },
+          frontend_deploy: {
+            script {
+              if (params.INCLUDE_PIC_SURE_FRONTEND) {
+                build job: &apos;PIC-SURE Frontend Deploy&apos;, parameters: [
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
+                ]
+              } else {
+                echo &apos;Skipping PIC-SURE Frontend Deploy&apos;
+              }
+            }
+          },
+          auth_micro_app_deploy: {
+            script {
+              if (params.INCLUDE_PIC_SURE_AUTH_MICRO_APP) {
+                build job: &apos;PIC-SURE Auth Micro App Deploy&apos;, parameters: [
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;DATASET_S3_OBJECT_KEY&apos;, value: String.valueOf(params.DATASET_S3_OBJECT_KEY)]
+                ]
+              } else {
+                echo &apos;Skipping PIC-SURE Auth Micro App Deploy&apos;
+              }
+            }
+          },
+          dictionary_deploy: {
+            script {
+              if (params.INCLUDE_PIC_SURE_DICTIONARY) {
+                build job: &apos;PIC-SURE Dictionary Deploy&apos;, parameters: [
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
+                ]
+              } else {
+                echo &apos;Skipping PIC-SURE Dictionary Deploy&apos;
+              }
+            }
+          },
+          hpds_auth_deploy: {
+            script {
+              if (params.INCLUDE_PIC_SURE_HPDS_AUTH) {
+                build job: &apos;PIC-SURE HPDS Auth Deploy&apos;, parameters: [
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;STACK_S3_BUCKET&apos;, value: STACK_S3_BUCKET],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;DATA_S3_OBJECT_KEY&apos;, value: String.valueOf(params.DATA_S3_OBJECT_KEY)],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;GENOMIC_DATASET_S3_OBJECT_KEY&apos;, value: String.valueOf(params.GENOMIC_DATASET_S3_OBJECT_KEY)]
+                ]
+              } else {
+                echo &apos;Skipping HPDS Auth Deploy&apos;
+              }
+            }
+          },
+          hpds_open_deploy: {
+            script {
+              if (params.INCLUDE_PIC_SURE_HPDS_OPEN) {
+                build job: &apos;PIC-SURE HPDS Open Deploy&apos;, parameters: [
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;STACK_S3_BUCKET&apos;, value: STACK_S3_BUCKET],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;DESTIGMATIZED_DATASET_S3_OBJECT_KEY&apos;, value: String.valueOf(params.DESTIGMATIZED_DATASET_S3_OBJECT_KEY)]
+                ]
+              } else {
+                echo &apos;Skipping HPDS Open Deploy&apos;
+              }
+            }
+          }
+        )
+      }
+    }
+
+  }
+}</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>
