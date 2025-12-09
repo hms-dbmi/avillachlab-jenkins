@@ -63,7 +63,7 @@ echo &quot;JSON version of run command: $update_dictionary_container_json&quot;
 command_id=$(aws ssm send-command \
   --instance-ids &quot;${wildfly_instance_id}&quot; \
   --document-name &quot;AWS-RunShellScript&quot; \
-  --comment &quot;Deploy httpd in place&quot; \
+  --comment &quot;Deploy dictionary in place&quot; \
   --parameters &quot;$update_dictionary_container_json&quot; \
   --query &quot;Command.CommandId&quot; \
   --output text)

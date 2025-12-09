@@ -112,7 +112,7 @@ pipeline {
         }
 
 
-        stage('Run Docker Container') {
+        stage('Run dictionary-weights Container') {
             steps {
                script {
                    // Set the role ARN and session name
@@ -157,6 +157,68 @@ pipeline {
                          -e AWS_SESSION_TOKEN=${sessionToken} \
                          -e AWS_DEFAULT_REGION=us-east-1 \
                          ${params.DOCKER_REPO}/${params.IMAGE_NAME}:${params.DOCKER_IMAGE_VERSION}
+                   """
+               }
+            }
+        }
+
+        stage('Restart EC2 Dictionary Service ) {
+            steps {
+               script {
+                   // Set the role ARN and session name
+                   def roleArn = "arn:aws:iam::${env.app_acct_id}:role/${env.jenkins_provisioning_assume_role_name}"
+                   def sessionName = "jenkins-session-${env.BUILD_ID}"
+
+                   // Assume the role using AWS CLI
+                   def assumeRoleResponse = sh(script: """
+                       aws sts assume-role \
+                         --role-arn "${roleArn}" \
+                         --role-session-name "${sessionName}" \
+                         --output json
+                   """, returnStdout: true).trim()
+
+                   // Parse the JSON response to extract credentials using jq
+                   def accessKeyId = sh(
+                       script: "echo '${assumeRoleResponse}' | jq -r '.Credentials.AccessKeyId'",
+                       returnStdout: true
+                   ).trim()
+
+                   def secretAccessKey = sh(
+                       script: "echo '${assumeRoleResponse}' | jq -r '.Credentials.SecretAccessKey'",
+                       returnStdout: true
+                   ).trim()
+
+                   def sessionToken = sh(
+                       script: "echo '${assumeRoleResponse}' | jq -r '.Credentials.SessionToken'",
+                       returnStdout: true
+                   ).trim()
+
+                   echo "Restart Docker container..."
+                   sh """
+                     # Command to run on the EC2 instance via SSM
+                     restart_dictionary_service_cmd="sudo sh /opt/picsure/restart-dictionary-service.sh"
+                     echo "\$restart_dictionary_service_cmd"
+
+                     # Wrap it into the JSON structure expected by AWS-RunShellScript
+                     restart_dictionary_service_json=\$(jq -n --arg cmd "\$restart_dictionary_service_cmd" '{commands: [\$cmd]}')
+                     echo "JSON version of run command: \$restart_dictionary_service_json"
+
+                     # Use the assumed role credentials for this SSM call
+                     export AWS_ACCESS_KEY_ID='${accessKeyId}'
+                     export AWS_SECRET_ACCESS_KEY='${secretAccessKey}'
+                     export AWS_SESSION_TOKEN='${sessionToken}'
+                     export AWS_DEFAULT_REGION='us-east-1'
+
+                     # Send the command to the target instance
+                     command_id=\$(aws ssm send-command \
+                       --instance-ids "${wildfly_instance_id}" \
+                       --document-name "AWS-RunShellScript" \
+                       --comment "Restart dictionary service" \
+                       --parameters "\$restart_dictionary_service_json" \
+                       --query "Command.CommandId" \
+                       --output text)
+
+                     echo "SSM command id: \$command_id"
                    """
                }
             }
