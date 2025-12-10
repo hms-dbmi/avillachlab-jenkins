@@ -299,53 +299,14 @@ pipeline {
                          echo "Polling SSM command status for $wid..."
 
                          status=""
-                         for attempt in $(seq 1 20); do
-                           status=$(aws ssm list-command-invocations \
-                             --region "$region" \
-                             --command-id "$command_id" \
-                             --details \
-                             --query 'CommandInvocations[0].Status' \
-                             --output text 2>/dev/null || true)
+                         status=$(aws ssm list-command-invocations \
+                                                      --region "$region" \
+                                                      --command-id "$command_id" \
+                                                      --details \
+                                                      --query 'CommandInvocations[0].Status' \
+                                                      --output text 2>/dev/null || true)
 
-                           echo "Attempt $attempt: Status = ${status:-<none>}"
-
-                           # If there's no record yet, just wait and try again
-                           if [ -z "$status" ] || [ "$status" = "None" ]; then
-                             echo "No status yet; waiting..."
-                             sleep 10
-                             continue
-                           fi
-
-                           case "$status" in
-                             Success)
-                               echo "Restart script completed successfully on $wid"
-                               break
-                               ;;
-                             Failed|Cancelled|TimedOut)
-                               echo "WARNING: Restart script returned $status on $wid"
-                               echo "This is informational — NOT failing pipeline."
-                               break
-                               ;;
-                             *)
-                               echo "Still running ($status)..."
-                               ;;
-                           esac
-
-                           sleep 10
-                         done
-
-                         # Summarize outcome without implying failure if status is empty
-                         if [ -z "$status" ] || [ "$status" = "None" ]; then
-                           echo "SSM execution status could not be determined after polling (no records returned)."
-                           echo "Not treating as failure — informational only."
-                         elif [ "$status" = "Success" ]; then
-                           echo "SSM execution success for $wid"
-                         else
-                           echo "SSM execution finished in non-success state (status=$status)"
-                           echo "Not treating as failure — informational only."
-                         fi
-
-                       done
+                         echo "$status"
                      '''
                    }
                }
