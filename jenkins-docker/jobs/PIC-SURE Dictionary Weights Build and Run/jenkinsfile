@@ -292,6 +292,50 @@ pipeline {
                          --output text)
 
                        echo "SSM command id for \$wid: \$command_id"
+
+                       # Poll SSM command status until finished
+                       echo "Polling SSM command status for \$wid..."
+
+                       for attempt in {1..20}; do
+                         status=\$(aws ssm list-command-invocations \
+                           --region "\$region" \
+                           --command-id "\$command_id" \
+                           --details \
+                           --query 'CommandInvocations[0].Status' \
+                           --output text 2>/dev/null || true)
+
+                         echo "Attempt \$attempt: Status = \$status"
+
+                         # Terminal states
+                         case "\$status" in
+                           Success)
+                             echo "Restart script completed successfully on \$wid"
+                             break
+                             ;;
+                           Failed|Cancelled|TimedOut)
+                             echo "WARNING: Restart script returned \$status on \$wid"
+                             echo "This is informational — NOT failing pipeline."
+                             break
+                             ;;
+                           "")
+                             echo "No status yet; waiting..."
+                             ;;
+                           *)
+                             echo "Still running..."
+                             ;;
+                         esac
+
+                         sleep 10
+                       done
+
+                       if [ "\$status" = "Success" ]; then
+                         echo "SSM execution success for \$wid"
+                       else
+                         echo "SSM execution did not finish in success state (status=\$status)"
+                         echo "Not treating as failure — informational only."
+                       fi
+
+
                      done
                    """
                }
