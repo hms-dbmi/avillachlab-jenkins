@@ -112,7 +112,7 @@ pipeline {
         }
 
 
-        stage('Run Docker Container') {
+        stage('Run dictionary-weights Container') {
             steps {
                script {
                    // Set the role ARN and session name
@@ -158,6 +158,156 @@ pipeline {
                          -e AWS_DEFAULT_REGION=us-east-1 \
                          ${params.DOCKER_REPO}/${params.IMAGE_NAME}:${params.DOCKER_IMAGE_VERSION}
                    """
+               }
+            }
+        }
+
+        stage('Restart EC2 Dictionary Service') {
+            steps {
+               script {
+                   // Set the role ARN and session name
+                   def roleArn = "arn:aws:iam::${env.app_acct_id}:role/${env.jenkins_provisioning_assume_role_name}"
+                   def sessionName = "jenkins-session-${env.BUILD_ID}"
+
+                   // Assume the role using AWS CLI
+                   def assumeRoleResponse = sh(script: """
+                       aws sts assume-role \
+                         --role-arn "${roleArn}" \
+                         --role-session-name "${sessionName}" \
+                         --output json
+                   """, returnStdout: true).trim()
+
+                   // Parse the JSON response to extract credentials using jq
+                   def accessKeyId = sh(
+                       script: "echo '${assumeRoleResponse}' | jq -r '.Credentials.AccessKeyId'",
+                       returnStdout: true
+                   ).trim()
+
+                   def secretAccessKey = sh(
+                       script: "echo '${assumeRoleResponse}' | jq -r '.Credentials.SecretAccessKey'",
+                       returnStdout: true
+                   ).trim()
+
+                   def sessionToken = sh(
+                       script: "echo '${assumeRoleResponse}' | jq -r '.Credentials.SessionToken'",
+                       returnStdout: true
+                   ).trim()
+
+                   echo "Discover staging Wildfly instance from ALB target group and restart dictionary service..."
+
+                   withEnv([
+                     "AWS_ACCESS_KEY_ID=${accessKeyId}",
+                     "AWS_SECRET_ACCESS_KEY=${secretAccessKey}",
+                     "AWS_SESSION_TOKEN=${sessionToken}",
+                     "AWS_DEFAULT_REGION=us-east-1"
+                   ]) {
+                     sh '''
+                       set -euo pipefail
+
+                       staging_tg_name="auth-pic-sure-predev-alb-tg-a104"
+                       region="$AWS_DEFAULT_REGION"
+
+                       echo "Looking up target group ARN for '$staging_tg_name'..."
+                       tg_arn=$(aws elbv2 describe-target-groups \
+                         --region "$region" \
+                         --names "$staging_tg_name" \
+                         --query 'TargetGroups[0].TargetGroupArn' \
+                         --output text)
+
+                       if [ -z "$tg_arn" ] || [ "$tg_arn" = "None" ]; then
+                         echo "No target group ARN found for $staging_tg_name. Skipping restart."
+                         exit 0
+                       fi
+
+                       echo "Target group ARN: $tg_arn"
+
+                       # These are IPs (target type = ip), not instance IDs
+                       httpd_ips=$(aws elbv2 describe-target-health \
+                         --region "$region" \
+                         --target-group-arn "$tg_arn" \
+                         --query 'TargetHealthDescriptions[].Target.Id' \
+                         --output text)
+
+                       if [ -z "$httpd_ips" ]; then
+                         echo "No HTTPD targets registered in $staging_tg_name. Skipping restart."
+                         exit 0
+                       fi
+
+                       echo "HTTPD targets in staging TG (IPs): $httpd_ips"
+
+                       # Determine stack identifier (A/B) from one of the HTTPD instances
+                       stack_value=""
+                       for ip in $httpd_ips; do
+                         echo "Looking up EC2 instance for HTTPD IP $ip..."
+                         stack=$(aws ec2 describe-instances \
+                           --region "$region" \
+                           --filters "Name=private-ip-address,Values=$ip" \
+                           --query 'Reservations[0].Instances[0].Tags[?Key==`Stack`].Value | [0]' \
+                           --output text 2>/dev/null || true)
+
+                         if [ -n "$stack" ] && [ "$stack" != "None" ]; then
+                           stack_value="$stack"
+                           echo "Found staging stack '$stack_value' from HTTPD IP $ip"
+                           break
+                         fi
+                       done
+
+                       if [ -z "$stack_value" ]; then
+                         echo "No Stack tag found for any HTTPD target in $staging_tg_name. Skipping restart."
+                         exit 0
+                       fi
+
+                       # Find Wildfly instances in same stack
+                       wildfly_instance_ids=$(aws ec2 describe-instances \
+                         --region "$region" \
+                         --filters "Name=tag:Stack,Values=$stack_value" \
+                                   "Name=tag:Project,Values=Auth PIC-SURE" \
+                                   "Name=tag:Name,Values=Wildfly*" \
+                                   "Name=instance-state-name,Values=running" \
+                         --query 'Reservations[].Instances[].InstanceId' \
+                         --output text)
+
+                       if [ -z "$wildfly_instance_ids" ]; then
+                         echo "No running Wildfly instances found for Stack=$stack_value, Project='Auth PIC-SURE'. Skipping restart."
+                         exit 0
+                       fi
+
+                       echo "Wildfly instances to restart for stack '$stack_value': $wildfly_instance_ids"
+
+                       # Use shebang in the script itself; call it directly
+                       restart_dictionary_service_cmd="sudo /opt/picsure/restart-dictionary-container.sh"
+                       echo "Command that will be executed via SSM: $restart_dictionary_service_cmd"
+
+                       restart_dictionary_service_json=$(jq -n --arg cmd "$restart_dictionary_service_cmd" '{commands: [$cmd]}')
+                       echo "JSON payload for AWS-RunShellScript: $restart_dictionary_service_json"
+
+                       for wid in $wildfly_instance_ids; do
+                         echo "Sending restart command to Wildfly instance $wid"
+
+                         command_id=$(aws ssm send-command \
+                           --region "$region" \
+                           --instance-ids "$wid" \
+                           --document-name "AWS-RunShellScript" \
+                           --comment "Restart dictionary service for stack $stack_value" \
+                           --parameters "$restart_dictionary_service_json" \
+                           --query "Command.CommandId" \
+                           --output text)
+
+                         echo "SSM command id for $wid: $command_id"
+
+                         # Poll SSM command status until finished
+                         echo "Polling SSM command status for $wid..."
+                         sleep 10
+
+                         status=$(aws ssm get-command-invocation \
+                           --command-id "$command_id" \
+                           --instance-id "$wid" \
+                           --query 'Status' \
+                           --output text 2>/dev/null || true)
+
+                       done
+                     '''
+                   }
                }
             }
         }

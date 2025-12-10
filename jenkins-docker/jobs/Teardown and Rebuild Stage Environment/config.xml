@@ -343,12 +343,17 @@ else
   #aws s3 cp ../s3-deployment-roles/terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate_roles
 
   # Files that are needed, but are do not need to rendered by terraform.
+  # Deploy Scripts
   aws s3 --sse=AES256 cp scripts/deploy/deploy-wildfly.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-wildfly.sh
   aws s3 --sse=AES256 cp scripts/deploy/deploy-psama.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-psama.sh
   aws s3 --sse=AES256 cp scripts/deploy/deploy-dictionary.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-dictionary.sh
   aws s3 --sse=AES256 cp scripts/deploy/deploy-httpd.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-httpd.sh
   aws s3 --sse=AES256 cp scripts/deploy/deploy-auth-hpds.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-auth-hpds.sh
   aws s3 --sse=AES256 cp scripts/deploy/deploy-open-hpds.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-open-hpds.sh
+
+  # SSM Scripts
+  aws s3 --sse=AES256 cp scripts/ssm/restart-dictionary-container.sh s3://$stack_s3_bucket/$target_stack/scripts/restart-dictionary-container.sh
+
 
   # These files are uploaded to s3 because user-scripts download them. The user scripts are already running
   # so this is a race condition at this point as terraform has been applied
