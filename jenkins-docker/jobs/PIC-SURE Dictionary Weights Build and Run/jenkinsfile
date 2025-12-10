@@ -303,7 +303,7 @@ pipeline {
                            --command-id "$command_id" \
                            --instance-id "$wid" \
                            --query 'Status' \
-                           --output text 2>/dev/null || true)
+                           --output text)
 
                        done
                      '''
