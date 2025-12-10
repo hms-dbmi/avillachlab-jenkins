@@ -195,158 +195,160 @@ pipeline {
 
                    echo "Discover staging Wildfly instance from ALB target group and restart dictionary service..."
 
-                   sh """
-                     set -euo pipefail
+                   withEnv([
+                     "AWS_ACCESS_KEY_ID=${accessKeyId}",
+                     "AWS_SECRET_ACCESS_KEY=${secretAccessKey}",
+                     "AWS_SESSION_TOKEN=${sessionToken}",
+                     "AWS_DEFAULT_REGION=us-east-1"
+                   ]) {
+                     sh '''
+                       set -euo pipefail
 
-                     export AWS_ACCESS_KEY_ID='${accessKeyId}'
-                     export AWS_SECRET_ACCESS_KEY='${secretAccessKey}'
-                     export AWS_SESSION_TOKEN='${sessionToken}'
-                     export AWS_DEFAULT_REGION='us-east-1'
+                       staging_tg_name="auth-pic-sure-predev-alb-tg-a104"
+                       region="$AWS_DEFAULT_REGION"
 
-                     staging_tg_name="auth-pic-sure-predev-alb-tg-a104"
-                     region="\$AWS_DEFAULT_REGION"
-
-                     echo "Looking up target group ARN for '\$staging_tg_name'..."
-                     tg_arn=\$(aws elbv2 describe-target-groups \
-                       --region "\$region" \
-                       --names "\$staging_tg_name" \
-                       --query 'TargetGroups[0].TargetGroupArn' \
-                       --output text)
-
-                     if [ -z "\$tg_arn" ] || [ "\$tg_arn" = "None" ]; then
-                       echo "No target group ARN found for \$staging_tg_name. Skipping restart."
-                       exit 0
-                     fi
-
-                     echo "Target group ARN: \$tg_arn"
-
-                     # These are IPs (target type = ip), not instance IDs
-                     httpd_ips=\$(aws elbv2 describe-target-health \
-                       --region "\$region" \
-                       --target-group-arn "\$tg_arn" \
-                       --query 'TargetHealthDescriptions[].Target.Id' \
-                       --output text)
-
-                     if [ -z "\$httpd_ips" ]; then
-                       echo "No HTTPD targets registered in \$staging_tg_name. Skipping restart."
-                       exit 0
-                     fi
-
-                     echo "HTTPD targets in staging TG (IPs): \$httpd_ips"
-
-                     # Determine stack identifier (A/B) from one of the HTTPD instances
-                     stack_value=""
-                     for ip in \$httpd_ips; do
-                       echo "Looking up EC2 instance for HTTPD IP \$ip..."
-                       stack=\$(aws ec2 describe-instances \
-                         --region "\$region" \
-                         --filters "Name=private-ip-address,Values=\$ip" \
-                         --query 'Reservations[0].Instances[0].Tags[?Key==`Stack`].Value | [0]' \
-                         --output text 2>/dev/null || true)
-
-                       if [ -n "\$stack" ] && [ "\$stack" != "None" ]; then
-                         stack_value="\$stack"
-                         echo "Found staging stack '\$stack_value' from HTTPD IP \$ip"
-                         break
-                       fi
-                     done
-
-                     if [ -z "\$stack_value" ]; then
-                       echo "No Stack tag found for any HTTPD target in \$staging_tg_name. Skipping restart."
-                       exit 0
-                     fi
-
-                     # Find Wildfly instances in same stack
-                     wildfly_instance_ids=\$(aws ec2 describe-instances \
-                       --region "\$region" \
-                       --filters "Name=tag:Stack,Values=\$stack_value" \
-                                 "Name=tag:Project,Values=Auth PIC-SURE" \
-                                 "Name=tag:Name,Values=Wildfly*" \
-                                 "Name=instance-state-name,Values=running" \
-                       --query 'Reservations[].Instances[].InstanceId' \
-                       --output text)
-
-                     if [ -z "\$wildfly_instance_ids" ]; then
-                       echo "No running Wildfly instances found for Stack=\$stack_value, Project='Auth PIC-SURE'. Skipping restart."
-                       exit 0
-                     fi
-
-                     echo "Wildfly instances to restart for stack '\$stack_value': \$wildfly_instance_ids"
-
-                     restart_dictionary_service_cmd="sudo /opt/picsure/restart-dictionary-container.sh"
-                     echo "Command that will be executed via SSM: \$restart_dictionary_service_cmd"
-
-                     restart_dictionary_service_json=\$(jq -n --arg cmd "\$restart_dictionary_service_cmd" '{commands: [\$cmd]}')
-                     echo "JSON payload for AWS-RunShellScript: \$restart_dictionary_service_json"
-
-                     for wid in \$wildfly_instance_ids; do
-                       echo "Sending restart command to Wildfly instance \$wid"
-
-                       command_id=\$(aws ssm send-command \
-                         --region "\$region" \
-                         --instance-ids "\$wid" \
-                         --document-name "AWS-RunShellScript" \
-                         --comment "Restart dictionary service for stack \$stack_value" \
-                         --parameters "\$restart_dictionary_service_json" \
-                         --query "Command.CommandId" \
+                       echo "Looking up target group ARN for '$staging_tg_name'..."
+                       tg_arn=$(aws elbv2 describe-target-groups \
+                         --region "$region" \
+                         --names "$staging_tg_name" \
+                         --query 'TargetGroups[0].TargetGroupArn' \
                          --output text)
 
-                       echo "SSM command id for \$wid: \$command_id"
-
-                       # Poll SSM command status until finished
-                       echo "Polling SSM command status for \$wid..."
-
-                       status=""
-                       for attempt in $(seq 1 20); do
-                         status=\$(aws ssm list-command-invocations \
-                           --region "\$region" \
-                           --command-id "\$command_id" \
-                           --details \
-                           --query 'CommandInvocations[0].Status' \
-                           --output text 2>/dev/null || true)
-
-                         echo "Attempt \$attempt: Status = \${status:-<none>}"
-
-                         # If there's no record yet, just wait and try again
-                         if [ -z "\$status" ] || [ "\$status" = "None" ]; then
-                           echo "No status yet; waiting..."
-                           sleep 10
-                           continue
-                         fi
-
-                         case "\$status" in
-                           Success)
-                             echo "Restart script completed successfully on \$wid"
-                             break
-                             ;;
-                           Failed|Cancelled|TimedOut)
-                             echo "WARNING: Restart script returned \$status on \$wid"
-                             echo "This is informational — NOT failing pipeline."
-                             break
-                             ;;
-                           *)
-                             echo "Still running (\$status)..."
-                             ;;
-                         esac
-
-                         sleep 10
-                       done
-
-                       # Summarize outcome without implying failure if status is empty
-                       if [ -z "\$status" ] || [ "\$status" = "None" ]; then
-                         echo "SSM execution status could not be determined after polling (no records returned)."
-                         echo "Not treating as failure — informational only."
-                       elif [ "\$status" = "Success" ]; then
-                         echo "SSM execution success for \$wid"
-                       else
-                         echo "SSM execution finished in non-success state (status=\$status)"
-                         echo "Not treating as failure — informational only."
+                       if [ -z "$tg_arn" ] || [ "$tg_arn" = "None" ]; then
+                         echo "No target group ARN found for $staging_tg_name. Skipping restart."
+                         exit 0
                        fi
 
-                     done
-                   """
+                       echo "Target group ARN: $tg_arn"
+
+                       # These are IPs (target type = ip), not instance IDs
+                       httpd_ips=$(aws elbv2 describe-target-health \
+                         --region "$region" \
+                         --target-group-arn "$tg_arn" \
+                         --query 'TargetHealthDescriptions[].Target.Id' \
+                         --output text)
+
+                       if [ -z "$httpd_ips" ]; then
+                         echo "No HTTPD targets registered in $staging_tg_name. Skipping restart."
+                         exit 0
+                       fi
+
+                       echo "HTTPD targets in staging TG (IPs): $httpd_ips"
+
+                       # Determine stack identifier (A/B) from one of the HTTPD instances
+                       stack_value=""
+                       for ip in $httpd_ips; do
+                         echo "Looking up EC2 instance for HTTPD IP $ip..."
+                         stack=$(aws ec2 describe-instances \
+                           --region "$region" \
+                           --filters "Name=private-ip-address,Values=$ip" \
+                           --query 'Reservations[0].Instances[0].Tags[?Key==`Stack`].Value | [0]' \
+                           --output text 2>/dev/null || true)
+
+                         if [ -n "$stack" ] && [ "$stack" != "None" ]; then
+                           stack_value="$stack"
+                           echo "Found staging stack '$stack_value' from HTTPD IP $ip"
+                           break
+                         fi
+                       done
+
+                       if [ -z "$stack_value" ]; then
+                         echo "No Stack tag found for any HTTPD target in $staging_tg_name. Skipping restart."
+                         exit 0
+                       fi
+
+                       # Find Wildfly instances in same stack
+                       wildfly_instance_ids=$(aws ec2 describe-instances \
+                         --region "$region" \
+                         --filters "Name=tag:Stack,Values=$stack_value" \
+                                   "Name=tag:Project,Values=Auth PIC-SURE" \
+                                   "Name=tag:Name,Values=Wildfly*" \
+                                   "Name=instance-state-name,Values=running" \
+                         --query 'Reservations[].Instances[].InstanceId' \
+                         --output text)
+
+                       if [ -z "$wildfly_instance_ids" ]; then
+                         echo "No running Wildfly instances found for Stack=$stack_value, Project='Auth PIC-SURE'. Skipping restart."
+                         exit 0
+                       fi
+
+                       echo "Wildfly instances to restart for stack '$stack_value': $wildfly_instance_ids"
+
+                       # Use shebang in the script itself; call it directly
+                       restart_dictionary_service_cmd="sudo /opt/picsure/restart-dictionary-service.sh"
+                       echo "Command that will be executed via SSM: $restart_dictionary_service_cmd"
+
+                       restart_dictionary_service_json=$(jq -n --arg cmd "$restart_dictionary_service_cmd" '{commands: [$cmd]}')
+                       echo "JSON payload for AWS-RunShellScript: $restart_dictionary_service_json"
+
+                       for wid in $wildfly_instance_ids; do
+                         echo "Sending restart command to Wildfly instance $wid"
+
+                         command_id=$(aws ssm send-command \
+                           --region "$region" \
+                           --instance-ids "$wid" \
+                           --document-name "AWS-RunShellScript" \
+                           --comment "Restart dictionary service for stack $stack_value" \
+                           --parameters "$restart_dictionary_service_json" \
+                           --query "Command.CommandId" \
+                           --output text)
+
+                         echo "SSM command id for $wid: $command_id"
+
+                         # Poll SSM command status until finished
+                         echo "Polling SSM command status for $wid..."
+
+                         status=""
+                         for attempt in $(seq 1 20); do
+                           status=$(aws ssm list-command-invocations \
+                             --region "$region" \
+                             --command-id "$command_id" \
+                             --details \
+                             --query 'CommandInvocations[0].Status' \
+                             --output text 2>/dev/null || true)
+
+                           echo "Attempt $attempt: Status = ${status:-<none>}"
+
+                           # If there's no record yet, just wait and try again
+                           if [ -z "$status" ] || [ "$status" = "None" ]; then
+                             echo "No status yet; waiting..."
+                             sleep 10
+                             continue
+                           fi
+
+                           case "$status" in
+                             Success)
+                               echo "Restart script completed successfully on $wid"
+                               break
+                               ;;
+                             Failed|Cancelled|TimedOut)
+                               echo "WARNING: Restart script returned $status on $wid"
+                               echo "This is informational — NOT failing pipeline."
+                               break
+                               ;;
+                             *)
+                               echo "Still running ($status)..."
+                               ;;
+                           esac
+
+                           sleep 10
+                         done
+
+                         # Summarize outcome without implying failure if status is empty
+                         if [ -z "$status" ] || [ "$status" = "None" ]; then
+                           echo "SSM execution status could not be determined after polling (no records returned)."
+                           echo "Not treating as failure — informational only."
+                         elif [ "$status" = "Success" ]; then
+                           echo "SSM execution success for $wid"
+                         else
+                           echo "SSM execution finished in non-success state (status=$status)"
+                           echo "Not treating as failure — informational only."
+                         fi
+
+                       done
+                     '''
+                   }
                }
             }
         }
-    }
 }
