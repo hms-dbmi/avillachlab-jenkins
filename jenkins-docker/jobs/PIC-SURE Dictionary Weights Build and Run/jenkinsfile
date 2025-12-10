@@ -302,7 +302,7 @@ pipeline {
                          status=$(aws ssm list-command-invocations \
                                     --command-id "$command_id" \
                                     --details \
-                                    --output text)
+                                    --output text) || true
 
                        done
                      '''
