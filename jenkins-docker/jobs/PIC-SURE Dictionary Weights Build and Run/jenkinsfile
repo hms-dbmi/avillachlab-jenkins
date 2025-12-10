@@ -273,7 +273,7 @@ pipeline {
 
                      echo "Wildfly instances to restart for stack '\$stack_value': \$wildfly_instance_ids"
 
-                     restart_dictionary_service_cmd="sudo ./opt/picsure/restart-dictionary-container.sh"
+                     restart_dictionary_service_cmd="sudo /opt/picsure/restart-dictionary-container.sh"
                      echo "Command that will be executed via SSM: \$restart_dictionary_service_cmd"
 
                      restart_dictionary_service_json=\$(jq -n --arg cmd "\$restart_dictionary_service_cmd" '{commands: [\$cmd]}')
