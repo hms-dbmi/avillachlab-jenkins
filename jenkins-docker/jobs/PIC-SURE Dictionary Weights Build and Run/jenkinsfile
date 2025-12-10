@@ -299,10 +299,11 @@ pipeline {
                          echo "Polling SSM command status for $wid..."
                          sleep 10
 
-                         status=$(aws ssm list-command-invocations \
-                                    --command-id "$command_id" \
-                                    --details \
-                                    --output text) || true
+                         status=$(aws ssm get-command-invocation \
+                           --command-id "$command_id" \
+                           --instance-id "$wid" \
+                           --query 'Status' \
+                           --output text 2>/dev/null || true)
 
                        done
                      '''
