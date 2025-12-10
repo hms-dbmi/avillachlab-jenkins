@@ -199,12 +199,12 @@ pipeline {
                      "AWS_ACCESS_KEY_ID=${accessKeyId}",
                      "AWS_SECRET_ACCESS_KEY=${secretAccessKey}",
                      "AWS_SESSION_TOKEN=${sessionToken}",
-                     "AWS_DEFAULT_REGION=us-east-1"
+                     "AWS_DEFAULT_REGION=us-east-1",
+                     "staging_tg_name=$staging_tg_name"
                    ]) {
                      sh '''
                        set -euo pipefail
 
-                       staging_tg_name="auth-pic-sure-predev-alb-tg-a104"
                        region="$AWS_DEFAULT_REGION"
 
                        echo "Looking up target group ARN for '$staging_tg_name'..."
@@ -303,7 +303,7 @@ pipeline {
                            --command-id "$command_id" \
                            --instance-id "$wid" \
                            --query 'Status' \
-                           --output text 2>/dev/null || true)
+                           --output text)
 
                        done
                      '''
