@@ -162,7 +162,7 @@ pipeline {
             }
         }
 
-        stage('Restart EC2 Dictionary Service ) {
+        stage('Restart EC2 Dictionary Service') {
             steps {
                script {
                    // Set the role ARN and session name
@@ -193,32 +193,106 @@ pipeline {
                        returnStdout: true
                    ).trim()
 
-                   echo "Restart Docker container..."
+                   echo "Discover staging Wildfly instance from ALB target group and restart dictionary service..."
+
                    sh """
-                     # Command to run on the EC2 instance via SSM
-                     restart_dictionary_service_cmd="sudo sh /opt/picsure/restart-dictionary-service.sh"
-                     echo "\$restart_dictionary_service_cmd"
+                     set -euo pipefail
 
-                     # Wrap it into the JSON structure expected by AWS-RunShellScript
-                     restart_dictionary_service_json=\$(jq -n --arg cmd "\$restart_dictionary_service_cmd" '{commands: [\$cmd]}')
-                     echo "JSON version of run command: \$restart_dictionary_service_json"
-
-                     # Use the assumed role credentials for this SSM call
                      export AWS_ACCESS_KEY_ID='${accessKeyId}'
                      export AWS_SECRET_ACCESS_KEY='${secretAccessKey}'
                      export AWS_SESSION_TOKEN='${sessionToken}'
                      export AWS_DEFAULT_REGION='us-east-1'
 
-                     # Send the command to the target instance
-                     command_id=\$(aws ssm send-command \
-                       --instance-ids "${wildfly_instance_id}" \
-                       --document-name "AWS-RunShellScript" \
-                       --comment "Restart dictionary service" \
-                       --parameters "\$restart_dictionary_service_json" \
-                       --query "Command.CommandId" \
+                     staging_tg_name="auth-pic-sure-predev-alb-tg-a104"
+                     region="\$AWS_DEFAULT_REGION"
+
+                     echo "Looking up target group ARN for '\$staging_tg_name'..."
+                     tg_arn=\$(aws elbv2 describe-target-groups \
+                       --region "\$region" \
+                       --names "\$staging_tg_name" \
+                       --query 'TargetGroups[0].TargetGroupArn' \
                        --output text)
 
-                     echo "SSM command id: \$command_id"
+                     if [ -z "\$tg_arn" ] || [ "\$tg_arn" = "None" ]; then
+                       echo "No target group ARN found for \$staging_tg_name. Skipping restart."
+                       exit 0
+                     fi
+
+                     echo "Target group ARN: \$tg_arn"
+
+                     # These are IPs (target type = ip), not instance IDs
+                     httpd_ips=\$(aws elbv2 describe-target-health \
+                       --region "\$region" \
+                       --target-group-arn "\$tg_arn" \
+                       --query 'TargetHealthDescriptions[].Target.Id' \
+                       --output text)
+
+                     if [ -z "\$httpd_ips" ]; then
+                       echo "No HTTPD targets registered in \$staging_tg_name. Skipping restart."
+                       exit 0
+                     fi
+
+                     echo "HTTPD targets in staging TG (IPs): \$httpd_ips"
+
+                     # Determine stack identifier (A/B) from one of the HTTPD instances
+                     stack_value=""
+                     for ip in \$httpd_ips; do
+                       echo "Looking up EC2 instance for HTTPD IP \$ip..."
+                       stack=\$(aws ec2 describe-instances \
+                         --region "\$region" \
+                         --filters "Name=private-ip-address,Values=\$ip" \
+                         --query 'Reservations[0].Instances[0].Tags[?Key==`Stack`].Value | [0]' \
+                         --output text 2>/dev/null || true)
+
+                       if [ -n "\$stack" ] && [ "\$stack" != "None" ]; then
+                         stack_value="\$stack"
+                         echo "Found staging stack '\$stack_value' from HTTPD IP \$ip"
+                         break
+                       fi
+                     done
+
+                     if [ -z "\$stack_value" ]; then
+                       echo "No Stack tag found for any HTTPD target in \$staging_tg_name. Skipping restart."
+                       exit 0
+                     fi
+
+                     # Find Wildfly instances in same stack
+                     wildfly_instance_ids=\$(aws ec2 describe-instances \
+                       --region "\$region" \
+                       --filters "Name=tag:Stack,Values=\$stack_value" \
+                                 "Name=tag:Project,Values=Auth PIC-SURE" \
+                                 "Name=tag:Name,Values=Wildfly*" \
+                                 "Name=instance-state-name,Values=running" \
+                       --query 'Reservations[].Instances[].InstanceId' \
+                       --output text)
+
+                     if [ -z "\$wildfly_instance_ids" ]; then
+                       echo "No running Wildfly instances found for Stack=\$stack_value, Project='Auth PIC-SURE'. Skipping restart."
+                       exit 0
+                     fi
+
+                     echo "Wildfly instances to restart for stack '\$stack_value': \$wildfly_instance_ids"
+
+                     restart_dictionary_service_cmd="sudo sh /opt/picsure/restart-dictionary-service.sh"
+                     echo "Command that will be executed via SSM: \$restart_dictionary_service_cmd"
+
+                     restart_dictionary_service_json=\$(jq -n --arg cmd "\$restart_dictionary_service_cmd" '{commands: [\$cmd]}')
+                     echo "JSON payload for AWS-RunShellScript: \$restart_dictionary_service_json"
+
+                     for wid in \$wildfly_instance_ids; do
+                       echo "Sending restart command to Wildfly instance \$wid"
+
+                       command_id=\$(aws ssm send-command \
+                         --region "\$region" \
+                         --instance-ids "\$wid" \
+                         --document-name "AWS-RunShellScript" \
+                         --comment "Restart dictionary service for stack \$stack_value" \
+                         --parameters "\$restart_dictionary_service_json" \
+                         --query "Command.CommandId" \
+                         --output text)
+
+                       echo "SSM command id for \$wid: \$command_id"
+                     done
                    """
                }
             }
