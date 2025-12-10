@@ -304,7 +304,7 @@ pipeline {
                            --instance-id "$wid" \
                            --query 'Status' \
                            --output text 2>/dev/null || true)
-
+                         echo "$status"
                        done
                      '''
                    }
