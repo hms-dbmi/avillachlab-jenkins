@@ -1,12 +1,14 @@
 <?xml version='1.1' encoding='UTF-8'?>
-<flow-definition plugin="workflow-job@1540.v295eccc9778f">
+<flow-definition plugin="workflow-job@1559.va_a_533730b_ea_d">
   <actions>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2258.v4e96d2b_da_f9b_"/>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2258.v4e96d2b_da_f9b_">
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2277.v00573e73ddf1"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2277.v00573e73ddf1">
       <jobProperties/>
       <triggers/>
       <parameters>
         <string>STACK_SPECIFIC_APPLICATION_ID</string>
+        <string>TARGET_STACK</string>
+        <string>STACK_S3_BUCKET</string>
         <string>REPOSITORY_NAME</string>
         <string>DATASOURCE_USERNAME</string>
         <string>DOCKER_REGISTRY</string>
@@ -51,6 +53,17 @@
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
+          <name>TARGET_STACK</name>
+          <description>Target stack for application deployment.</description>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>STACK_S3_BUCKET</name>
+          <description>The s3 bucket</description>
+          <defaultValue>${stack_s3_bucket}</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
           <name>git_hash</name>
           <defaultValue>main</defaultValue>
           <trim>true</trim>
@@ -60,16 +73,11 @@
           <defaultValue>${stack_s3_bucket}</defaultValue>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>TARGET_STACK</name>
-          <description>Target stack for application deployment.</description>
-          <trim>true</trim>
-        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition" plugin="workflow-cps@4175.ve65b_fa_663eed">
-    <scm class="hudson.plugins.git.GitSCM" plugin="git@5.7.0">
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition" plugin="workflow-cps@4238.va_6fb_65c1f699">
+    <scm class="hudson.plugins.git.GitSCM" plugin="git@5.8.1">
       <configVersion>2</configVersion>
       <userRemoteConfigs>
         <hudson.plugins.git.UserRemoteConfig>
