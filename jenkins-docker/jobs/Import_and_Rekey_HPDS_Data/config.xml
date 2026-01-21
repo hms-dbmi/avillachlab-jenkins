@@ -105,7 +105,7 @@ head /dev/urandom | tr -dc a-f0-9 | head -c 32 &gt; &quot;$WORKSPACE&quot;/local
 
 #### Execute rekey
 # volume mount pwd that contains original data files as /opt/local/source/
-docker run -i -e HEAPSIZE=25600 -e JAVA_OPTS=&quot;-Xms4g -XX:+UseG1GC&quot; -v &quot;${WORKSPACE}&quot;/local:/opt/local:Z -e LOADER_NAME=RekeyDataset $HPDS_ETL_IMAGE
+docker run -i -e HEAPSIZE=56200 -e JAVA_OPTS=&quot;-Xms4g -XX:+UseG1GC&quot; -v &quot;${WORKSPACE}&quot;/local:/opt/local:Z -e LOADER_NAME=RekeyDataset $HPDS_ETL_IMAGE
 
 ### If destigmatized data set, remove concepts
 if [ &quot;${isDestigmatized}&quot; = &apos;true&apos; ]; then
