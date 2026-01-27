@@ -4,6 +4,10 @@
   <description></description>
   <keepDependencies>false</keepDependencies>
   <properties>
+    <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@338.va_0a_b_50e29397">
+      <autoRebuild>false</autoRebuild>
+      <rebuildDisabled>false</rebuildDisabled>
+    </com.sonyericsson.rebuild.RebuildSettings>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
@@ -63,18 +67,18 @@ assume_role
 echo &quot;Download terraform.tfstate file for ${TARGET_STACK} stack&quot;
 aws s3 cp s3://${S3_STACK_BUCKET}/deployment_state_metadata/${TARGET_STACK}/terraform.tfstate terraform.tfstate
 
-exit 0;
 # Extract the Wildfly EC2 instance ID
 echo &quot;Extract Wildfly instance ID for $TARGET_STACK stack&quot;
 wildfly_instance_id=$(jq -r &apos;.outputs[&quot;wildfly-ec2-id&quot;].value&apos; terraform.tfstate)
 echo &quot;${wildfly_instance_id}&quot;
 
+# Add quotes around all variable references
 update_psama_container=&quot;sudo /opt/picsure/deploy-psama.sh \
-        --stack_s3_bucket $S3_STACK_BUCKET \
-        --target_stack $TARGET_STACK \
-        --dataset_s3_object_key $DATASET_S3_OBJECT_KEY \
-        --enable_debug $ENABLE_DEBUG \
-        --spring_profile $SPRING_PROFILE&quot;
+        --stack_s3_bucket \&quot;$S3_STACK_BUCKET\&quot; \
+        --target_stack \&quot;$TARGET_STACK\&quot; \
+        --dataset_s3_object_key \&quot;$DATASET_S3_OBJECT_KEY\&quot; \
+        --enable_debug \&quot;$ENABLE_DEBUG\&quot; \
+        --spring_profile \&quot;$SPRING_PROFILE\&quot;&quot;
 
 
 echo &quot;$update_psama_container&quot;
