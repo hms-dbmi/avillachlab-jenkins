@@ -6,3 +6,4 @@ provisioning-private-key.pem
 .project
 terraform.tfstate.backup
 terraform.tfstate
+.idea/

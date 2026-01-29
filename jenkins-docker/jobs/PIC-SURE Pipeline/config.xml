@@ -102,11 +102,6 @@ pipeline {
                             def result = build job: &apos;PIC-SURE Frontend Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSF&apos;]]]
                         }
                     },
-                    picsureauth:{
-                        script{
-                            def result = build job: &apos;PIC-SURE Auth Micro App Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSAMA&apos;]]]
-                        }
-                    },
                     dictionary:{
                         script {
                             def dictionaryBuildResult = build job: &apos;PIC-SURE Dictionary Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSD&apos;]]]
@@ -117,18 +112,15 @@ pipeline {
         }
         stage(&apos;PIC-SURE WildFly Build and PIC-SURE Dictionary Build&apos;){
             steps {
-                parallel (
-                    wildfly:{
-                        script {
-                            def result = build job: &apos;PIC-SURE WildFly Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]]
-                        }
-                    },
-                    hpds:{
-                        script {
-                            def result = build job: &apos;PIC-SURE HPDS Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSH&apos;]]]
-                        }
-                    }
-               )
+                script {
+                    def result = build job: &apos;PIC-SURE HPDS Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSH&apos;]]]
+                }
+                script{
+                    def result = build job: &apos;PIC-SURE Auth Micro App Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSAMA&apos;]]]
+                }
+                script {
+                    def result = build job: &apos;PIC-SURE WildFly Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]]
+                }
             }
         }
     }
