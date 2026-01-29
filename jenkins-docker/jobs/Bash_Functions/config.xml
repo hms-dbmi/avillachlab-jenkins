@@ -1094,7 +1094,7 @@ wait_for_spring_boot_ssm_logs() {
 
   for ((i=1; i&lt;=max_retries; i++)); do
     # Command to check the Docker logs for the startup phrase
-    check_logs_command=&quot;docker logs ${container_name} 2&gt;&amp;1 | grep &apos;${phrase}&apos;&quot;
+    check_logs_command=&quot;podman logs ${container_name} 2&gt;&amp;1 | grep &apos;${phrase}&apos;&quot;
 
     # Execute the command using AWS SSM
     check_logs_command_json=$(jq -n --arg cmd &quot;$check_logs_command&quot; &apos;{commands: [$cmd]}&apos;)
