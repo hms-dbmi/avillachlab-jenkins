@@ -73,6 +73,11 @@
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
+          <name>INCLUDE_PIC_SURE_LOGGING</name>
+          <description>Include Logging Service in the build and deploy process</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
           <name>RUN_DATABASE_MIGRATIONS</name>
           <description>Run database migrations</description>
           <defaultValue>false</defaultValue>
@@ -244,6 +249,20 @@ pipeline {
                 echo &apos;Skipping PIC-SURE Dictionary Build&apos;
               }
             }
+          },
+
+          logging: {
+            script {
+              if (params.INCLUDE_PIC_SURE_LOGGING) {
+                def loggingGit = build_hashes[&apos;PSL&apos;]
+                build job: &apos;PIC-SURE Logging Build&apos;, parameters: [
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: loggingGit]
+                ]
+              } else {
+                echo &apos;Skipping PIC-SURE Logging Build&apos;
+              }
+            }
           }
         )
       }
@@ -336,6 +355,17 @@ pipeline {
                 ]
               } else {
                 echo &apos;Skipping HPDS Open Deploy&apos;
+              }
+            }
+          },
+          logging_deploy: {
+            script {
+              if (params.INCLUDE_PIC_SURE_LOGGING) {
+                build job: &apos;PIC-SURE Logging Deploy&apos;, parameters: [
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
+                ]
+              } else {
+                echo &apos;Skipping PIC-SURE Logging Deploy&apos;
               }
             }
           }
