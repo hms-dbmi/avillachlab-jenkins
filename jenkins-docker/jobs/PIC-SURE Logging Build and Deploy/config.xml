@@ -115,7 +115,9 @@ pipeline {
                 script{
                     def gitHash = git_hash ? git_hash : build_hashes[&apos;PSL&apos;]
                     def result = build job: &apos;PIC-SURE Logging Build&apos;, parameters: [
-                        [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: gitHash]
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: gitHash],
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;DEPLOY_METHOD&apos;, value: &apos;s3&apos;],
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
                     ]
                 }
             }
