@@ -106,6 +106,11 @@ pipeline {
                         script {
                             def dictionaryBuildResult = build job: &apos;PIC-SURE Dictionary Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],[$class: &apos;StringParameterValue&apos;, name: &apos;GIT_HASH&apos;, value: build_hashes[&apos;PSD&apos;]]]
                         }
+                    },
+                    logging:{
+                        script {
+                            def result = build job: &apos;PIC-SURE Logging Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSL&apos;]]]
+                        }
                     }
                 )
             }
