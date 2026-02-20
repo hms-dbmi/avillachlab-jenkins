@@ -6,13 +6,12 @@
       <jobProperties/>
       <triggers/>
       <parameters>
-        <string>DOCKER_IMAGE_VERSION</string>
+        <string>DOCKER_REGISTRY</string>
+        <string>REPOSITORY_NAME</string>
+        <string>DEPLOY_METHOD</string>
         <string>TARGET_STACK</string>
         <string>STACK_S3_BUCKET</string>
         <string>git_hash</string>
-        <string>DOCKER_REPO</string>
-        <string>IMAGE_NAME</string>
-        <string>GIT_REPO_URL</string>
       </parameters>
       <options/>
     </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
@@ -23,33 +22,27 @@
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
-          <name>GIT_REPO_URL</name>
-          <description>The GitHub repository URL</description>
-          <defaultValue>${git_base_url}/PIC-SURE-Logging.git</defaultValue>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
           <name>git_hash</name>
           <description>The Git hash to checkout</description>
           <defaultValue>main</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>DOCKER_REPO</name>
-          <description>The Docker repository name</description>
+          <name>DOCKER_REGISTRY</name>
+          <description>Docker registry / image prefix</description>
           <defaultValue>hms-dbmi</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>IMAGE_NAME</name>
-          <description>The Docker image name</description>
+          <name>REPOSITORY_NAME</name>
+          <description>Docker repository name</description>
           <defaultValue>pic-sure-logging</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>DOCKER_IMAGE_VERSION</name>
-          <description>The Docker image version/tag</description>
-          <defaultValue>latest</defaultValue>
+          <name>DEPLOY_METHOD</name>
+          <description>Deployment method: s3, docker, or none</description>
+          <defaultValue>s3</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
