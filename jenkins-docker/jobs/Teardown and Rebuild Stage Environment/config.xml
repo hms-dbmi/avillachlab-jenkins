@@ -352,6 +352,7 @@ else
   aws s3 --sse=AES256 cp scripts/deploy/deploy-httpd.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-httpd.sh
   aws s3 --sse=AES256 cp scripts/deploy/deploy-auth-hpds.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-auth-hpds.sh
   aws s3 --sse=AES256 cp scripts/deploy/deploy-open-hpds.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-open-hpds.sh
+  aws s3 --sse=AES256 cp scripts/deploy/deploy-logging.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-logging.sh
 
   # SSM Scripts
   aws s3 --sse=AES256 cp scripts/ssm/restart-dictionary-container.sh s3://$stack_s3_bucket/$target_stack/scripts/restart-dictionary-container.sh
