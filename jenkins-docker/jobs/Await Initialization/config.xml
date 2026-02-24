@@ -65,6 +65,8 @@ terraform init
 output_names=$(terraform output -json | jq -r &apos;keys[]&apos;)
 echo &quot;Output names: $output_names&quot;
 
+falcon_check_failed=false
+
 for output_name in $output_names; do
   reset_role
   assume_role
@@ -90,9 +92,56 @@ for output_name in $output_names; do
   done
   
   echo &quot;${output_name} EC2 Initialization Complete&quot;
+
+  # Verify CrowdStrike Falcon Sensor is running and connected
+  echo &quot;Checking CrowdStrike Falcon Sensor status on ${output_name} (${INSTANCE_ID})...&quot;
+  falcon_command_json=$(jq -n &apos;{commands: ["sudo systemctl status falcon-sensor.service"]}&apos;)
+  falcon_command_id=$(aws ssm send-command \
+    --instance-ids &quot;${INSTANCE_ID}&quot; \
+    --document-name &quot;AWS-RunShellScript&quot; \
+    --comment &quot;Check CrowdStrike Falcon Sensor status&quot; \
+    --parameters &quot;$falcon_command_json&quot; \
+    --query &quot;Command.CommandId&quot; \
+    --output text)
+
+  # Wait for the command to complete
+  while true; do
+    falcon_status=$(aws ssm get-command-invocation --command-id ${falcon_command_id} --instance-id ${INSTANCE_ID} --query &apos;Status&apos; --output text)
+    if [[ &quot;${falcon_status}&quot; == &quot;Success&quot; ]]; then
+      break
+    elif [[ &quot;${falcon_status}&quot; == &quot;Failed&quot; || &quot;${falcon_status}&quot; == &quot;Cancelled&quot; || &quot;${falcon_status}&quot; == &quot;TimedOut&quot; ]]; then
+      echo &quot;ERROR: Failed to check Falcon Sensor on ${output_name} (${INSTANCE_ID}). Command status: ${falcon_status}&quot;
+      aws ssm get-command-invocation --command-id ${falcon_command_id} --instance-id ${INSTANCE_ID} --query &apos;StandardErrorContent&apos; --output text
+      falcon_check_failed=true
+      continue
+    else
+      echo &quot;Waiting for Falcon Sensor status check... (${falcon_status})&quot;
+      sleep 5
+    fi
+  done
+
+  falcon_output=$(aws ssm get-command-invocation --command-id ${falcon_command_id} --instance-id ${INSTANCE_ID} --query &apos;StandardOutputContent&apos; --output text)
+  echo &quot;$falcon_output&quot;
+
+  # Verify the sensor is active and connected
+  if ! echo &quot;$falcon_output&quot; | grep -q &quot;Active: active (running)&quot;; then
+    echo &quot;ERROR: CrowdStrike Falcon Sensor is NOT running on ${output_name} (${INSTANCE_ID})&quot;
+    falcon_check_failed=true
+  elif ! echo &quot;$falcon_output&quot; | grep -q &quot;ConnectToCloud successful&quot;; then
+    echo &quot;WARNING: CrowdStrike Falcon Sensor may not be connected to cloud on ${output_name} (${INSTANCE_ID})&quot;
+    falcon_check_failed=true
+  else
+    echo &quot;CrowdStrike Falcon Sensor verified on ${output_name} (${INSTANCE_ID})&quot;
+  fi
 done
+
+if [[ &quot;$falcon_check_failed&quot; == &quot;true&quot; ]]; then
+  echo &quot;One or more instances failed the CrowdStrike Falcon Sensor check. Marking build as unstable.&quot;
+  exit 2
+fi
 </command>
       <configuredLocalRules/>
+      <unstableReturn>2</unstableReturn>
     </hudson.tasks.Shell>
     <hudson.tasks.Shell>
       <command># json tag schema.  Used to uniquely identify a projects staging instances.
