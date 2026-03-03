@@ -17,7 +17,7 @@
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>THEME</name>
-          <defaultValue>bdc</defaultValue>
+          <defaultValue>${environment_prefix}</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
