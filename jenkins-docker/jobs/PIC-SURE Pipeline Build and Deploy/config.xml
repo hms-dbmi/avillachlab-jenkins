@@ -184,6 +184,18 @@ pipeline {
       }
     }
 
+    stage(&apos;Install Logging Client Library&apos;) {
+      steps {
+        script {
+          try {
+            build job: &apos;PIC-SURE Logging Client Install&apos;
+          } catch (Exception e) {
+            echo &quot;Logging client install failed (${e.message}). Downstream builds will proceed without it.&quot;
+          }
+        }
+      }
+    }
+
     stage(&apos;Application Builds (parallel)&apos;) {
       steps {
         parallel (
