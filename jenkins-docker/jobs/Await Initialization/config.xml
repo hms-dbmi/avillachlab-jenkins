@@ -104,8 +104,16 @@ for output_name in $output_names; do
     --query &quot;Command.CommandId&quot; \
     --output text)
 
-  # Wait for the command to complete
+  # Wait for the command to complete (timeout after 30 attempts / ~150 seconds)
+  falcon_max_attempts=10
+  falcon_attempt=0
   while true; do
+    falcon_attempt=$((falcon_attempt + 1))
+    if [[ ${falcon_attempt} -gt ${falcon_max_attempts} ]]; then
+      echo &quot;ERROR: Timed out waiting for Falcon Sensor status check on ${output_name} (${INSTANCE_ID}) after ${falcon_max_attempts} attempts.&quot;
+      falcon_check_failed=true
+      break
+    fi
     falcon_status=$(aws ssm get-command-invocation --command-id ${falcon_command_id} --instance-id ${INSTANCE_ID} --query &apos;Status&apos; --output text)
     if [[ &quot;${falcon_status}&quot; == &quot;Success&quot; ]]; then
       break
@@ -113,9 +121,9 @@ for output_name in $output_names; do
       echo &quot;ERROR: Failed to check Falcon Sensor on ${output_name} (${INSTANCE_ID}). Command status: ${falcon_status}&quot;
       aws ssm get-command-invocation --command-id ${falcon_command_id} --instance-id ${INSTANCE_ID} --query &apos;StandardErrorContent&apos; --output text
       falcon_check_failed=true
-      continue
+      break
     else
-      echo &quot;Waiting for Falcon Sensor status check... (${falcon_status})&quot;
+      echo &quot;Waiting for Falcon Sensor status check... (${falcon_status}) [attempt ${falcon_attempt}/${falcon_max_attempts}]&quot;
       sleep 5
     fi
   done
