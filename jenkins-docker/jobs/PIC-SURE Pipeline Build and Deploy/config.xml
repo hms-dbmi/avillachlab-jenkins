@@ -308,7 +308,6 @@ pipeline {
               if (params.INCLUDE_PIC_SURE_HPDS_AUTH) {
                 build job: &apos;PIC-SURE HPDS Auth Deploy&apos;, parameters: [
                   [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;STACK_S3_BUCKET&apos;, value: String.valueOf(params.STACK_S3_BUCKET)],
                   [$class: &apos;StringParameterValue&apos;, name: &apos;DATA_S3_OBJECT_KEY&apos;, value: String.valueOf(params.DATA_S3_OBJECT_KEY)],
                   [$class: &apos;StringParameterValue&apos;, name: &apos;GENOMIC_DATASET_S3_OBJECT_KEY&apos;, value: String.valueOf(params.GENOMIC_DATASET_S3_OBJECT_KEY)]
                 ]
@@ -322,7 +321,6 @@ pipeline {
               if (params.INCLUDE_PIC_SURE_HPDS_OPEN) {
                 build job: &apos;PIC-SURE HPDS Open Deploy&apos;, parameters: [
                   [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;STACK_S3_BUCKET&apos;, value: String.valueOf(params.STACK_S3_BUCKET)],
                   [$class: &apos;StringParameterValue&apos;, name: &apos;DESTIGMATIZED_DATASET_S3_OBJECT_KEY&apos;, value: String.valueOf(params.DESTIGMATIZED_DATASET_S3_OBJECT_KEY)]
                 ]
               } else {
