@@ -4,11 +4,12 @@
   <description></description>
   <keepDependencies>false</keepDependencies>
   <properties/>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.1">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.10.0">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
         <url>${release_control_git_repo}</url>
+        <credentialsId>${git_credentials_id}</credentialsId>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
@@ -28,9 +29,9 @@
   <triggers/>
   <concurrentBuild>false</concurrentBuild>
   <builders>
-    <hudson.plugins.groovy.SystemGroovy plugin="groovy@457.v99900cb_85593">
+    <hudson.plugins.groovy.SystemGroovy plugin="groovy@497.v7b_061a_a_de65d">
       <source class="hudson.plugins.groovy.StringSystemScriptSource">
-        <script plugin="script-security@1358.vb_26663c13537">
+        <script plugin="script-security@1399.ve6a_66547f6e1">
           <script>import jenkins.*
 import jenkins.model.*
 import hudson.*
@@ -58,14 +59,18 @@ for script_file in &quot;$source_scripts_folder&quot;*.sh; do
 done
 
 ### Pull data set to rekey.
-assume_role &quot;$curated_datasets_s3_role&quot;
+if [ -n &quot;${curated_datasets_s3_role}&quot; ]; then
+  assume_role &quot;${curated_datasets_s3_role}&quot;
+fi
 
 ### Get the s3 source location for the dump archive from the build-spec.json
 S3_SOURCE_LOCATION=`grep source_dictionary_db_s3_url build-spec.json | cut -d &apos;:&apos; -f 2,3 | sed &apos;s/&quot;//g&apos;`
 echo $S3_SOURCE_LOCATION
 aws s3 cp $S3_SOURCE_LOCATION dictionary_db.tar
 
-reset_role
+if [ -n &quot;${curated_datasets_s3_role}&quot; ]; then
+  reset_role
+fi
 
 # extract archive and move dump files to set workspace location called dump_files
 mkdir temp_extract
@@ -125,7 +130,7 @@ pg_restore \
   </builders>
   <publishers/>
   <buildWrappers>
-    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.46">
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.49">
       <deleteDirs>false</deleteDirs>
       <cleanupParameter></cleanupParameter>
       <externalDelete></externalDelete>

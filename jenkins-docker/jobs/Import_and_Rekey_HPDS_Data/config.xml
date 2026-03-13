@@ -26,11 +26,12 @@
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.7.0">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.10.0">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
         <url>${release_control_git_repo}</url>
+        <credentialsId>${git_credentials_id}</credentialsId>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
@@ -80,7 +81,10 @@ mkdir -p local/hpds/
 mkdir -p local/source/
 
 ### Pull data set to rekey.
-assume_role &quot;arn:aws:iam::736265540791:role/curated-datasets-s3-role&quot;
+if [ -n &quot;${curated_datasets_s3_role}&quot; ]; then
+    assume_role &quot;${curated_datasets_s3_role}&quot;
+fi
+
 aws s3 cp ${source_s3_url} local/source/javabins.tar
 
 ### Try extracting as compressed tar
@@ -96,7 +100,10 @@ else
     fi
 fi
 
-reset_role
+if [ -n &quot;${curated_datasets_s3_role}&quot; ]; then
+    reset_role
+fi
+
 ### Move meta into local/hpds to include with new data set
 cp local/source/metadata.json local/hpds/
 
