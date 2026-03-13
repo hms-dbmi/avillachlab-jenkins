@@ -32,6 +32,7 @@
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
         <url>${infrastructure_git_repo}</url>
+        <credentialsId>${git_credentials_id}</credentialsId>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
@@ -110,8 +111,8 @@ else
 fi
 
 # Paths for migration scripts
-auth_sql_path=&quot;app-infrastructure/db/auth/&quot;
-picsure_sql_path=&quot;app-infrastructure/db/picsure/&quot;
+auth_sql_path=&quot;app-infrastructure/db/${environment_prefix}/auth/&quot;
+picsure_sql_path=&quot;app-infrastructure/db/${environment_prefix}/picsure/&quot;
 
 if [ &quot;$include_auth_hpds&quot; = &quot;false&quot; ]; then
     hide_auth_hpds=true
