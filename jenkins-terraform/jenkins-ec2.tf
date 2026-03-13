@@ -9,6 +9,7 @@ data "template_file" "jenkins-user_data" {
     jenkins_docker_terraform_distro = var.jenkins_docker_terraform_distro
     jenkins_git_repo                = var.jenkins_git_repo
     git_commit                      = var.git_commit
+    git_credentials_id              = var.git_credentials_id
   }
 }
 

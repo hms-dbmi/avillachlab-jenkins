@@ -51,6 +51,7 @@
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
         <url>${infrastructure_git_repo}</url>
+        <credentialsId>${git_credentials_id}</credentialsId>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
