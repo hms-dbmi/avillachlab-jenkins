@@ -8,11 +8,13 @@ ENV JAVA_OPTS -Djenkins.install.runSetupWizard=false
 ARG JENKINS_DOCKER_TERRAFORM_DISTRO
 ARG PLUGINS_FILE
 ARG CONFIG_XML_FILE
+ARG CASC_FILE="jenkins.yaml"
 ARG SCRIPT_APPROVAL_FILE
 ARG HUDSON_TASKS_FILE
 ARG JENKINS_JOBS_DIR
 ARG PKCS12_FILE
 ARG PKCS12_PASS
+ARG GIT_CREDENTIALS_ID=""
 ARG JENKINS_HTTP_PORT=-1
 ARG JENKINS_HTTPS_PORT=8443
 
@@ -78,10 +80,16 @@ COPY $PLUGINS_FILE /usr/share/jenkins/ref/plugins.txt
 RUN /bin/jenkins-plugin-cli -f /usr/share/jenkins/ref/plugins.txt || echo "Some errors occurred during plugin installation."
 
 COPY $CONFIG_XML_FILE /var/jenkins_home/config.xml
+COPY $CASC_FILE /var/jenkins_home/casc_configs/jenkins.yaml
 COPY $SCRIPT_APPROVAL_FILE /var/jenkins_home/scriptApproval.xml
 COPY $HUDSON_TASKS_FILE /var/jenkins_home/hudson.tasks.Maven.xml
 COPY $JENKINS_JOBS_DIR /var/jenkins_home/jobs
 COPY $PKCS12_FILE /var/jenkins_home/$PKCS12_FILE
 
+# Render SCM credentialsId placeholder per environment at image build time.
+RUN find /var/jenkins_home/jobs -type f -name config.xml -print0 | \
+    xargs -0 sed -i "s|\\\${git_credentials_id}|${GIT_CREDENTIALS_ID}|g"
+
 # Should set env var at runtime using an entrypoint.
 ENV JENKINS_OPTS="--httpPort=$JENKINS_HTTP_PORT --httpsPort=$JENKINS_HTTPS_PORT --httpsKeyStore=/var/jenkins_home/$PKCS12_FILE --httpsKeyStorePassword=$PKCS12_PASS"
+ENV CASC_JENKINS_CONFIG=/var/jenkins_home/casc_configs/jenkins.yaml
