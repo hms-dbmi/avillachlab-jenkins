@@ -5,7 +5,12 @@
 &#xd;
 Gives a central location to store bash functions used in the pipeline.</description>
   <keepDependencies>false</keepDependencies>
-  <properties/>
+  <properties>
+    <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@338.va_0a_b_50e29397">
+      <autoRebuild>false</autoRebuild>
+      <rebuildDisabled>false</rebuildDisabled>
+    </com.sonyericsson.rebuild.RebuildSettings>
+  </properties>
   <scm class="hudson.scm.NullSCM"/>
   <canRoam>true</canRoam>
   <disabled>false</disabled>
@@ -1084,49 +1089,120 @@ update_wildfly_token() {
 # Result:
 #   The function will wait until the log message indicating the application has started is found.
 wait_for_spring_boot_ssm_logs() {
-  local instance_id=$1    # EC2 instance ID where the Docker container is running
-  local container_name=$2 # Docker container name or ID
+  local instance_id=&quot;${1:-}&quot;        # EC2 instance ID where the container is running
+  local container_name=&quot;${2:-}&quot;     # Container name or ID
   local phrase=&quot;Started Application in&quot;
-  local max_retries=${3:-60}  # Maximum number of retries before giving up (default 60 retries)
-  local sleep_duration=${4:-5} # Wait 5 seconds between each retry
+  local max_retries=&quot;${3:-60}&quot;      # default 60
+  local sleep_duration=&quot;${4:-5}&quot;    # default 5s
 
-  echo &quot;Waiting for Spring Boot application to start by monitoring Docker logs via SSM...&quot;
+  if [[ -z &quot;${instance_id}&quot; || -z &quot;${container_name}&quot; ]]; then
+    echo &quot;ERROR: wait_for_spring_boot_ssm_logs requires: &lt;instance_id&gt; &lt;container_name&gt; [max_retries] [sleep_seconds]&quot; &gt;&amp;2
+    return 2
+  fi
 
+  echo &quot;Waiting for Spring Boot startup. Streaming remote podman logs to Jenkins (until &apos;${phrase}&apos; is seen)...&quot;
+
+  local last_seen_ts=&quot;&quot;
   for ((i=1; i&lt;=max_retries; i++)); do
-    # Command to check the Docker logs for the startup phrase
-    check_logs_command=&quot;podman logs ${container_name} 2&gt;&amp;1 | grep &apos;${phrase}&apos;&quot;
-
-    # Execute the command using AWS SSM
-    check_logs_command_json=$(jq -n --arg cmd &quot;$check_logs_command&quot; &apos;{commands: [$cmd]}&apos;)
-
-    command_id=$(aws ssm send-command \
-      --instance-ids &quot;${instance_id}&quot; \
-      --document-name &quot;AWS-RunShellScript&quot; \
-      --parameters &quot;$check_logs_command_json&quot; \
-      --comment &quot;Check Docker logs for Spring Boot startup&quot; \
-      --query &quot;Command.CommandId&quot; \
-      --output text)
-
-    # Fetch the result of the command
-    log_output=$(aws ssm get-command-invocation \
-      --command-id ${command_id} \
-      --instance-id ${instance_id} \
-      --query &apos;StandardOutputContent&apos; \
-      --output text)
-
-    # Check if the phrase was found in the logs
-    if echo &quot;$log_output&quot; | grep -q &quot;${phrase}&quot;; then
-      echo &quot;Spring Boot application started in the Docker container &apos;${container_name}&apos;!&quot;
-      break
-    elif [[ &quot;$i&quot; -eq &quot;$max_retries&quot; ]]; then
-      echo &quot;Spring Boot application failed to start within the maximum retries (${max_retries}).&quot;
-      exit 1
+    # Pull a small window of recent logs each loop, print them to Jenkins,
+    # and stop once the startup phrase appears.
+    #
+    # --since keeps each poll small; we track the last timestamp we used.
+    # &apos;|| true&apos; ensures the remote command doesn&apos;t fail the SSM run when grep finds nothing.
+    local check_cmd
+    if [[ -n &quot;${last_seen_ts}&quot; ]]; then
+      check_cmd=&quot;podman logs --since &apos;${last_seen_ts}&apos; &apos;${container_name}&apos; 2&gt;&amp;1 || true&quot;
     else
-      echo &quot;Spring Boot application not started yet. Retrying in ${sleep_duration} seconds... ($i/$max_retries)&quot;
-      sleep ${sleep_duration}
+      check_cmd=&quot;podman logs --since &apos;2m&apos; &apos;${container_name}&apos; 2&gt;&amp;1 || true&quot;
     fi
+
+    local params_json
+    params_json=&quot;$(jq -n --arg cmd &quot;${check_cmd}&quot; &apos;{commands: [$cmd]}&apos;)&quot;
+
+    local command_id
+    command_id=&quot;$(
+      aws ssm send-command \
+        --instance-ids &quot;${instance_id}&quot; \
+        --document-name &quot;AWS-RunShellScript&quot; \
+        --parameters &quot;${params_json}&quot; \
+        --comment &quot;Stream podman logs for Spring Boot startup (${container_name})&quot; \
+        --query &quot;Command.CommandId&quot; \
+        --output text
+    )&quot;
+
+    # Wait briefly for the invocation to exist/complete
+    local status=&quot;Pending&quot;
+    for _ in {1..30}; do
+      status=&quot;$(
+        aws ssm get-command-invocation \
+          --command-id &quot;${command_id}&quot; \
+          --instance-id &quot;${instance_id}&quot; \
+          --query &apos;Status&apos; \
+          --output text 2&gt;/dev/null || echo &quot;Pending&quot;
+      )&quot;
+      case &quot;${status}&quot; in
+        Success|Failed|Cancelled|TimedOut) break ;;
+        *) sleep 1 ;;
+      esac
+    done
+
+    local stdout stderr
+    stdout=&quot;$(
+      aws ssm get-command-invocation \
+        --command-id &quot;${command_id}&quot; \
+        --instance-id &quot;${instance_id}&quot; \
+        --query &apos;StandardOutputContent&apos; \
+        --output text 2&gt;/dev/null || true
+    )&quot;
+    stderr=&quot;$(
+      aws ssm get-command-invocation \
+        --command-id &quot;${command_id}&quot; \
+        --instance-id &quot;${instance_id}&quot; \
+        --query &apos;StandardErrorContent&apos; \
+        --output text 2&gt;/dev/null || true
+    )&quot;
+
+    # Print what we saw to Jenkins
+    if [[ -n &quot;${stdout}&quot; &amp;&amp; &quot;${stdout}&quot; != &quot;None&quot; ]]; then
+      echo &quot;----- [${container_name}] logs (poll ${i}/${max_retries}) -----&quot;
+      printf &apos;%s\n&apos; &quot;${stdout}&quot;
+      echo &quot;----- [end logs] -----&quot;
+    fi
+    if [[ -n &quot;${stderr}&quot; &amp;&amp; &quot;${stderr}&quot; != &quot;None&quot; ]]; then
+      echo &quot;----- [${container_name}] logs STDERR (poll ${i}/${max_retries}) -----&quot; &gt;&amp;2
+      printf &apos;%s\n&apos; &quot;${stderr}&quot; &gt;&amp;2
+      echo &quot;----- [end stderr] -----&quot; &gt;&amp;2
+    fi
+
+    # Track a moving timestamp so we don&apos;t reprint everything each time.
+    # Try to grab the last ISO-like timestamp from the log output (Spring Boot often emits it).
+    local new_ts
+    new_ts=&quot;$(printf &apos;%s\n&apos; &quot;${stdout}&quot; | grep -Eo &apos;^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+(Z|[+-][0-9]{2}:[0-9]{2})?&apos; | tail -n 1 || true)&quot;
+    if [[ -n &quot;${new_ts}&quot; ]]; then
+      last_seen_ts=&quot;${new_ts}&quot;
+    fi
+
+    # Success condition
+    if printf &apos;%s\n&apos; &quot;${stdout}&quot; | grep -Fq &quot;${phrase}&quot;; then
+      echo &quot;Spring Boot application started in container &apos;${container_name}&apos;.&quot;
+      return 0
+    fi
+
+    # Handle failures/timeouts from SSM itself (optional: treat as retryable)
+    if [[ &quot;${status}&quot; == &quot;Failed&quot; || &quot;${status}&quot; == &quot;TimedOut&quot; || &quot;${status}&quot; == &quot;Cancelled&quot; ]]; then
+      echo &quot;WARN: SSM command status=${status} while checking logs (poll ${i}/${max_retries}).&quot; &gt;&amp;2
+    fi
+
+    if [[ &quot;${i}&quot; -eq &quot;${max_retries}&quot; ]]; then
+      echo &quot;ERROR: Spring Boot did not start within ${max_retries} retries.&quot; &gt;&amp;2
+      return 1
+    fi
+
+    echo &quot;Not started yet. Retrying in ${sleep_duration}s... (${i}/${max_retries})&quot;
+    sleep &quot;${sleep_duration}&quot;
   done
 }
+
 
 
 
@@ -1182,7 +1258,7 @@ EOF</command>
     </hudson.tasks.ArtifactArchiver>
   </publishers>
   <buildWrappers>
-    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.48">
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.49">
       <deleteDirs>false</deleteDirs>
       <cleanupParameter></cleanupParameter>
       <externalDelete></externalDelete>

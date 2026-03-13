@@ -33,50 +33,92 @@
   <concurrentBuild>false</concurrentBuild>
   <builders>
     <hudson.tasks.Shell>
-      <command>#!/bin/bash
+      <command>#!/usr/bin/env bash
+set -euo pipefail
 
-# Source folder containing the scripts
+# -----------------------------
+# Load shared bash functions
+# -----------------------------
 source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+echo &quot;Loading bash functions from: ${source_scripts_folder}&quot;
+ls -la &quot;${source_scripts_folder}&quot;
 
-
-# Iterate through the files in the folder and source them
-for script_file in &quot;$source_scripts_folder&quot;*.sh; do
-    chmod +x &quot;$script_file&quot;
-    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
-        echo &quot;sourcing $script_file&quot;
-        source &quot;$script_file&quot;
-    fi
+shopt -s nullglob
+for script_file in &quot;${source_scripts_folder}&quot;*.sh; do
+  chmod +x &quot;${script_file}&quot; || true
+  if [[ -f &quot;${script_file}&quot; &amp;&amp; -x &quot;${script_file}&quot; ]]; then
+    echo &quot;sourcing ${script_file}&quot;
+    # shellcheck source=/dev/null
+    source &quot;${script_file}&quot;
+  fi
 done
+shopt -u nullglob
+
+# Fail fast if the core functions weren&apos;t loaded
+for fn in assume_role wait_for_command wait_for_spring_boot_ssm_logs reset_role; do
+  if ! command -v &quot;${fn}&quot; &gt;/dev/null 2&gt;&amp;1; then
+    echo &quot;ERROR: required function &apos;${fn}&apos; is not loaded from ${source_scripts_folder}&quot; &gt;&amp;2
+    exit 1
+  fi
+done
+
+# Only require what is truly required to find the instance + state
+: &quot;${TARGET_STACK:?TARGET_STACK is required}&quot;
+: &quot;${STACK_S3_BUCKET:?STACK_S3_BUCKET is required}&quot;
+
+# Allow empty values for optional Jenkins parameters by defaulting to &quot;&quot;
+DESTIGMATIZED_DATASET_S3_OBJECT_KEY=&quot;${DESTIGMATIZED_DATASET_S3_OBJECT_KEY:-&quot;&quot;}&quot;
 
 assume_role
 
-# Download the terraform state file
-echo &quot;Download terraform.tfstate file for $TARGET_STACK stack&quot;
-aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/$TARGET_STACK/terraform.tfstate terraform.tfstate
+# -----------------------------
+# Download terraform state
+# -----------------------------
+echo &quot;Download terraform.tfstate file for ${TARGET_STACK} stack&quot;
+aws s3 cp &quot;s3://${STACK_S3_BUCKET}/deployment_state_metadata/${TARGET_STACK}/terraform.tfstate&quot; &quot;terraform.tfstate&quot;
 
-# Extract the Wildfly EC2 instance ID
-echo &quot;Extract HPDS instance ID for $TARGET_STACK stack&quot;
-open_hpds_instance_id=$(jq -r &apos;.outputs[&quot;hpds-ec2-open-id&quot;].value&apos; terraform.tfstate)
-echo &quot;${open_hpds_instance_id}&quot;
+# -----------------------------
+# Extract Open HPDS EC2 instance ID
+# -----------------------------
+echo &quot;Extract HPDS instance ID for ${TARGET_STACK} stack&quot;
+open_hpds_instance_id=&quot;$(jq -r &apos;.outputs[&quot;hpds-ec2-open-id&quot;].value // empty&apos; terraform.tfstate)&quot;
 
-update_open_hpds_container=&quot;sudo sh /opt/picsure/deploy-open-hpds.sh \
-        --stack_s3_bucket $STACK_S3_BUCKET \
-        --destigmatized_dataset_s3_object_key $DESTIGMATIZED_DATASET_S3_OBJECT_KEY \
-        --target_stack $TARGET_STACK&quot;
+if [[ -z &quot;${open_hpds_instance_id}&quot; ]]; then
+  echo &quot;ERROR: Could not extract open_hpds_instance_id from terraform.tfstate (.outputs[\&quot;hpds-ec2-open-id\&quot;].value)&quot; &gt;&amp;2
+  exit 1
+fi
 
-update_open_hpds_container_json=$(jq -n --arg cmd &quot;$update_open_hpds_container&quot; &apos;{commands: [$cmd]}&apos;)
-echo &quot;JSON version of run command: $update_open_hpds_container_json&quot;
+echo &quot;Open HPDS Instance ID: ${open_hpds_instance_id}&quot;
 
-command_id=$(aws ssm send-command \
-  --instance-ids &quot;$open_hpds_instance_id&quot; \
-  --document-name &quot;AWS-RunShellScript&quot; \
-  --comment &quot;Deploy open-hpds in place&quot; \
-  --parameters &quot;$update_open_hpds_container_json&quot; \
-  --query &quot;Command.CommandId&quot; \
-  --output text \
-  --debug)
+# -----------------------------
+# Build remote command
+# -----------------------------
+update_open_hpds_container=$(
+  cat &lt;&lt;EOF
+sudo /opt/picsure/deploy-open-hpds.sh \
+  --stack_s3_bucket &quot;${STACK_S3_BUCKET}&quot; \
+  --destigmatized_dataset_s3_object_key &quot;${DESTIGMATIZED_DATASET_S3_OBJECT_KEY}&quot; \
+  --target_stack &quot;${TARGET_STACK}&quot;
+EOF
+)
 
-wait_for_command ${command_id} ${open_hpds_instance_id}
+echo &quot;${update_open_hpds_container}&quot;
+
+# SSM parameters must be: {&quot;commands&quot;:[&quot;...&quot;]}
+update_open_hpds_container_json=&quot;$(jq -n --arg cmd &quot;${update_open_hpds_container}&quot; &apos;{commands: [$cmd]}&apos;)&quot;
+
+command_id=&quot;$(
+  aws ssm send-command \
+    --instance-ids &quot;${open_hpds_instance_id}&quot; \
+    --document-name &quot;AWS-RunShellScript&quot; \
+    --comment &quot;Deploy Open HPDS&quot; \
+    --parameters &quot;${update_open_hpds_container_json}&quot; \
+    --query &quot;Command.CommandId&quot; \
+    --output text
+)&quot;
+
+wait_for_command &quot;${command_id}&quot; &quot;${open_hpds_instance_id}&quot;
+wait_for_spring_boot_ssm_logs &quot;${open_hpds_instance_id}&quot; &quot;open-hpds&quot;
 
 reset_role
 </command>
