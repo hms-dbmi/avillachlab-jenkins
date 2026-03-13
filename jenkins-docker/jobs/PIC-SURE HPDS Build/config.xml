@@ -23,7 +23,7 @@
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.7.0">
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.10.0">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
@@ -43,23 +43,28 @@
   <disabled>false</disabled>
   <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
   <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
-  <jdk>JDK-21</jdk>
+  <jdk>(System)</jdk>
   <triggers/>
   <concurrentBuild>false</concurrentBuild>
   <builders>
     <hudson.tasks.Shell>
-      <command>GIT_BRANCH_SHORT=`echo ${GIT_BRANCH} | cut -d &quot;/&quot; -f 2` 
+      <command>GIT_BRANCH_SHORT=`echo ${GIT_BRANCH} | cut -d &quot;/&quot; -f 2`
 GIT_COMMIT_SHORT=`echo ${GIT_COMMIT} | cut -c1-7`
 
-# This is done because we need artifacts created during the PIC-SURE API Build, and they are only available in our local .m2
-cp -r /root/.m2 .m2
+docker build --load -f docker/build.Dockerfile -t hms-dbmi/hpds-build .
 
-docker build --no-cache -f docker/pic-sure-hpds/build.Dockerfile -t hms-dbmi/pic-sure-hpds-build:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
-docker tag hms-dbmi/pic-sure-hpds-build:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} hms-dbmi/pic-sure-hpds-build:LATEST
+docker run --rm \
+  -v &quot;/var/jenkins_home/workspace/$JOB_NAME/:/app:z&quot; \
+  -v maven_m2_cache:/root/.m2 \
+  -w /app \
+  hms-dbmi/hpds-build \
+  sh -lc &quot;mvn clean install -DskipTests&quot;
 
-docker build --no-cache -f docker/pic-sure-hpds/Dockerfile -t hms-dbmi/pic-sure-hpds:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
+docker build --load -f docker/pic-sure-hpds/Dockerfile -t hms-dbmi/pic-sure-hpds:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
+docker tag hms-dbmi/pic-sure-hpds:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} hms-dbmi/pic-sure-hpds:LATEST
 
-docker build --no-cache -f docker/pic-sure-hpds-etl/Dockerfile -t hms-dbmi/pic-sure-hpds-etl:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
+docker build --load -f docker/pic-sure-hpds-etl/Dockerfile -t hms-dbmi/pic-sure-hpds-etl:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
+docker tag hms-dbmi/pic-sure-hpds-etl:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} hms-dbmi/pic-sure-hpds-etl:LATEST
 
 mkdir -p docker_image_output
 cd docker_image_output
@@ -73,7 +78,7 @@ aws s3 --sse=AES256 cp pic-sure-hpds-etl.tar.gz s3://$S3_BUCKET_NAME/$TARGET_STA
   </builders>
   <publishers/>
   <buildWrappers>
-    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.48">
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.49">
       <deleteDirs>false</deleteDirs>
       <cleanupParameter></cleanupParameter>
       <externalDelete></externalDelete>
