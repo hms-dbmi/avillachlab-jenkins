@@ -1085,15 +1085,15 @@ update_wildfly_token() {
 #   1. Uses AWS SSM to execute &apos;docker logs&apos; periodically on the remote EC2 instance.
 #   2. Monitors the logs for a &quot;Started .* in&quot; pattern (regex) every 5 seconds.
 # Example Use:
-#   wait_for_spring_boot_ssm_logs &quot;i-xxxxxxxxxx&quot; &quot;spring_app_container&quot;
+#   wait_for_spring_boot_ssm_logs &quot;i-xxxxxxxxxx&quot; &quot;spring_app_container&quot; &quot;Started .* in&quot;
 # Result:
 #   The function will wait until the log message indicating the application has started is found.
 wait_for_spring_boot_ssm_logs() {
   local instance_id=&quot;${1:-}&quot;        # EC2 instance ID where the container is running
   local container_name=&quot;${2:-}&quot;     # Container name or ID
-  local phrase=&quot;Started .* in&quot;
-  local max_retries=&quot;${3:-60}&quot;      # default 60
-  local sleep_duration=&quot;${4:-5}&quot;    # default 5s
+  local phrase=&quot;${3:-Started .* in}&quot; # Startup log pattern to match
+  local max_retries=&quot;${4:-60}&quot;      # default 60
+  local sleep_duration=&quot;${5:-5}&quot;    # default 5s
 
   if [[ -z &quot;${instance_id}&quot; || -z &quot;${container_name}&quot; ]]; then
     echo &quot;ERROR: wait_for_spring_boot_ssm_logs requires: &lt;instance_id&gt; &lt;container_name&gt; [max_retries] [sleep_seconds]&quot; &gt;&amp;2

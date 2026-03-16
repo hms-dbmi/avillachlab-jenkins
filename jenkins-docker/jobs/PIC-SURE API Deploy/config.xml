@@ -109,7 +109,7 @@ command_id=&quot;$(
 )&quot;
 
 wait_for_command &quot;${command_id}&quot; &quot;${wildfly_instance_id}&quot;
-wait_for_spring_boot_ssm_logs &quot;${wildfly_instance_id}&quot; &quot;wildfly&quot;
+wait_for_spring_boot_ssm_logs &quot;${wildfly_instance_id}&quot; &quot;wildfly&quot; &quot;WFLYSRV0025&quot;
 
 reset_role
 </command>
