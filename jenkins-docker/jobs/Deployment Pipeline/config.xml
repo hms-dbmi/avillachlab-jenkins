@@ -135,6 +135,13 @@ pipeline {
                 }
             }
         }
+        stage(&apos;Falcon Sensor Check&apos;) {
+            steps {
+                script {
+                    def result = build job: &apos;Falcon Sensor Check&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack], [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: infrastructure_git_hash]]
+                }
+            }
+        }
         stage(&apos;Update and unlock deployment state&apos;) {
             steps {
                 script {
