@@ -1109,7 +1109,7 @@ wait_for_spring_boot_ssm_logs() {
     # --since keeps each poll small; we track the last timestamp we used.
     # &apos;|| true&apos; ensures the remote command doesn&apos;t fail the SSM run when grep finds nothing.
     local check_cmd
-    check_cmd=&quot;podman logs --tail 200 &apos;${container_name}&apos; 2&gt;&amp;1 || true&quot;
+    check_cmd=&quot;podman logs --tail 40 &apos;${container_name}&apos; 2&gt;&amp;1 || true&quot;
 
     local params_json
     params_json=&quot;$(jq -n --arg cmd &quot;${check_cmd}&quot; &apos;{commands: [$cmd]}&apos;)&quot;
