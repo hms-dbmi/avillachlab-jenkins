@@ -31,8 +31,7 @@ CONTAINER_NAME=jenkins
 podman rm -f $CONTAINER_NAME || true
 
 # Download scriptApproval.xml from S3 so the new Jenkins inherits approved scripts
-jenkins_config_s3_dir=$(dirname "${jenkins_config_s3_location}")
-aws s3 cp "${jenkins_config_s3_dir}/scriptApproval.xml" /var/jenkins_home/scriptApproval.xml
+aws s3 cp "${jenkins_config_s3_location}/scriptApproval.xml" /var/jenkins_home/scriptApproval.xml
 
 podman run -d --privileged \
     --log-driver=journald \
