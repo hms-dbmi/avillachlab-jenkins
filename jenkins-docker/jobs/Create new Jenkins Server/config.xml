@@ -64,8 +64,7 @@ aws --region us-east-1 s3 cp &quot;${jenkins_config_s3_location}&quot; ./config.
 
 # Upload current scriptApproval.xml to S3 so the new Jenkins inherits approved scripts
 echo &quot;# Upload scriptApproval.xml to S3&quot;
-jenkins_config_s3_dir=$(dirname &quot;${jenkins_config_s3_location}&quot;)
-aws --region us-east-1 s3 cp &quot;${JENKINS_HOME}/scriptApproval.xml&quot; &quot;${jenkins_config_s3_dir}/scriptApproval.xml&quot;
+aws --region us-east-1 s3 cp &quot;${JENKINS_HOME}/scriptApproval.xml&quot; &quot;${jenkins_config_s3_location}/scriptApproval.xml&quot;
 
 # Build Container
 echo &quot;# Build Container&quot;
