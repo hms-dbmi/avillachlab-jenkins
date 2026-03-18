@@ -939,7 +939,7 @@ wait_for_command() {
   local instance_id=$2
 
   while true; do
-    command_status=$(aws ssm get-command-invocation --command-id ${command_id} --instance-id ${instance_id} --query &apos;Status&apos; --output text)
+    command_status=$(aws ssm get-command-invocation --command-id ${command_id} --instance-id ${instance_id} --query &apos;Status&apos; --output text 2&gt;/dev/null || echo &quot;Pending&quot;)
 
     if [[ &quot;${command_status}&quot; == &quot;Success&quot; ]]; then
       echo &quot;Command succeeded&quot;
