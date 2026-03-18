@@ -1102,7 +1102,6 @@ wait_for_spring_boot_ssm_logs() {
 
   echo &quot;Waiting for Spring Boot startup. Streaming remote podman logs to Jenkins (until &apos;${phrase}&apos; is seen)...&quot;
 
-  local last_seen_ts=&quot;&quot;
   for ((i=1; i&lt;=max_retries; i++)); do
     # Pull a small window of recent logs each loop, print them to Jenkins,
     # and stop once the startup phrase appears.
@@ -1110,11 +1109,7 @@ wait_for_spring_boot_ssm_logs() {
     # --since keeps each poll small; we track the last timestamp we used.
     # &apos;|| true&apos; ensures the remote command doesn&apos;t fail the SSM run when grep finds nothing.
     local check_cmd
-    if [[ -n &quot;${last_seen_ts}&quot; ]]; then
-      check_cmd=&quot;podman logs --since &apos;${last_seen_ts}&apos; &apos;${container_name}&apos; 2&gt;&amp;1 || true&quot;
-    else
-      check_cmd=&quot;podman logs --since &apos;2m&apos; &apos;${container_name}&apos; 2&gt;&amp;1 || true&quot;
-    fi
+    check_cmd=&quot;podman logs --tail 200 &apos;${container_name}&apos; 2&gt;&amp;1 || true&quot;
 
     local params_json
     params_json=&quot;$(jq -n --arg cmd &quot;${check_cmd}&quot; &apos;{commands: [$cmd]}&apos;)&quot;
@@ -1172,14 +1167,6 @@ wait_for_spring_boot_ssm_logs() {
       echo &quot;----- [${container_name}] logs STDERR (poll ${i}/${max_retries}) -----&quot; &gt;&amp;2
       printf &apos;%s\n&apos; &quot;${stderr}&quot; &gt;&amp;2
       echo &quot;----- [end stderr] -----&quot; &gt;&amp;2
-    fi
-
-    # Track a moving timestamp so we don&apos;t reprint everything each time.
-    # Try to grab the last ISO-like timestamp from the log output (Spring Boot often emits it).
-    local new_ts
-    new_ts=&quot;$(printf &apos;%s\n&apos; &quot;${stdout}&quot; | grep -Eo &apos;^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+(Z|[+-][0-9]{2}:[0-9]{2})?&apos; | tail -n 1 || true)&quot;
-    if [[ -n &quot;${new_ts}&quot; ]]; then
-      last_seen_ts=&quot;${new_ts}&quot;
     fi
 
     # Success condition
