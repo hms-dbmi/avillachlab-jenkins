@@ -84,7 +84,7 @@ for output_name in $output_names; do
 
   # Verify CrowdStrike Falcon Sensor is running and connected
   echo &quot;Checking CrowdStrike Falcon Sensor status on ${output_name} (${INSTANCE_ID})...&quot;
-  falcon_command_json=$(jq -n &apos;{commands: ["sudo systemctl status falcon-sensor.service"]}&apos;)
+  falcon_command_json=$(jq -n &apos;{commands: ["sudo systemctl status falcon-sensor.service --no-pager -l; echo --- JOURNAL ---; sudo journalctl -u falcon-sensor.service --no-pager -n 100"]}&apos;)
   falcon_command_id=$(aws ssm send-command \
     --instance-ids &quot;${INSTANCE_ID}&quot; \
     --document-name &quot;AWS-RunShellScript&quot; \
