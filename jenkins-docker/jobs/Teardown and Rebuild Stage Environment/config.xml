@@ -348,6 +348,7 @@ else
   aws s3 --sse=AES256 cp scripts/deploy/deploy-wildfly.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-wildfly.sh
   aws s3 --sse=AES256 cp scripts/deploy/deploy-psama.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-psama.sh
   aws s3 --sse=AES256 cp scripts/deploy/deploy-dictionary.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-dictionary.sh
+  aws s3 --sse=AES256 cp scripts/deploy/deploy-wildfly-stack.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-wildfly-stack.sh
   aws s3 --sse=AES256 cp scripts/deploy/deploy-httpd.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-httpd.sh
   aws s3 --sse=AES256 cp scripts/deploy/deploy-auth-hpds.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-auth-hpds.sh
   aws s3 --sse=AES256 cp scripts/deploy/deploy-open-hpds.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-open-hpds.sh

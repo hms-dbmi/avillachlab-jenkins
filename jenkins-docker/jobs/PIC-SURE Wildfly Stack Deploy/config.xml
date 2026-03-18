@@ -1,0 +1,207 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description>Deploys wildfly-host containers (API, PSAMA, Dictionary) sequentially via a single
+SSM command to avoid systemd D-Bus race conditions, then waits for Spring Boot
+startup on all enabled containers in parallel.</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>S3_BUCKET_NAME</name>
+          <defaultValue>${stack_s3_bucket}</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>TARGET_STACK</name>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>DATASET_S3_OBJECT_KEY</name>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>DEPLOY_API</name>
+          <description>Deploy PIC-SURE API (Wildfly)</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>DEPLOY_PSAMA</name>
+          <description>Deploy PIC-SURE Auth Micro App (PSAMA)</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>DEPLOY_DICTIONARY</name>
+          <description>Deploy Dictionary API</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>ENABLE_DEBUG</name>
+          <defaultValue>false</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>SPRING_PROFILE</name>
+          <defaultValue>prod</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.scm.NullSCM"/>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <jdk>(System)</jdk>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/usr/bin/env bash
+set -euo pipefail
+
+# -----------------------------
+# Load shared bash functions
+# -----------------------------
+source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+echo &quot;Loading bash functions from: ${source_scripts_folder}&quot;
+ls -la &quot;${source_scripts_folder}&quot;
+
+shopt -s nullglob
+for script_file in &quot;${source_scripts_folder}&quot;*.sh; do
+  chmod +x &quot;${script_file}&quot; || true
+  if [[ -f &quot;${script_file}&quot; &amp;&amp; -x &quot;${script_file}&quot; ]]; then
+    echo &quot;sourcing ${script_file}&quot;
+    # shellcheck source=/dev/null
+    source &quot;${script_file}&quot;
+  fi
+done
+shopt -u nullglob
+
+# Fail fast if the core functions weren&apos;t loaded
+for fn in assume_role wait_for_command wait_for_spring_boot_ssm_logs reset_role; do
+  if ! command -v &quot;${fn}&quot; &gt;/dev/null 2&gt;&amp;1; then
+    echo &quot;ERROR: required function &apos;${fn}&apos; is not loaded from ${source_scripts_folder}&quot; &gt;&amp;2
+    exit 1
+  fi
+done
+
+: &quot;${TARGET_STACK:?TARGET_STACK is required}&quot;
+: &quot;${S3_BUCKET_NAME:?S3_BUCKET_NAME is required}&quot;
+
+# Default optional parameters
+DATASET_S3_OBJECT_KEY=&quot;${DATASET_S3_OBJECT_KEY:-}&quot;
+ENABLE_DEBUG=&quot;${ENABLE_DEBUG:-false}&quot;
+SPRING_PROFILE=&quot;${SPRING_PROFILE:-prod}&quot;
+
+assume_role
+
+# -----------------------------
+# Download terraform state
+# -----------------------------
+echo &quot;Download terraform.tfstate file for ${TARGET_STACK} stack&quot;
+aws s3 cp &quot;s3://${S3_BUCKET_NAME}/deployment_state_metadata/${TARGET_STACK}/terraform.tfstate&quot; &quot;terraform.tfstate&quot;
+
+# -----------------------------
+# Extract Wildfly EC2 instance ID
+# -----------------------------
+echo &quot;Extract WildFly instance ID for ${TARGET_STACK} stack&quot;
+wildfly_instance_id=&quot;$(jq -r &apos;.outputs[&quot;wildfly-ec2-id&quot;].value // empty&apos; terraform.tfstate)&quot;
+
+if [[ -z &quot;${wildfly_instance_id}&quot; ]]; then
+  echo &quot;ERROR: Could not extract wildfly_instance_id from terraform.tfstate&quot; &gt;&amp;2
+  exit 1
+fi
+
+echo &quot;WildFly Instance ID: ${wildfly_instance_id}&quot;
+
+# -----------------------------
+# Build remote command flags
+# -----------------------------
+deploy_flags=&quot;&quot;
+if [[ &quot;${DEPLOY_API}&quot; == &quot;true&quot; ]]; then
+  deploy_flags=&quot;${deploy_flags} --deploy_wildfly&quot;
+fi
+if [[ &quot;${DEPLOY_PSAMA}&quot; == &quot;true&quot; ]]; then
+  deploy_flags=&quot;${deploy_flags} --deploy_psama&quot;
+fi
+if [[ &quot;${DEPLOY_DICTIONARY}&quot; == &quot;true&quot; ]]; then
+  deploy_flags=&quot;${deploy_flags} --deploy_dictionary&quot;
+fi
+
+remote_cmd=$(
+  cat &lt;&lt;EOF
+sudo /opt/picsure/deploy-wildfly-stack.sh \
+  ${deploy_flags} \
+  --stack_s3_bucket &quot;${S3_BUCKET_NAME}&quot; \
+  --target_stack &quot;${TARGET_STACK}&quot; \
+  --dataset_s3_object_key &quot;${DATASET_S3_OBJECT_KEY}&quot; \
+  --enable_debug &quot;${ENABLE_DEBUG}&quot; \
+  --spring_profile &quot;${SPRING_PROFILE}&quot;
+EOF
+)
+
+echo &quot;${remote_cmd}&quot;
+
+remote_cmd_json=&quot;$(jq -n --arg cmd &quot;${remote_cmd}&quot; &apos;{commands: [$cmd]}&apos;)&quot;
+
+# -----------------------------
+# Send single SSM command
+# -----------------------------
+command_id=&quot;$(
+  aws ssm send-command \
+    --instance-ids &quot;${wildfly_instance_id}&quot; \
+    --document-name &quot;AWS-RunShellScript&quot; \
+    --comment &quot;Deploy Wildfly Stack (API+PSAMA+Dictionary)&quot; \
+    --parameters &quot;${remote_cmd_json}&quot; \
+    --timeout-seconds 600 \
+    --query &quot;Command.CommandId&quot; \
+    --output text
+)&quot;
+
+wait_for_command &quot;${command_id}&quot; &quot;${wildfly_instance_id}&quot;
+
+# -----------------------------
+# Wait for Spring Boot startup on all enabled containers (in parallel)
+# -----------------------------
+pids=()
+
+if [[ &quot;${DEPLOY_API}&quot; == &quot;true&quot; ]]; then
+  wait_for_spring_boot_ssm_logs &quot;${wildfly_instance_id}&quot; &quot;wildfly&quot; &quot;started in&quot; &amp;
+  pids+=($!)
+fi
+
+if [[ &quot;${DEPLOY_PSAMA}&quot; == &quot;true&quot; ]]; then
+  wait_for_spring_boot_ssm_logs &quot;${wildfly_instance_id}&quot; &quot;psama&quot; &amp;
+  pids+=($!)
+fi
+
+if [[ &quot;${DEPLOY_DICTIONARY}&quot; == &quot;true&quot; ]]; then
+  wait_for_spring_boot_ssm_logs &quot;${wildfly_instance_id}&quot; &quot;dictionary-api&quot; &amp;
+  pids+=($!)
+fi
+
+failed=false
+for pid in &quot;${pids[@]}&quot;; do
+  if ! wait &quot;${pid}&quot;; then
+    failed=true
+  fi
+done
+
+if [[ &quot;${failed}&quot; == &quot;true&quot; ]]; then
+  echo &quot;ERROR: One or more Spring Boot applications failed to start.&quot;
+  exit 1
+fi
+
+echo &quot;All wildfly-host containers started successfully.&quot;
+
+reset_role
+</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers/>
+</project>

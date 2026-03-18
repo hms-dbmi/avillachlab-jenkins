@@ -1,7 +1,8 @@
 <?xml version='1.1' encoding='UTF-8'?>
-<project>
+<flow-definition plugin="workflow-job@1540.v295eccc9778f">
   <actions/>
-  <description></description>
+  <description>Deploys Dictionary API via the Wildfly Stack Deploy job to prevent
+D-Bus race conditions with other wildfly-host containers.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
@@ -18,104 +19,25 @@
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <scm class="hudson.scm.NullSCM"/>
-  <canRoam>true</canRoam>
-  <disabled>false</disabled>
-  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
-  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
-  <jdk>(System)</jdk>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@4183.v94b_6fd39da_c1">
+    <script>pipeline {
+  agent any
+  stages {
+    stage(&apos;Deploy Dictionary&apos;) {
+      steps {
+        build job: &apos;PIC-SURE Wildfly Stack Deploy&apos;, parameters: [
+          [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: params.S3_BUCKET_NAME],
+          [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: params.TARGET_STACK],
+          [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_API&apos;, value: false],
+          [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_PSAMA&apos;, value: false],
+          [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_DICTIONARY&apos;, value: true]
+        ]
+      }
+    }
+  }
+}</script>
+    <sandbox>true</sandbox>
+  </definition>
   <triggers/>
-  <concurrentBuild>false</concurrentBuild>
-  <builders>
-    <hudson.tasks.Shell>
-      <command>#!/usr/bin/env bash
-set -euo pipefail
-
-# -----------------------------
-# Load shared bash functions
-# -----------------------------
-source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
-echo &quot;Loading bash functions from: ${source_scripts_folder}&quot;
-ls -la &quot;${source_scripts_folder}&quot;
-
-shopt -s nullglob
-for script_file in &quot;${source_scripts_folder}&quot;*.sh; do
-  chmod +x &quot;${script_file}&quot; || true
-  if [[ -f &quot;${script_file}&quot; &amp;&amp; -x &quot;${script_file}&quot; ]]; then
-    echo &quot;sourcing ${script_file}&quot;
-    # shellcheck source=/dev/null
-    source &quot;${script_file}&quot;
-  fi
-done
-shopt -u nullglob
-
-# Fail fast if the core functions weren&apos;t loaded
-for fn in assume_role wait_for_command wait_for_spring_boot_ssm_logs reset_role; do
-  if ! command -v &quot;${fn}&quot; &gt;/dev/null 2&gt;&amp;1; then
-    echo &quot;ERROR: required function &apos;${fn}&apos; is not loaded from ${source_scripts_folder}&quot; &gt;&amp;2
-    exit 1
-  fi
-done
-
-# Only require what is truly required to find the instance + state
-: &quot;${TARGET_STACK:?TARGET_STACK is required}&quot;
-: &quot;${S3_BUCKET_NAME:?S3_BUCKET_NAME is required}&quot;
-
-assume_role
-
-# -----------------------------
-# Download terraform state
-# -----------------------------
-echo &quot;Download terraform.tfstate file for ${TARGET_STACK} stack&quot;
-aws s3 cp &quot;s3://${S3_BUCKET_NAME}/deployment_state_metadata/${TARGET_STACK}/terraform.tfstate&quot; &quot;terraform.tfstate&quot;
-
-# -----------------------------
-# Extract Wildfly EC2 instance ID
-# -----------------------------
-echo &quot;Extract WildFly instance ID for ${TARGET_STACK} stack&quot;
-wildfly_instance_id=&quot;$(jq -r &apos;.outputs[&quot;wildfly-ec2-id&quot;].value // empty&apos; terraform.tfstate)&quot;
-
-if [[ -z &quot;${wildfly_instance_id}&quot; ]]; then
-  echo &quot;ERROR: Could not extract wildfly_instance_id from terraform.tfstate (.outputs[\&quot;wildfly-ec2-id\&quot;].value)&quot; &gt;&amp;2
-  exit 1
-fi
-
-echo &quot;WildFly Instance ID: ${wildfly_instance_id}&quot;
-
-# -----------------------------
-# Build remote command
-# -----------------------------
-update_dictionary_container=$(
-  cat &lt;&lt;EOF
-sudo /opt/picsure/deploy-dictionary.sh \
-  --stack_s3_bucket &quot;${S3_BUCKET_NAME}&quot; \
-  --target_stack &quot;${TARGET_STACK}&quot;
-EOF
-)
-
-echo &quot;${update_dictionary_container}&quot;
-
-# SSM parameters must be: {&quot;commands&quot;:[&quot;...&quot;]}
-update_dictionary_container_json=&quot;$(jq -n --arg cmd &quot;${update_dictionary_container}&quot; &apos;{commands: [$cmd]}&apos;)&quot;
-
-command_id=&quot;$(
-  aws ssm send-command \
-    --instance-ids &quot;${wildfly_instance_id}&quot; \
-    --document-name &quot;AWS-RunShellScript&quot; \
-    --comment &quot;Deploy Dictionary&quot; \
-    --parameters &quot;${update_dictionary_container_json}&quot; \
-    --query &quot;Command.CommandId&quot; \
-    --output text
-)&quot;
-
-wait_for_command &quot;${command_id}&quot; &quot;${wildfly_instance_id}&quot;
-wait_for_spring_boot_ssm_logs &quot;${wildfly_instance_id}&quot; &quot;dictionary-api&quot;
-
-reset_role
-</command>
-      <configuredLocalRules/>
-    </hudson.tasks.Shell>
-  </builders>
-  <publishers/>
-  <buildWrappers/>
-</project>
+  <disabled>false</disabled>
+</flow-definition>

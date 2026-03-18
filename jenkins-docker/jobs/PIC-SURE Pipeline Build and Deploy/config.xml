@@ -258,14 +258,19 @@ pipeline {
     stage(&apos;Application Deploys (parallel)&apos;) {
       steps {
         parallel (
-          api_deploy: {
+          wildfly_stack_deploy: {
             script {
-              if (params.INCLUDE_PIC_SURE_API) {
-                build job: &apos;PIC-SURE API Deploy&apos;, parameters: [
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
+              def shouldDeploy = params.INCLUDE_PIC_SURE_API || params.INCLUDE_PIC_SURE_AUTH_MICRO_APP || params.INCLUDE_PIC_SURE_DICTIONARY
+              if (shouldDeploy) {
+                build job: &apos;PIC-SURE Wildfly Stack Deploy&apos;, parameters: [
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;DATASET_S3_OBJECT_KEY&apos;, value: String.valueOf(params.DATASET_S3_OBJECT_KEY)],
+                  [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_API&apos;, value: params.INCLUDE_PIC_SURE_API],
+                  [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_PSAMA&apos;, value: params.INCLUDE_PIC_SURE_AUTH_MICRO_APP],
+                  [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_DICTIONARY&apos;, value: params.INCLUDE_PIC_SURE_DICTIONARY]
                 ]
               } else {
-                echo &apos;Skipping API Deploy (API not selected)&apos;
+                echo &apos;Skipping Wildfly Stack Deploy (no wildfly-host components selected)&apos;
               }
             }
           },
@@ -277,29 +282,6 @@ pipeline {
                 ]
               } else {
                 echo &apos;Skipping PIC-SURE Frontend Deploy&apos;
-              }
-            }
-          },
-          auth_micro_app_deploy: {
-            script {
-              if (params.INCLUDE_PIC_SURE_AUTH_MICRO_APP) {
-                build job: &apos;PIC-SURE Auth Micro App Deploy&apos;, parameters: [
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;DATASET_S3_OBJECT_KEY&apos;, value: String.valueOf(params.DATASET_S3_OBJECT_KEY)]
-                ]
-              } else {
-                echo &apos;Skipping PIC-SURE Auth Micro App Deploy&apos;
-              }
-            }
-          },
-          dictionary_deploy: {
-            script {
-              if (params.INCLUDE_PIC_SURE_DICTIONARY) {
-                build job: &apos;PIC-SURE Dictionary Deploy&apos;, parameters: [
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
-                ]
-              } else {
-                echo &apos;Skipping PIC-SURE Dictionary Deploy&apos;
               }
             }
           },
