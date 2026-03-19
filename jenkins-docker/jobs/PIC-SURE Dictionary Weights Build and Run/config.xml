@@ -101,7 +101,7 @@
         <hudson.model.StringParameterDefinition>
           <name>GIT_REPO_URL</name>
           <description>The GitHub repository URL</description>
-          <defaultValue>${git_base_url}/picsure-dictionary.git</defaultValue>
+          <defaultValue>${dictionary_git_repo}</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
