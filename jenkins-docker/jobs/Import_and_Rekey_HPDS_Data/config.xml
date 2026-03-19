@@ -58,7 +58,7 @@
       <command>#!/bin/bash
 set -e
 
-datasets-s3-role="${datasets-s3-role:-arn:aws:iam::515157839325:role/curated-datasets-s3-role}"
+datasets_s3_role="${datasets_s3_role:-arn:aws:iam::515157839325:role/curated-datasets-s3-role}"
 
 # Source folder containing the scripts
 source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
@@ -87,7 +87,7 @@ mkdir -p local/source/
 
 
 ### Pull data set to rekey.
-assume_role &quot;${datasets-s3-role}&quot;
+assume_role &quot;${datasets_s3_role}&quot;
 
 aws s3 cp ${source_s3_url} local/source/javabins.tar --no-progress
 
