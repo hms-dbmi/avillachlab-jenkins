@@ -1,0 +1,83 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description>Upload HPDS template files (.tftpl) to S3 for use by the Render HPDS Config Templates job.</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>TARGET_STACK</name>
+          <description>Target stack identifier (e.g., a, b). Leave empty to upload to the shared template path.</description>
+          <defaultValue></defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.FileParameterDefinition>
+          <name>hpds-auth.env.tftpl</name>
+          <description>Upload an auth HPDS template file. This template is rendered with environment-specific values during deployment.</description>
+        </hudson.model.FileParameterDefinition>
+        <hudson.model.FileParameterDefinition>
+          <name>hpds-open.env.tftpl</name>
+          <description>Upload an open HPDS template file. This template is rendered with environment-specific values during deployment.</description>
+        </hudson.model.FileParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.scm.NullSCM"/>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <jdk>(System)</jdk>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+
+set -e
+# Source folder containing the scripts
+source_scripts_folder="${JENKINS_HOME}/workspace/Bash_Functions/"
+
+# Iterate through the files in the folder and source them
+for script_file in "$source_scripts_folder"*.sh; do
+    chmod +x "$script_file"
+    if [ -f "$script_file" ] &amp;&amp; [ -x "$script_file" ]; then
+        echo "sourcing $script_file"
+        source "$script_file"
+    fi
+done
+
+assume_role
+
+# Determine S3 prefix based on TARGET_STACK
+if [ -n "${TARGET_STACK}" ]; then
+    S3_PREFIX="configs/hpds/templates/${TARGET_STACK}"
+    echo "Uploading to stack-specific path: ${S3_PREFIX}/"
+else
+    S3_PREFIX="configs/hpds/templates"
+    echo "Uploading to shared path: ${S3_PREFIX}/"
+fi
+
+# Upload the HPDS template files to S3
+if [ -f hpds-auth.env.tftpl ]; then
+    aws s3 --sse=AES256 cp hpds-auth.env.tftpl "s3://$stack_s3_bucket/${S3_PREFIX}/hpds-auth.env.tftpl"
+    echo "Uploaded hpds-auth.env.tftpl"
+else
+    echo "No hpds-auth.env.tftpl file provided, skipping."
+fi
+
+if [ -f hpds-open.env.tftpl ]; then
+    aws s3 --sse=AES256 cp hpds-open.env.tftpl "s3://$stack_s3_bucket/${S3_PREFIX}/hpds-open.env.tftpl"
+    echo "Uploaded hpds-open.env.tftpl"
+else
+    echo "No hpds-open.env.tftpl file provided, skipping."
+fi
+
+reset_role</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers/>
+</project>

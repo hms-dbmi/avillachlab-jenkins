@@ -179,7 +179,7 @@ pipeline {
       }
     }
 
-    stage(&apos;Application Builds (parallel)&apos;) {
+    stage(&apos;PIC-SURE API Build, PIC-SURE Frontend Build, PIC-SURE Dictionary Build&apos;) {
       steps {
         parallel (
           picsureapi: {
@@ -193,14 +193,6 @@ pipeline {
                 ]
               } else {
                 echo &apos;Skipping PIC-SURE API Build&apos;
-              }
-
-              if (params.INCLUDE_PIC_SURE_API) {
-                build job: &apos;PIC-SURE WildFly Build&apos;, parameters: [
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
-                ]
-              } else {
-                echo &apos;Skipping WildFly Build (API not selected)&apos;
               }
             }
           },
@@ -219,26 +211,13 @@ pipeline {
             }
           },
 
-          picsureauth: {
-            script {
-              if (params.INCLUDE_PIC_SURE_AUTH_MICRO_APP) {
-                def psamaGit = build_hashes[&apos;PSAMA&apos;]
-                build job: &apos;PIC-SURE Auth Micro App Build&apos;, parameters: [
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: psamaGit]
-                ]
-              } else {
-                echo &apos;Skipping PIC-SURE Auth Micro App Build&apos;
-              }
-            }
-          },
-
           dictionary: {
             script {
               if (params.INCLUDE_PIC_SURE_DICTIONARY) {
                 def dictGit = build_hashes[&apos;PSD&apos;]
                 build job: &apos;PIC-SURE Dictionary Build&apos;, parameters: [
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: dictGit]
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;GIT_HASH&apos;, value: dictGit]
                 ]
               } else {
                 echo &apos;Skipping PIC-SURE Dictionary Build&apos;
@@ -249,17 +228,29 @@ pipeline {
       }
     }
 
-    stage(&apos;HPDS Build (once)&apos;) {
-      when {
-        expression { return params.INCLUDE_PIC_SURE_HPDS_AUTH || params.INCLUDE_PIC_SURE_HPDS_OPEN }
-      }
+    stage(&apos;PIC-SURE HPDS Build and PIC-SURE Auth Micro App Build&apos;) {
       steps {
         script {
-          def hpdsGit = build_hashes[&apos;PSH&apos;]
-          build job: &apos;PIC-SURE HPDS Build&apos;, parameters: [
-            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-            [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: hpdsGit]
-          ]
+          if (params.INCLUDE_PIC_SURE_HPDS_AUTH || params.INCLUDE_PIC_SURE_HPDS_OPEN) {
+            def hpdsGit = build_hashes[&apos;PSH&apos;]
+            build job: &apos;PIC-SURE HPDS Build&apos;, parameters: [
+              [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+              [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: hpdsGit]
+            ]
+          } else {
+            echo &apos;Skipping PIC-SURE HPDS Build&apos;
+          }
+        }
+        script {
+          if (params.INCLUDE_PIC_SURE_AUTH_MICRO_APP) {
+            def psamaGit = build_hashes[&apos;PSAMA&apos;]
+            build job: &apos;PIC-SURE Auth Micro App Build&apos;, parameters: [
+              [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+              [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: psamaGit]
+            ]
+          } else {
+            echo &apos;Skipping PIC-SURE Auth Micro App Build&apos;
+          }
         }
       }
     }
@@ -267,14 +258,19 @@ pipeline {
     stage(&apos;Application Deploys (parallel)&apos;) {
       steps {
         parallel (
-          wildfly_api_deploy: {
+          wildfly_stack_deploy: {
             script {
-              if (params.INCLUDE_PIC_SURE_API) {
-                build job: &apos;PIC-SURE WildFly Deploy&apos;, parameters: [
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
+              def shouldDeploy = params.INCLUDE_PIC_SURE_API || params.INCLUDE_PIC_SURE_AUTH_MICRO_APP || params.INCLUDE_PIC_SURE_DICTIONARY
+              if (shouldDeploy) {
+                build job: &apos;PIC-SURE Wildfly Stack Deploy&apos;, parameters: [
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;DATASET_S3_OBJECT_KEY&apos;, value: String.valueOf(params.DATASET_S3_OBJECT_KEY)],
+                  [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_API&apos;, value: params.INCLUDE_PIC_SURE_API],
+                  [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_PSAMA&apos;, value: params.INCLUDE_PIC_SURE_AUTH_MICRO_APP],
+                  [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_DICTIONARY&apos;, value: params.INCLUDE_PIC_SURE_DICTIONARY]
                 ]
               } else {
-                echo &apos;Skipping WildFly Deploy (API not selected)&apos;
+                echo &apos;Skipping Wildfly Stack Deploy (no wildfly-host components selected)&apos;
               }
             }
           },
@@ -289,35 +285,12 @@ pipeline {
               }
             }
           },
-          auth_micro_app_deploy: {
-            script {
-              if (params.INCLUDE_PIC_SURE_AUTH_MICRO_APP) {
-                build job: &apos;PIC-SURE Auth Micro App Deploy&apos;, parameters: [
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;DATASET_S3_OBJECT_KEY&apos;, value: String.valueOf(params.DATASET_S3_OBJECT_KEY)]
-                ]
-              } else {
-                echo &apos;Skipping PIC-SURE Auth Micro App Deploy&apos;
-              }
-            }
-          },
-          dictionary_deploy: {
-            script {
-              if (params.INCLUDE_PIC_SURE_DICTIONARY) {
-                build job: &apos;PIC-SURE Dictionary Deploy&apos;, parameters: [
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
-                ]
-              } else {
-                echo &apos;Skipping PIC-SURE Dictionary Deploy&apos;
-              }
-            }
-          },
           hpds_auth_deploy: {
             script {
               if (params.INCLUDE_PIC_SURE_HPDS_AUTH) {
                 build job: &apos;PIC-SURE HPDS Auth Deploy&apos;, parameters: [
                   [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;STACK_S3_BUCKET&apos;, value: STACK_S3_BUCKET],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: String.valueOf(params.STACK_S3_BUCKET)],
                   [$class: &apos;StringParameterValue&apos;, name: &apos;DATA_S3_OBJECT_KEY&apos;, value: String.valueOf(params.DATA_S3_OBJECT_KEY)],
                   [$class: &apos;StringParameterValue&apos;, name: &apos;GENOMIC_DATASET_S3_OBJECT_KEY&apos;, value: String.valueOf(params.GENOMIC_DATASET_S3_OBJECT_KEY)]
                 ]
@@ -331,7 +304,7 @@ pipeline {
               if (params.INCLUDE_PIC_SURE_HPDS_OPEN) {
                 build job: &apos;PIC-SURE HPDS Open Deploy&apos;, parameters: [
                   [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;STACK_S3_BUCKET&apos;, value: STACK_S3_BUCKET],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;STACK_S3_BUCKET&apos;, value: String.valueOf(params.STACK_S3_BUCKET)],
                   [$class: &apos;StringParameterValue&apos;, name: &apos;DESTIGMATIZED_DATASET_S3_OBJECT_KEY&apos;, value: String.valueOf(params.DESTIGMATIZED_DATASET_S3_OBJECT_KEY)]
                 ]
               } else {

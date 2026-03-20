@@ -1,0 +1,8 @@
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+         - usernamePassword:
+            id: gitlab_token
+            username: ${GITLAB_USER}
+            password: ${GITLAB_TOKEN}

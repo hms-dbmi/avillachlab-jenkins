@@ -87,3 +87,8 @@ variable "is_initialized" {
   type    = string
   default = "false"
 }
+
+variable "git_credentials_id" {
+  type    = string
+  default = ""
+}

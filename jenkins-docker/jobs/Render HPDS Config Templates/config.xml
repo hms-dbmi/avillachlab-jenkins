@@ -1,0 +1,123 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description>Renders HPDS configuration templates with environment-specific values and uploads to S3.</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>INFRASTRUCTURE_GIT_HASH</name>
+          <description>Git hash of the infrastructure repo to checkout</description>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>TARGET_STACK</name>
+          <description>Target stack identifier (e.g., a, b)</description>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>RENDER_AUTH_HPDS</name>
+          <description>Render and upload the auth HPDS env file</description>
+          <defaultValue>true</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>RENDER_OPEN_HPDS</name>
+          <description>Render and upload the open HPDS env file</description>
+          <defaultValue>true</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.1">
+    <configVersion>2</configVersion>
+    <userRemoteConfigs>
+      <hudson.plugins.git.UserRemoteConfig>
+        <url>${infrastructure_git_repo}</url>
+        <credentialsId>${git_credentials_id}</credentialsId>
+      </hudson.plugins.git.UserRemoteConfig>
+    </userRemoteConfigs>
+    <branches>
+      <hudson.plugins.git.BranchSpec>
+        <name>${INFRASTRUCTURE_GIT_HASH}</name>
+      </hudson.plugins.git.BranchSpec>
+    </branches>
+    <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+    <submoduleCfg class="empty-list"/>
+    <extensions/>
+  </scm>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <jdk>(System)</jdk>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+set -e
+
+# Source folder containing the scripts
+source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+
+# Iterate through the files in the folder and source them
+for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+    chmod +x &quot;$script_file&quot;
+    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+        echo &quot;sourcing $script_file&quot;
+        source &quot;$script_file&quot;
+    fi
+done
+
+assume_role
+
+cd app-infrastructure/template-renderer
+
+# Download S3-staged templates if they exist, otherwise fall back to repo versions
+echo &quot;Attempting to download templates from S3...&quot;
+
+if [ &quot;${RENDER_AUTH_HPDS}&quot; = &quot;true&quot; ]; then
+  aws s3 cp &quot;s3://${stack_s3_bucket}/configs/hpds/templates/${TARGET_STACK}/hpds-auth.env.tftpl&quot; \
+    templates/hpds-auth.env.tftpl \
+    &amp;&amp; echo &quot;Using stack-specific S3 template for hpds-auth.env.tftpl&quot; \
+    || { aws s3 cp &quot;s3://${stack_s3_bucket}/configs/hpds/templates/hpds-auth.env.tftpl&quot; \
+      templates/hpds-auth.env.tftpl \
+      &amp;&amp; echo &quot;Using shared S3 template for hpds-auth.env.tftpl&quot; \
+      || echo &quot;No S3 template found, using repo version of hpds-auth.env.tftpl&quot;; }
+fi
+
+if [ &quot;${RENDER_OPEN_HPDS}&quot; = &quot;true&quot; ]; then
+  aws s3 cp &quot;s3://${stack_s3_bucket}/configs/hpds/templates/${TARGET_STACK}/hpds-open.env.tftpl&quot; \
+    templates/hpds-open.env.tftpl \
+    &amp;&amp; echo &quot;Using stack-specific S3 template for hpds-open.env.tftpl&quot; \
+    || { aws s3 cp &quot;s3://${stack_s3_bucket}/configs/hpds/templates/hpds-open.env.tftpl&quot; \
+      templates/hpds-open.env.tftpl \
+      &amp;&amp; echo &quot;Using shared S3 template for hpds-open.env.tftpl&quot; \
+      || echo &quot;No S3 template found, using repo version of hpds-open.env.tftpl&quot;; }
+fi
+
+terraform init -input=false
+
+terraform apply -auto-approve -input=false \
+  -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
+  -var=&quot;environment_name=${environment_name}&quot; \
+  -var=&quot;target_stack=${TARGET_STACK}&quot; \
+  -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
+  -var=&quot;render_auth_hpds=${RENDER_AUTH_HPDS}&quot; \
+  -var=&quot;render_open_hpds=${RENDER_OPEN_HPDS}&quot;
+
+reset_role</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.46">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
+</project>

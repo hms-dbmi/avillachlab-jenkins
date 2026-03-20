@@ -123,8 +123,8 @@ pipeline {
                     sh &apos;cat build-spec.json&apos;
                     sh &apos;cat pipeline_git_commit.txt&apos;
                     sh &apos;pwd&apos;
-                    def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/PIC-SURE WildFly Build and Deploy/build-spec.json&apos;))
-                    pipelineBuildId = new File(&apos;/var/jenkins_home/workspace/PIC-SURE WildFly Build and Deploy/pipeline_git_commit.txt&apos;).text.trim()
+                    def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/PIC-SURE API Build and Deploy/build-spec.json&apos;))
+                    pipelineBuildId = new File(&apos;/var/jenkins_home/workspace/PIC-SURE API Build and Deploy/pipeline_git_commit.txt&apos;).text.trim()
                     for(def build : buildSpec.application){
                         build_hashes[build.project_job_git_key] = build.git_hash
                     }
@@ -155,19 +155,10 @@ pipeline {
                 }
             }
         }
-        stage(&apos;PIC-SURE WildFly Build&apos;) {
-            steps {
-                script{
-                    def result = build job: &apos;PIC-SURE WildFly Build&apos;, parameters: [
-                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                    ]
-                }
-            }
-        }
-        stage(&apos;PIC-SURE WildFly Deploy&apos;) {
+        stage(&apos;PIC-SURE API Deploy&apos;) {
             steps {
                 script {
-                    def result = build job: &apos;PIC-SURE WildFly Deploy&apos;, parameters:
+                    def result = build job: &apos;PIC-SURE API Deploy&apos;, parameters:
                         [
                             [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
                         ]

@@ -1,7 +1,7 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <flow-definition plugin="workflow-job@1540.v295eccc9778f">
   <actions/>
-  <description>Deploys Dictionary API via the Wildfly Stack Deploy job to prevent
+  <description>Deploys PIC-SURE API (Wildfly) via the Wildfly Stack Deploy job to prevent
 D-Bus race conditions with other wildfly-host containers.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
@@ -23,14 +23,14 @@ D-Bus race conditions with other wildfly-host containers.</description>
     <script>pipeline {
   agent any
   stages {
-    stage(&apos;Deploy Dictionary&apos;) {
+    stage(&apos;Deploy API&apos;) {
       steps {
         build job: &apos;PIC-SURE Wildfly Stack Deploy&apos;, parameters: [
           [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: params.S3_BUCKET_NAME],
           [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: params.TARGET_STACK],
-          [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_API&apos;, value: false],
+          [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_API&apos;, value: true],
           [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_PSAMA&apos;, value: false],
-          [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_DICTIONARY&apos;, value: true]
+          [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_DICTIONARY&apos;, value: false]
         ]
       }
     }

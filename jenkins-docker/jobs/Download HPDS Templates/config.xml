@@ -1,0 +1,136 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job@1540.v295eccc9778f">
+  <actions>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2265.v140e610fe9d5"/>
+    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2265.v140e610fe9d5">
+      <jobProperties/>
+      <triggers/>
+      <parameters/>
+      <options/>
+    </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
+  </actions>
+  <description>Download the current HPDS template files (.tftpl) from S3, falling back to the infrastructure repo version.</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>INFRASTRUCTURE_GIT_HASH</name>
+          <description>Git hash of the infrastructure repo to checkout (used for fallback templates). Leave empty to use the value from the release control build-spec.json.</description>
+          <defaultValue></defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>TARGET_STACK</name>
+          <description>Target stack identifier (e.g., a, b). Leave empty to download from the shared template path.</description>
+          <defaultValue></defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@4183.v94b_6fd39da_c1">
+    <script>import groovy.json.JsonSlurper;
+
+def infrastructure_git_hash
+
+pipeline {
+  agent any
+
+  options {
+    skipDefaultCheckout(true)
+  }
+
+  stages {
+    stage(&apos;Resolve Infrastructure Git Hash&apos;) {
+      steps {
+        script {
+          if (params.INFRASTRUCTURE_GIT_HASH?.trim()) {
+            infrastructure_git_hash = params.INFRASTRUCTURE_GIT_HASH.trim()
+            echo &quot;Using provided INFRASTRUCTURE_GIT_HASH: ${infrastructure_git_hash}&quot;
+          } else {
+            def result = build job: &apos;Retrieve Build Spec&apos;
+            copyArtifacts filter: &apos;build-spec.json&apos;, projectName: &apos;Retrieve Build Spec&apos;, selector: specific(&quot;&quot; + result.number)
+            def buildSpec = new JsonSlurper().parse(new File(&quot;${env.WORKSPACE}/build-spec.json&quot;))
+            infrastructure_git_hash = buildSpec.infrastructure_git_hash
+            echo &quot;Resolved INFRASTRUCTURE_GIT_HASH from release control: ${infrastructure_git_hash}&quot;
+          }
+        }
+      }
+    }
+
+    stage(&apos;Checkout Infrastructure Repo&apos;) {
+      steps {
+        checkout([
+          $class: &apos;GitSCM&apos;,
+          userRemoteConfigs: [[
+            url: &quot;${infrastructure_git_repo}&quot;,
+            credentialsId: &quot;${git_credentials_id}&quot;
+          ]],
+          branches: [[name: infrastructure_git_hash]]
+        ])
+      }
+    }
+
+    stage(&apos;Download Templates&apos;) {
+      steps {
+        script {
+          def repoTemplateDir = &apos;app-infrastructure/template-renderer/templates&apos;
+          def targetStack = params.TARGET_STACK?.trim() ?: &apos;&apos;
+
+          // Source bash functions
+          sh &apos;&apos;&apos;
+            source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+            for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+                chmod +x &quot;$script_file&quot;
+                if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+                    source &quot;$script_file&quot;
+                fi
+            done
+          &apos;&apos;&apos;
+
+          // Download hpds-auth.env.tftpl
+          def authFound = false
+          if (targetStack) {
+            authFound = sh(script: &quot;aws s3 cp s3://\${stack_s3_bucket}/configs/hpds/templates/${targetStack}/hpds-auth.env.tftpl hpds-auth.env.tftpl&quot;, returnStatus: true) == 0
+            if (authFound) echo &quot;Using stack-specific S3 template for hpds-auth.env.tftpl&quot;
+          }
+          if (!authFound) {
+            authFound = sh(script: &quot;aws s3 cp s3://\${stack_s3_bucket}/configs/hpds/templates/hpds-auth.env.tftpl hpds-auth.env.tftpl&quot;, returnStatus: true) == 0
+            if (authFound) echo &quot;Using shared S3 template for hpds-auth.env.tftpl&quot;
+          }
+          if (!authFound) {
+            echo &quot;No S3 template found, using repo version of hpds-auth.env.tftpl&quot;
+            sh &quot;cp ${repoTemplateDir}/hpds-auth.env.tftpl hpds-auth.env.tftpl&quot;
+          }
+
+          // Download hpds-open.env.tftpl
+          def openFound = false
+          if (targetStack) {
+            openFound = sh(script: &quot;aws s3 cp s3://\${stack_s3_bucket}/configs/hpds/templates/${targetStack}/hpds-open.env.tftpl hpds-open.env.tftpl&quot;, returnStatus: true) == 0
+            if (openFound) echo &quot;Using stack-specific S3 template for hpds-open.env.tftpl&quot;
+          }
+          if (!openFound) {
+            openFound = sh(script: &quot;aws s3 cp s3://\${stack_s3_bucket}/configs/hpds/templates/hpds-open.env.tftpl hpds-open.env.tftpl&quot;, returnStatus: true) == 0
+            if (openFound) echo &quot;Using shared S3 template for hpds-open.env.tftpl&quot;
+          }
+          if (!openFound) {
+            echo &quot;No S3 template found, using repo version of hpds-open.env.tftpl&quot;
+            sh &quot;cp ${repoTemplateDir}/hpds-open.env.tftpl hpds-open.env.tftpl&quot;
+          }
+        }
+      }
+    }
+  }
+
+  post {
+    success {
+      archiveArtifacts artifacts: &apos;hpds-auth.env.tftpl,hpds-open.env.tftpl&apos;, allowEmptyArchive: true
+    }
+  }
+}</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>
