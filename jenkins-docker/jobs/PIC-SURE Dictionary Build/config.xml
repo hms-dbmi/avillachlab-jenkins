@@ -92,6 +92,7 @@
       <userRemoteConfigs>
         <hudson.plugins.git.UserRemoteConfig>
           <url>${jenkins_git_repo}</url>
+          <credentialsId>${git_credentials_id}</credentialsId>
         </hudson.plugins.git.UserRemoteConfig>
       </userRemoteConfigs>
       <branches>
