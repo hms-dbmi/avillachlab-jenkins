@@ -92,3 +92,8 @@ variable "git_credentials_id" {
   type    = string
   default = ""
 }
+
+variable "stack_s3_bucket" {
+  type = string
+  default = ""
+}
