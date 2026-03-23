@@ -70,8 +70,6 @@ for script_file in &quot;$source_scripts_folder&quot;*.sh; do
     fi
 done
 
-assume_role
-
 cd app-infrastructure/template-renderer
 
 # Download S3-staged templates if they exist, otherwise fall back to repo versions
@@ -107,7 +105,7 @@ terraform apply -auto-approve -input=false \
   -var=&quot;render_auth_hpds=${RENDER_AUTH_HPDS}&quot; \
   -var=&quot;render_open_hpds=${RENDER_OPEN_HPDS}&quot;
 
-reset_role</command>
+       </command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
