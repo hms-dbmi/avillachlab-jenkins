@@ -64,7 +64,7 @@ aws --region us-east-1 s3 cp &quot;${jenkins_config_s3_location}&quot; ./config.
 
 # Upload current scriptApproval.xml to S3 so the new Jenkins inherits approved scripts
 echo &quot;# Upload scriptApproval.xml to S3&quot;
-aws --region us-east-1 s3 cp &quot;${JENKINS_HOME}/scriptApproval.xml&quot; &quot;${jenkins_config_s3_location}/scriptApproval.xml&quot;
+aws --region us-east-1 s3 cp &quot;${JENKINS_HOME}/scriptApproval.xml&quot; &quot;s3://${stack_s3_bucket}/jenkins_config/scriptApproval.xml&quot;
 
 # Build Container
 echo &quot;# Build Container&quot;
@@ -146,7 +146,8 @@ terraform apply -auto-approve \
 -var &quot;jenkins_docker_maven_distro=${jenkins_docker_maven_distro}&quot; \
 -var &quot;jenkins_docker_terraform_distro=${jenkins_docker_terraform_distro}&quot; \
 -var &quot;git_credentials_id=${git_credentials_id}&quot; \
--var &quot;program=${environment_prefix}&quot;
+-var &quot;program=${environment_prefix}&quot; \
+-var &quot;stack_s3_bucket=${stack_s3_bucket}&quot;
 
 # Moving this to Terraform remote state
 #aws s3 --sse=AES256 cp terraform.tfstate s3://${jenkins_tf_state_bucket}/jenkins_state/jenkins_${GIT_COMMIT}/terraform.tfstate
@@ -187,7 +188,8 @@ terraform apply -auto-approve \
 -var &quot;jenkins_docker_terraform_distro=${jenkins_docker_terraform_distro}&quot; \
 -var &quot;git_credentials_id=${git_credentials_id}&quot; \
 -var &quot;program=${environment_prefix}&quot; \
--var &quot;is_initialized=true&quot;
+-var &quot;is_initialized=true&quot; \
+-var &quot;stack_s3_bucket=${stack_s3_bucket}&quot;
 
 # swap the backends so newly deployed jenkins backend is stored in blue
 echo &quot;Moving states for green/blue&quot;
