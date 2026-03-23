@@ -63,7 +63,8 @@ terraform plan -destroy -out jenkins.tfplan \
 -var &quot;jenkins_tf_local_var_OS_dist=${jenkins_tf_local_var_OS_dist}&quot; \
 -var &quot;jenkins_ec2_ebs_volume_size=${jenkins_ec2_ebs_volume_size}&quot; \
 -var &quot;jenkins_docker_maven_distro=${jenkins_docker_maven_distro}&quot; \
--var &quot;jenkins_docker_terraform_distro=${jenkins_docker_terraform_distro}&quot;
+-var &quot;jenkins_docker_terraform_distro=${jenkins_docker_terraform_distro}&quot; \
+-var "stack_s3_bucket=${stack_s3_bucket}"
 
 if $Destroy; then
   terraform apply jenkins.tfplan
