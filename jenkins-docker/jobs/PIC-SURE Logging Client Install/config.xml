@@ -38,14 +38,16 @@
   <triggers/>
   <concurrentBuild>false</concurrentBuild>
   <builders>
-    <hudson.tasks.Maven>
-      <targets>clean install -DskipTests</targets>
-      <mavenName>(Default)</mavenName>
-      <usePrivateRepository>false</usePrivateRepository>
-      <settings class="jenkins.mvn.DefaultSettingsProvider"/>
-      <globalSettings class="jenkins.mvn.DefaultGlobalSettingsProvider"/>
-      <injectBuildVariables>false</injectBuildVariables>
-    </hudson.tasks.Maven>
+    <hudson.tasks.Shell>
+      <command>docker run --rm \
+  -v &quot;/var/jenkins_home/workspace/$JOB_NAME/:/app:z&quot; \
+  -v maven_m2_cache:/root/.m2 \
+  -w /app \
+  --platform=linux/amd64 \
+  maven:3.9-eclipse-temurin-11 \
+  sh -lc &quot;mvn clean install -DskipTests&quot;</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
   </builders>
   <publishers/>
   <buildWrappers/>
