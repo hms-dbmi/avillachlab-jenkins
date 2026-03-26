@@ -3,17 +3,13 @@
   <actions/>
   <description></description>
   <keepDependencies>false</keepDependencies>
-  <properties>
-    <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@320.v5a_0933a_e7d61">
-      <autoRebuild>false</autoRebuild>
-      <rebuildDisabled>false</rebuildDisabled>
-    </com.sonyericsson.rebuild.RebuildSettings>
-  </properties>
-  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.0">
+  <properties/>
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.10.0">
     <configVersion>2</configVersion>
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
         <url>${jenkins_git_repo}</url>
+        <credentialsId>${git_credentials_id}</credentialsId>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
@@ -29,12 +25,13 @@
   <disabled>false</disabled>
   <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
   <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <jdk>(System)</jdk>
   <triggers/>
   <concurrentBuild>false</concurrentBuild>
   <builders>
     <hudson.tasks.Shell>
       <command>#!/bin/bash
-set -e
+set -eo pipefail
 
 cd &quot;${WORKSPACE}/jenkins-docker&quot;
 
@@ -65,15 +62,21 @@ openssl pkcs12 -export -in certs/jenkins.cer -inkey certs/jenkins.key -out certs
 echo &quot;# Download Jenkins config file from s3&quot;
 aws --region us-east-1 s3 cp &quot;${jenkins_config_s3_location}&quot; ./config.xml
 
+# Upload current scriptApproval.xml to S3 so the new Jenkins inherits approved scripts
+echo &quot;# Upload scriptApproval.xml to S3&quot;
+aws --region us-east-1 s3 cp &quot;${JENKINS_HOME}/scriptApproval.xml&quot; &quot;s3://${stack_s3_bucket}/jenkins_config/scriptApproval.xml&quot;
+
 # Build Container
 echo &quot;# Build Container&quot;
-docker build \
+docker build --load \
   --build-arg JENKINS_DOCKER_TERRAFORM_DISTRO=&quot;${jenkins_docker_terraform_distro}&quot; \
   --build-arg CONFIG_XML_FILE=&quot;./config.xml&quot; \
+  --build-arg CASC_FILE=&quot;./jenkins.yaml&quot; \
   --build-arg PLUGINS_FILE=&quot;./plugins.txt&quot; \
   --build-arg SCRIPT_APPROVAL_FILE=&quot;./scriptApproval.xml&quot; \
   --build-arg HUDSON_TASKS_FILE=&quot;./hudson.tasks.Maven.xml&quot; \
   --build-arg JENKINS_JOBS_DIR=&quot;./jobs/&quot; \
+  --build-arg GIT_CREDENTIALS_ID=&quot;${git_credentials_id}&quot; \
   --build-arg PKCS12_FILE=&quot;./certs/jenkins.p12&quot; \
   --build-arg PKCS12_PASS=&quot;${keystore_pass}&quot; \
   -t jenkins:$git_commit_short .
@@ -88,7 +91,7 @@ cd &quot;${WORKSPACE}&quot;</command>
     </hudson.tasks.Shell>
     <hudson.tasks.Shell>
       <command>#!/bin/bash
-set -e
+set -eo pipefail
 # Source folder containing the scripts
 source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
 ls -la &quot;$source_scripts_folder&quot;
@@ -141,7 +144,10 @@ terraform apply -auto-approve \
 -var &quot;jenkins_tf_local_var_OS_dist=${jenkins_tf_local_var_OS_dist}&quot; \
 -var &quot;jenkins_ec2_ebs_volume_size=${jenkins_ec2_ebs_volume_size}&quot; \
 -var &quot;jenkins_docker_maven_distro=${jenkins_docker_maven_distro}&quot; \
--var &quot;jenkins_docker_terraform_distro=${jenkins_docker_terraform_distro}&quot;
+-var &quot;jenkins_docker_terraform_distro=${jenkins_docker_terraform_distro}&quot; \
+-var &quot;git_credentials_id=${git_credentials_id}&quot; \
+-var &quot;program=${environment_prefix}&quot; \
+-var &quot;stack_s3_bucket=${stack_s3_bucket}&quot;
 
 # Moving this to Terraform remote state
 #aws s3 --sse=AES256 cp terraform.tfstate s3://${jenkins_tf_state_bucket}/jenkins_state/jenkins_${GIT_COMMIT}/terraform.tfstate
@@ -180,7 +186,10 @@ terraform apply -auto-approve \
 -var &quot;jenkins_ec2_ebs_volume_size=${jenkins_ec2_ebs_volume_size}&quot; \
 -var &quot;jenkins_docker_maven_distro=${jenkins_docker_maven_distro}&quot; \
 -var &quot;jenkins_docker_terraform_distro=${jenkins_docker_terraform_distro}&quot; \
--var &quot;is_initialized=true&quot;
+-var &quot;git_credentials_id=${git_credentials_id}&quot; \
+-var &quot;program=${environment_prefix}&quot; \
+-var &quot;is_initialized=true&quot; \
+-var &quot;stack_s3_bucket=${stack_s3_bucket}&quot;
 
 # swap the backends so newly deployed jenkins backend is stored in blue
 echo &quot;Moving states for green/blue&quot;
@@ -204,7 +213,7 @@ reset_role
   </builders>
   <publishers/>
   <buildWrappers>
-    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.45">
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.49">
       <deleteDirs>false</deleteDirs>
       <cleanupParameter></cleanupParameter>
       <externalDelete></externalDelete>

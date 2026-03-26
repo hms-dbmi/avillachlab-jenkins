@@ -1,7 +1,7 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
   <actions/>
-  <description>This would be cleaner and more portable if it was a python script that check for initialization.</description>
+  <description>Verifies CrowdStrike Falcon Sensor is running and connected on all EC2 instances in the target stack.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
@@ -66,6 +66,8 @@ terraform init
 output_names=$(terraform output -json | jq -r &apos;keys[]&apos;)
 echo &quot;Output names: $output_names&quot;
 
+falcon_check_failed=false
+
 for output_name in $output_names; do
   reset_role
   assume_role
@@ -81,76 +83,63 @@ for output_name in $output_names; do
 
   echo &quot;Instance-id is $INSTANCE_ID&quot;
 
-  aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot;
-  while [ $(aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete | wc -l ) -eq 0 ]; do
-    # avoid role timeout by assuming role continously
-    reset_role
-    assume_role
-    echo &quot;${output_name} EC2 still initializing&quot;
-    sleep 60
+  # Verify CrowdStrike Falcon Sensor is running and connected
+  echo &quot;Checking CrowdStrike Falcon Sensor status on ${output_name} (${INSTANCE_ID})...&quot;
+  falcon_command_json=$(jq -n &apos;{commands: ["sudo systemctl status falcon-sensor.service --no-pager -l; echo --- JOURNAL ---; sudo journalctl -u falcon-sensor.service --no-pager -n 100"]}&apos;)
+  falcon_command_id=$(aws ssm send-command \
+    --instance-ids &quot;${INSTANCE_ID}&quot; \
+    --document-name &quot;AWS-RunShellScript&quot; \
+    --comment &quot;Check CrowdStrike Falcon Sensor status&quot; \
+    --parameters &quot;$falcon_command_json&quot; \
+    --query &quot;Command.CommandId&quot; \
+    --output text)
+
+  # Wait for the command to complete (timeout after 10 attempts / ~50 seconds)
+  falcon_max_attempts=10
+  falcon_attempt=0
+  while true; do
+    falcon_attempt=$((falcon_attempt + 1))
+    if [[ ${falcon_attempt} -gt ${falcon_max_attempts} ]]; then
+      echo &quot;ERROR: Timed out waiting for Falcon Sensor status check on ${output_name} (${INSTANCE_ID}) after ${falcon_max_attempts} attempts.&quot;
+      falcon_check_failed=true
+      break
+    fi
+    falcon_status=$(aws ssm get-command-invocation --command-id ${falcon_command_id} --instance-id ${INSTANCE_ID} --query &apos;Status&apos; --output text)
+    if [[ &quot;${falcon_status}&quot; == &quot;Success&quot; ]]; then
+      break
+    elif [[ &quot;${falcon_status}&quot; == &quot;Failed&quot; || &quot;${falcon_status}&quot; == &quot;Cancelled&quot; || &quot;${falcon_status}&quot; == &quot;TimedOut&quot; ]]; then
+      echo &quot;ERROR: Failed to check Falcon Sensor on ${output_name} (${INSTANCE_ID}). Command status: ${falcon_status}&quot;
+      aws ssm get-command-invocation --command-id ${falcon_command_id} --instance-id ${INSTANCE_ID} --query &apos;StandardErrorContent&apos; --output text
+      falcon_check_failed=true
+      break
+    else
+      echo &quot;Waiting for Falcon Sensor status check... (${falcon_status}) [attempt ${falcon_attempt}/${falcon_max_attempts}]&quot;
+      sleep 5
+    fi
   done
 
-  echo &quot;${output_name} EC2 Initialization Complete&quot;
+  falcon_output=$(aws ssm get-command-invocation --command-id ${falcon_command_id} --instance-id ${INSTANCE_ID} --query &apos;StandardOutputContent&apos; --output text)
+  echo &quot;$falcon_output&quot;
+
+  # Verify the sensor is active and connected
+  if ! echo &quot;$falcon_output&quot; | grep -q &quot;Active: active (running)&quot;; then
+    echo &quot;ERROR: CrowdStrike Falcon Sensor is NOT running on ${output_name} (${INSTANCE_ID})&quot;
+    falcon_check_failed=true
+  elif ! echo &quot;$falcon_output&quot; | grep -q &quot;ConnectToCloud successful&quot;; then
+    echo &quot;WARNING: CrowdStrike Falcon Sensor may not be connected to cloud on ${output_name} (${INSTANCE_ID})&quot;
+    falcon_check_failed=true
+  else
+    echo &quot;CrowdStrike Falcon Sensor verified on ${output_name} (${INSTANCE_ID})&quot;
+  fi
 done
+
+if [[ &quot;$falcon_check_failed&quot; == &quot;true&quot; ]]; then
+  echo &quot;One or more instances failed the CrowdStrike Falcon Sensor check. Marking build as unstable.&quot;
+  exit 2
+fi
 </command>
       <configuredLocalRules/>
-    </hudson.tasks.Shell>
-    <hudson.tasks.Shell>
-      <command># json tag schema.  Used to uniquely identify a projects staging instances.
-cat &lt;&lt;EOF &gt; staging_httpd_tags_file.json
-[
-  {
-    &quot;Name&quot;: &quot;tag:Stack&quot;,
-    &quot;Values&quot;: [&quot;$target_stack&quot;]
-  },
-  {
-    &quot;Name&quot;: &quot;tag:Node&quot;,
-    &quot;Values&quot;: [&quot;HTTPD&quot;]
-  },
-  {
-    &quot;Name&quot;: &quot;tag:Project&quot;,
-    &quot;Values&quot;: [&quot;$env_project&quot;]
-  }
-]
-EOF</command>
-      <configuredLocalRules/>
-    </hudson.tasks.Shell>
-    <hudson.tasks.Shell>
-      <command>#!/bin/bash
-# Source folder containing the scripts
-source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
-ls -la &quot;$source_scripts_folder&quot;
-
-# Iterate through the files in the folder and source them
-for script_file in &quot;$source_scripts_folder&quot;*.sh; do
-    chmod +x &quot;$script_file&quot;
-    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
-        echo &quot;sourcing $script_file&quot;
-        source &quot;$script_file&quot;
-    fi
-done
-
-cd &quot;$WORKSPACE&quot;
-
-assume_role
-# register new deployment to staging ( register green )
-echo &quot;registering new deployment to staging ( register green )&quot;
-target_group_vpc=$(get_target_group_vpc_by_tg_name $staging_tg_name)
-staging_target_group_arn=$(get_target_group_arn_by_name &quot;$staging_tg_name&quot;)
-staging_httpd_instance_prv_ips=($(get_private_ip_by_tags &quot;staging_httpd_tags_file.json&quot;))
-
-if [ -z &quot;${staging_httpd_instance_prv_ips}&quot; ]; then
-   echo &quot;No private IPs found when registering target groups.&quot;
-   echo &quot;Ensure nodes have been created with proper tags for Node,Project and Stack keys.&quot;
-   exit 1
-else
-  register_targets &quot;$target_group_vpc&quot; &quot;$staging_target_group_arn&quot; &quot;${staging_httpd_instance_prv_ips[@]}&quot;
-  
-  # Wait for draining
-  wait_for_target_group_health &quot;$staging_target_group_arn&quot; &quot;HEALTHY&quot; &quot;${staging_httpd_instance_prv_ips[@]}&quot;
-fi
-reset_role</command>
-      <configuredLocalRules/>
+      <unstableReturn>2</unstableReturn>
     </hudson.tasks.Shell>
   </builders>
   <publishers/>
@@ -163,7 +152,7 @@ reset_role</command>
     </hudson.plugins.ws__cleanup.PreBuildCleanup>
     <hudson.plugins.build__timeout.BuildTimeoutWrapper plugin="build-timeout@1.31">
       <strategy class="hudson.plugins.build_timeout.impl.AbsoluteTimeOutStrategy">
-        <timeoutMinutes>240</timeoutMinutes>
+        <timeoutMinutes>30</timeoutMinutes>
       </strategy>
       <operationList/>
     </hudson.plugins.build__timeout.BuildTimeoutWrapper>

@@ -9,7 +9,7 @@
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
         <url>${release_control_git_repo}</url>
-        <credentialsId>c1cbb1df-9da8-4f3f-85b9-8de0b9685008</credentialsId>
+        <credentialsId>${git_credentials_id}</credentialsId>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>

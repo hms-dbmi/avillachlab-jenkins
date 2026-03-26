@@ -4,11 +4,13 @@ data "template_file" "jenkins-user_data" {
   vars = {
     jenkins_tf_state_bucket         = var.jenkins_tf_state_bucket
     stack_id                        = var.stack_id
+    stack_s3_bucket                 = var.stack_s3_bucket
     jenkins_config_s3_location      = var.jenkins_config_s3_location
     jenkins_docker_maven_distro     = var.jenkins_docker_maven_distro
     jenkins_docker_terraform_distro = var.jenkins_docker_terraform_distro
     jenkins_git_repo                = var.jenkins_git_repo
     git_commit                      = var.git_commit
+    git_credentials_id              = var.git_credentials_id
   }
 }
 

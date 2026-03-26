@@ -16,6 +16,11 @@
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
+          <name>THEME</name>
+          <defaultValue>${environment_prefix}</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
           <name>S3_BUCKET_NAME</name>
           <defaultValue>${stack_s3_bucket}</defaultValue>
           <trim>false</trim>
@@ -52,14 +57,13 @@
 
 GIT_BRANCH_SHORT=`echo ${GIT_BRANCH} | cut -d &quot;/&quot; -f 2` 
 GIT_COMMIT_SHORT=`echo ${GIT_COMMIT} | cut -c1-7`
-#need httpd-vhost
 
 aws s3api get-object --bucket $stack_s3_bucket --key &quot;configs/pic-sure-frontend/bdc.env&quot; .env
 aws s3api get-object --bucket $stack_s3_bucket --key &quot;configs/pic-sure-frontend/configuration.json&quot; configuration.json
 
 cp -f configuration.json ./src/lib/assets/configuration.json
 
-docker build --no-cache -f Dockerfile.bdc -t hms-dbmi/pic-sure-frontend:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
+docker build --no-cache --load -f Dockerfile --build-arg THEME=${THEME} -t hms-dbmi/pic-sure-frontend:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
 docker save hms-dbmi/pic-sure-frontend:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-frontend.tar.gz
 aws s3 --sse=AES256 cp pic-sure-frontend.tar.gz s3://$S3_BUCKET_NAME/$TARGET_STACK/containers/pic-sure-frontend.tar.gz
 </command>

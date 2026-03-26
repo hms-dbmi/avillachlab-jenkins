@@ -39,6 +39,7 @@
 def retrieveDepStateId
 def stacksJson
 def target_stack
+def live_stack
 def infrastructure_git_hash
 
 pipeline {
@@ -111,11 +112,18 @@ pipeline {
                 }
             }
         }
-        stage(&apos;Teardown and Rebuild Stage Environment&apos;) {
+        stage(&apos;Render HPDS Config Templates&apos;) {
             steps {
                 script {
                     target_stack = new JsonSlurper().parseText(stacksJson).environments.next_prod
                     live_stack = new JsonSlurper().parseText(stacksJson).environments.prod
+                    def result = build job: &apos;Render HPDS Config Templates&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;INFRASTRUCTURE_GIT_HASH&apos;, value: infrastructure_git_hash], [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: target_stack], [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_AUTH_HPDS&apos;, value: true], [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPEN_HPDS&apos;, value: true]]
+                }
+            }
+        }
+        stage(&apos;Teardown and Rebuild Stage Environment&apos;) {
+            steps {
+                script {
                     def result = build job: &apos;Teardown and Rebuild Stage Environment&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;live_stack&apos;, value: live_stack], [$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack], [$class: &apos;StringParameterValue&apos;, name: &apos;dataset_s3_object_key&apos;, value: env.dataset_s3_object_key], [$class: &apos;StringParameterValue&apos;, name: &apos;destigmatized_dataset_s3_object_key&apos;, value: env.destigmatized_dataset_s3_object_key], [$class: &apos;StringParameterValue&apos;, name: &apos;genomic_dataset_s3_object_key&apos;, value: env.genomic_dataset_s3_object_key], [$class: &apos;StringParameterValue&apos;, name: &apos;deployment_git_hash&apos;, value: env.deployment_git_hash], [$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash]]
                 }
             }
@@ -124,6 +132,13 @@ pipeline {
             steps {
                 script {
                     def result = build job: &apos;Await Initialization&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack], [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: infrastructure_git_hash]]
+                }
+            }
+        }
+        stage(&apos;Falcon Sensor Check&apos;) {
+            steps {
+                script {
+                    def result = build job: &apos;Falcon Sensor Check&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack], [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: infrastructure_git_hash]]
                 }
             }
         }
