@@ -682,7 +682,7 @@ update_token_by_uuid() {
 
   # Perform the update operation
   docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
-    -e &quot;UPDATE application SET token=&apos;$new_token&apos; WHERE uuid=UNHEX(&apos;$uuid&apos;);&quot; &quot;auth&quot;
+    -e &quot;UPDATE application SET token=&apos;$new_token&apos; WHERE uuid=UNHEX(REPLACE(&apos;$uuid&apos;, &apos;-&apos;, &apos;&apos;));&quot; &quot;auth&quot;
 }
 
 # get_token_by_uuid &quot;uuid&quot;
