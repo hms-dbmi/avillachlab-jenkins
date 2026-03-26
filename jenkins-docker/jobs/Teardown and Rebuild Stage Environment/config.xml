@@ -178,6 +178,14 @@ unset_shared_db_config
 # We have a utility to replace the special characters so its XML safe.
 picsure_db_password=$(replace_xml_special_chars &quot;${picsure_db_password}&quot;)
 
+# Get logging API key from logging.env in S3
+logging_api_key=&quot;&quot;
+if aws s3 cp s3://$stack_s3_bucket/configs/pic-sure-logging/logging.env /tmp/logging.env 2&gt;/dev/null; then
+  logging_api_key=$(grep -oP &apos;^AUDIT_API_KEY=\K.*&apos; /tmp/logging.env || true)
+  rm -f /tmp/logging.env
+fi
+echo &quot;Logging API Key: ${logging_api_key:+(set)}&quot;
+
 formatted_referer_allowed_domains=$(generate_domain_regex &quot;$referer_allowed_domains&quot;)
 
 picsure_resource_uuid=&quot;02e23f52-f354-4e8b-992c-d37c8b9ba140&quot;
@@ -231,7 +239,9 @@ if $isDestroyOnly; then
      -var=&quot;ras_okta_idp_id=${ras_okta_idp_id}&quot; \
      -var=&quot;ras_idp_provider_uri=${ras_idp_provider_uri}&quot; \
      -var=&quot;ras_session_logout_uri=${ras_session_logout_uri}&quot; \
-     -var=&quot;login_redirect_uri=${login_redirect_uri}&quot; || true
+     -var=&quot;login_redirect_uri=${login_redirect_uri}&quot; \
+     -var=&quot;logging_service_url=http://pic-sure-logging&quot; \
+     -var=&quot;logging_api_key=${logging_api_key}&quot; || true
 
 
   reset_role
@@ -283,7 +293,9 @@ else
      -var=&quot;ras_okta_idp_id=${ras_okta_idp_id}&quot; \
      -var=&quot;ras_idp_provider_uri=${ras_idp_provider_uri}&quot; \
      -var=&quot;ras_session_logout_uri=${ras_session_logout_uri}&quot; \
-     -var=&quot;login_redirect_uri=${login_redirect_uri}&quot; || true
+     -var=&quot;login_redirect_uri=${login_redirect_uri}&quot; \
+     -var=&quot;logging_service_url=http://pic-sure-logging&quot; \
+     -var=&quot;logging_api_key=${logging_api_key}&quot; || true
 
 
   terraform apply -auto-approve \
@@ -329,7 +341,9 @@ else
      -var=&quot;ras_okta_idp_id=${ras_okta_idp_id}&quot; \
      -var=&quot;ras_idp_provider_uri=${ras_idp_provider_uri}&quot; \
      -var=&quot;ras_session_logout_uri=${ras_session_logout_uri}&quot; \
-     -var=&quot;login_redirect_uri=${login_redirect_uri}&quot; || true
+     -var=&quot;login_redirect_uri=${login_redirect_uri}&quot; \
+     -var=&quot;logging_service_url=http://pic-sure-logging&quot; \
+     -var=&quot;logging_api_key=${logging_api_key}&quot; || true
 
 
   reset_role
