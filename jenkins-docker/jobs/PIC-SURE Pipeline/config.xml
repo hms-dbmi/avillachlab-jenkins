@@ -89,6 +89,17 @@ pipeline {
                 }
             }
         }
+        stage(&apos;Install Logging Client Library&apos;) {
+            steps {
+                script {
+                    try {
+                        build job: &apos;PIC-SURE Logging Client Install&apos;
+                    } catch (Exception e) {
+                        echo &quot;Logging client install failed (${e.message}). Downstream builds will proceed without it.&quot;
+                    }
+                }
+            }
+        }
         stage(&apos;PIC-SURE-API Build, PIC-SURE Frontend Build, PIC-SURE Auth Micro-App Build, PIC-SURE Dictionary Build&apos;){
             steps {
                 parallel (
@@ -105,6 +116,11 @@ pipeline {
                     dictionary:{
                         script {
                             def dictionaryBuildResult = build job: &apos;PIC-SURE Dictionary Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],[$class: &apos;StringParameterValue&apos;, name: &apos;GIT_HASH&apos;, value: build_hashes[&apos;PSD&apos;]]]
+                        }
+                    },
+                    logging:{
+                        script {
+                            def result = build job: &apos;PIC-SURE Logging Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSL&apos;]],[$class: &apos;StringParameterValue&apos;, name: &apos;DEPLOY_METHOD&apos;, value: &apos;s3&apos;]]
                         }
                     }
                 )
