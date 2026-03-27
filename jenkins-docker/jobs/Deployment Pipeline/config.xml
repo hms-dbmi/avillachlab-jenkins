@@ -142,11 +142,11 @@ pipeline {
                 }
             }
         }
-        stage(&apos;Update and unlock deployment state&apos;) {
-            steps {
-                script {
-                    def result = build job: &apos;Write Stack State&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;stacks_json&apos;, value: stacksJson]]
-                }
+    }
+    post {
+        failure {
+            script {
+                def result = build job: &apos;Write Stack State&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;stacks_json&apos;, value: stacksJson]]
             }
         }
     }
