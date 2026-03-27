@@ -7,7 +7,7 @@
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
-          <name>STACK_S3_BUCKET</name>
+          <name>S3_STACK_BUCKET</name>
           <defaultValue>${stack_s3_bucket}</defaultValue>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
@@ -64,7 +64,7 @@ done
 
 # Only require what is truly required to find the instance + state
 : &quot;${TARGET_STACK:?TARGET_STACK is required}&quot;
-: &quot;${STACK_S3_BUCKET:?STACK_S3_BUCKET is required}&quot;
+: &quot;${S3_STACK_BUCKET:?S3_STACK_BUCKET is required}&quot;
 
 # Allow empty values for optional Jenkins parameters by defaulting to &quot;&quot;
 DESTIGMATIZED_DATASET_S3_OBJECT_KEY=&quot;${DESTIGMATIZED_DATASET_S3_OBJECT_KEY:-&quot;&quot;}&quot;
@@ -75,7 +75,7 @@ assume_role
 # Download terraform state
 # -----------------------------
 echo &quot;Download terraform.tfstate file for ${TARGET_STACK} stack&quot;
-aws s3 cp &quot;s3://${STACK_S3_BUCKET}/deployment_state_metadata/${TARGET_STACK}/terraform.tfstate&quot; &quot;terraform.tfstate&quot;
+aws s3 cp &quot;s3://${S3_STACK_BUCKET}/deployment_state_metadata/${TARGET_STACK}/terraform.tfstate&quot; &quot;terraform.tfstate&quot;
 
 # -----------------------------
 # Extract Open HPDS EC2 instance ID
@@ -96,7 +96,7 @@ echo &quot;Open HPDS Instance ID: ${open_hpds_instance_id}&quot;
 update_open_hpds_container=$(
   cat &lt;&lt;EOF
 sudo /opt/picsure/deploy-open-hpds.sh \
-  --stack_s3_bucket &quot;${STACK_S3_BUCKET}&quot; \
+  --stack_s3_bucket &quot;${S3_STACK_BUCK}&quot; \
   --destigmatized_dataset_s3_object_key &quot;${DESTIGMATIZED_DATASET_S3_OBJECT_KEY}&quot; \
   --target_stack &quot;${TARGET_STACK}&quot;
 EOF
