@@ -121,9 +121,6 @@ pipeline {
             }
         }
         stage(&apos;Retrieve Build Spec&apos;) {
-            when {
-                    expression { return params.git_hash == &apos;&apos; }
-            }
             steps {
                 script {
                     def result = build job: &apos;Retrieve Build Spec&apos;
@@ -158,7 +155,7 @@ pipeline {
         stage(&apos;Render HPDS Auth Config&apos;) {
             steps {
                 script {
-                    def infraHash = infrastructure_git_hash ?: &apos;master&apos;
+                    def infraHash = infrastructure_git_hash
                     def result = build job: &apos;Render HPDS Config Templates&apos;, parameters: [
                         [$class: &apos;StringParameterValue&apos;, name: &apos;INFRASTRUCTURE_GIT_HASH&apos;, value: infraHash],
                         [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],

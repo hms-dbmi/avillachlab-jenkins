@@ -79,7 +79,7 @@ pipeline {
           def targetStack = params.TARGET_STACK?.trim() ?: &apos;&apos;
 
           // Source bash functions
-          sh &apos;&apos;&apos;
+          sh &apos;&apos;&apos;#!/bin/bash
             source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
             for script_file in &quot;$source_scripts_folder&quot;*.sh; do
                 chmod +x &quot;$script_file&quot;

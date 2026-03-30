@@ -75,13 +75,13 @@ done
 DATA_S3_OBJECT_KEY=&quot;${DATA_S3_OBJECT_KEY:-&quot;&quot;}&quot;
 GENOMIC_DATASET_S3_OBJECT_KEY=&quot;${GENOMIC_DATASET_S3_OBJECT_KEY:-&quot;&quot;}&quot;
 
-assume_role
-
 # -----------------------------
 # Download terraform state
 # -----------------------------
 echo &quot;Download terraform.tfstate file for ${TARGET_STACK} stack&quot;
 aws s3 cp &quot;s3://${S3_BUCKET_NAME}/deployment_state_metadata/${TARGET_STACK}/terraform.tfstate&quot; &quot;terraform.tfstate&quot;
+
+assume_role
 
 # -----------------------------
 # Extract Auth HPDS EC2 instance ID
