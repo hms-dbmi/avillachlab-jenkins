@@ -48,8 +48,6 @@ for script_file in "$source_scripts_folder"*.sh; do
     fi
 done
 
-assume_role
-
 # Determine S3 prefix based on TARGET_STACK
 if [ -n "${TARGET_STACK}" ]; then
     S3_PREFIX="configs/hpds/templates/${TARGET_STACK}"
@@ -73,8 +71,7 @@ if [ -f hpds-open.env.tftpl ]; then
 else
     echo "No hpds-open.env.tftpl file provided, skipping."
 fi
-
-reset_role</command>
+</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
