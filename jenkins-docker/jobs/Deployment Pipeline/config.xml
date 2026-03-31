@@ -144,9 +144,13 @@ pipeline {
         }
     }
     post {
-        failure {
+        always {
             script {
-                def result = build job: &apos;Write Stack State&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;stacks_json&apos;, value: stacksJson]]
+                if (stacksJson?.trim()) {
+                    def result = build job: &apos;Write Stack State&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;stacks_json&apos;, value: stacksJson]]
+                } else {
+                    echo &quot;stacksJson was never assigned — skipping Write Stack State to avoid corrupting the state file.&quot;
+                }
             }
         }
     }
