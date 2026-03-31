@@ -30,7 +30,7 @@
   <concurrentBuild>false</concurrentBuild>
   <builders>
     <hudson.tasks.Shell>
-      <command>echo $stacks_json &gt; stacks.json
+      <command>echo &quot;$stacks_json&quot; &gt; stacks.json
         
 aws s3api put-object-legal-hold \
         --bucket $S3_BUCKET_NAME \
