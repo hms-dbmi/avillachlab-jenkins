@@ -248,7 +248,8 @@ pipeline {
                 def loggingGit = build_hashes[&apos;PSL&apos;]
                 build job: &apos;PIC-SURE Logging Build&apos;, parameters: [
                   [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: loggingGit]
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: loggingGit],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;DEPLOY_METHOD&apos;, value: &apos;s3&apos;]
                 ]
               } else {
                 echo &apos;Skipping PIC-SURE Logging Build&apos;
