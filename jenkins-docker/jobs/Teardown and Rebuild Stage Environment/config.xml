@@ -179,12 +179,12 @@ unset_shared_db_config
 picsure_db_password=$(replace_xml_special_chars &quot;${picsure_db_password}&quot;)
 
 # Get logging API key from logging.env in S3
-logging_api_key=&quot;&quot;
-if aws s3 cp s3://$stack_s3_bucket/configs/pic-sure-logging/logging.env /tmp/logging.env 2&gt;/dev/null; then
-  logging_api_key=$(grep -oP &apos;^AUDIT_API_KEY=\K.*&apos; /tmp/logging.env || true)
-  rm -f /tmp/logging.env
-fi
-echo &quot;Logging API Key: ${logging_api_key:+(set)}&quot;
+logging_api_key=$(
+  aws s3 cp &quot;s3://$stack_s3_bucket/configs/pic-sure-logging/logging.env&quot; /tmp/logging.env 2&gt;/dev/null &amp;&amp;
+  grep -oP &apos;^AUDIT_API_KEY=\K.*&apos; /tmp/logging.env
+)
+rm -f /tmp/logging.env 2&gt;/dev/null || true
+logging_api_key=&quot;${logging_api_key:-disabled}&quot;
 
 formatted_referer_allowed_domains=$(generate_domain_regex &quot;$referer_allowed_domains&quot;)
 
