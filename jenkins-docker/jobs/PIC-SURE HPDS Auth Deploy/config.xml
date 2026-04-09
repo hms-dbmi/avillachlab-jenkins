@@ -15,16 +15,6 @@
           <name>TARGET_STACK</name>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>DATA_S3_OBJECT_KEY</name>
-          <description>Optional. Setting this value will update related files, folders, datasets, etc.</description>
-          <trim>true</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>GENOMIC_DATASET_S3_OBJECT_KEY</name>
-          <description>Optional. Setting this value will update related files, folders, datasets, etc.</description>
-          <trim>true</trim>
-        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -71,10 +61,6 @@ done
 : &quot;${TARGET_STACK:?TARGET_STACK is required}&quot;
 : &quot;${S3_BUCKET_NAME:?S3_BUCKET_NAME is required}&quot;
 
-# Allow empty values for optional Jenkins parameters by defaulting to &quot;&quot;
-DATA_S3_OBJECT_KEY=&quot;${DATA_S3_OBJECT_KEY:-&quot;&quot;}&quot;
-GENOMIC_DATASET_S3_OBJECT_KEY=&quot;${GENOMIC_DATASET_S3_OBJECT_KEY:-&quot;&quot;}&quot;
-
 # -----------------------------
 # Download terraform state
 # -----------------------------
@@ -103,8 +89,6 @@ update_auth_hpds_container=$(
   cat &lt;&lt;EOF
 sudo /opt/picsure/deploy-auth-hpds.sh \
   --stack_s3_bucket &quot;${S3_BUCKET_NAME}&quot; \
-  --dataset_s3_object_key &quot;${DATA_S3_OBJECT_KEY}&quot; \
-  --genomic_dataset_s3_object_key &quot;${GENOMIC_DATASET_S3_OBJECT_KEY}&quot; \
   --target_stack &quot;${TARGET_STACK}&quot;
 EOF
 )
