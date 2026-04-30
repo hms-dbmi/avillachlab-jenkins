@@ -62,9 +62,10 @@ openssl pkcs12 -export -in certs/jenkins.cer -inkey certs/jenkins.key -out certs
 echo &quot;# Download Jenkins config file from s3&quot;
 aws --region us-east-1 s3 cp &quot;${jenkins_config_s3_location}&quot; ./config.xml
 
-# Upload current scriptApproval.xml to S3 so the new Jenkins inherits approved scripts
-echo &quot;# Upload scriptApproval.xml to S3&quot;
-aws --region us-east-1 s3 cp &quot;${JENKINS_HOME}/scriptApproval.xml&quot; &quot;s3://${stack_s3_bucket}/jenkins_config/scriptApproval.xml&quot;
+# Bake the running Jenkins&apos; live scriptApproval.xml into the image so the
+# new server inherits all currently-approved scripts.
+echo &quot;# Stage scriptApproval.xml for the image build&quot;
+cp &quot;${JENKINS_HOME}/scriptApproval.xml&quot; ./scriptApproval.xml
 
 # Build Container
 echo &quot;# Build Container&quot;
