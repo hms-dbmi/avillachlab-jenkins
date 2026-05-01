@@ -96,7 +96,7 @@ echo &quot;Open HPDS Instance ID: ${open_hpds_instance_id}&quot;
 update_open_hpds_container=$(
   cat &lt;&lt;EOF
 sudo /opt/picsure/deploy-open-hpds.sh \
-  --stack_s3_bucket &quot;${S3_STACK_BUCK}&quot; \
+  --stack_s3_bucket &quot;${S3_STACK_BUCKET}&quot; \
   --destigmatized_dataset_s3_object_key &quot;${DESTIGMATIZED_DATASET_S3_OBJECT_KEY}&quot; \
   --target_stack &quot;${TARGET_STACK}&quot;
 EOF
