@@ -78,6 +78,11 @@
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
+          <name>INCLUDE_PIC_SURE_VISUALIZATION</name>
+          <description>Include Visualization Service in the build and deploy process</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
           <name>RUN_DATABASE_MIGRATIONS</name>
           <description>Run database migrations</description>
           <defaultValue>false</defaultValue>
@@ -255,6 +260,21 @@ pipeline {
                 echo &apos;Skipping PIC-SURE Logging Build&apos;
               }
             }
+          },
+
+          visualization: {
+            script {
+              if (params.INCLUDE_PIC_SURE_VISUALIZATION) {
+                def visualizationGit = build_hashes[&apos;PSV&apos;]
+                build job: &apos;PIC-SURE Visualization Build&apos;, parameters: [
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: visualizationGit],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;DEPLOY_METHOD&apos;, value: &apos;s3&apos;]
+                ]
+              } else {
+                echo &apos;Skipping PIC-SURE Visualization Build&apos;
+              }
+            }
           }
         )
       }
@@ -352,6 +372,17 @@ pipeline {
                 ]
               } else {
                 echo &apos;Skipping PIC-SURE Logging Deploy&apos;
+              }
+            }
+          },
+          visualization_deploy: {
+            script {
+              if (params.INCLUDE_PIC_SURE_VISUALIZATION) {
+                build job: &apos;PIC-SURE Visualization Deploy&apos;, parameters: [
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
+                ]
+              } else {
+                echo &apos;Skipping PIC-SURE Visualization Deploy&apos;
               }
             }
           }
