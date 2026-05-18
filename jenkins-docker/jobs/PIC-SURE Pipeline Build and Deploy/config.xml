@@ -177,7 +177,7 @@ pipeline {
 
     stage(&apos;Database Migrations (once)&apos;) {
       when {
-        expression { return params.RUN_DATABASE_MIGRATIONS &amp;&amp; (params.INCLUDE_PIC_SURE_API || params.INCLUDE_PIC_SURE_AUTH_MICRO_APP) }
+        expression { return params.RUN_DATABASE_MIGRATIONS &amp;&amp; (params.INCLUDE_PIC_SURE_API || params.INCLUDE_PIC_SURE_AUTH_MICRO_APP || params.INCLUDE_PIC_SURE_VISUALIZATION) }
       }
       steps {
         script {
@@ -206,7 +206,7 @@ pipeline {
         parallel (
           picsureapi: {
             script {
-              def shouldBuildApi = params.INCLUDE_PIC_SURE_API || params.INCLUDE_PIC_SURE_HPDS_AUTH || params.INCLUDE_PIC_SURE_HPDS_OPEN
+              def shouldBuildApi = params.INCLUDE_PIC_SURE_API || params.INCLUDE_PIC_SURE_HPDS_AUTH || params.INCLUDE_PIC_SURE_HPDS_OPEN || params.INCLUDE_PIC_SURE_VISUALIZATION
               if (shouldBuildApi) {
                 def apiGit = build_hashes[&apos;PSA&apos;]
                 build job: &apos;PIC-SURE API Build&apos;, parameters: [
@@ -260,21 +260,6 @@ pipeline {
                 echo &apos;Skipping PIC-SURE Logging Build&apos;
               }
             }
-          },
-
-          visualization: {
-            script {
-              if (params.INCLUDE_PIC_SURE_VISUALIZATION) {
-                def visualizationGit = build_hashes[&apos;PSV&apos;]
-                build job: &apos;PIC-SURE Visualization Build&apos;, parameters: [
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: visualizationGit],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;DEPLOY_METHOD&apos;, value: &apos;s3&apos;]
-                ]
-              } else {
-                echo &apos;Skipping PIC-SURE Visualization Build&apos;
-              }
-            }
           }
         )
       }
@@ -283,7 +268,7 @@ pipeline {
     stage(&apos;PIC-SURE HPDS Build and PIC-SURE Auth Micro App Build&apos;) {
       steps {
         script {
-          if (params.INCLUDE_PIC_SURE_HPDS_AUTH || params.INCLUDE_PIC_SURE_HPDS_OPEN) {
+          if (params.INCLUDE_PIC_SURE_HPDS_AUTH || params.INCLUDE_PIC_SURE_HPDS_OPEN || params.INCLUDE_PIC_SURE_VISUALIZATION) {
             def hpdsGit = build_hashes[&apos;PSH&apos;]
             build job: &apos;PIC-SURE HPDS Build&apos;, parameters: [
               [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
@@ -302,6 +287,23 @@ pipeline {
             ]
           } else {
             echo &apos;Skipping PIC-SURE Auth Micro App Build&apos;
+          }
+        }
+      }
+    }
+
+    stage(&apos;PIC-SURE Visualization Build&apos;) {
+      steps {
+        script {
+          if (params.INCLUDE_PIC_SURE_VISUALIZATION) {
+            def visualizationGit = build_hashes[&apos;PSV&apos;]
+            build job: &apos;PIC-SURE Visualization Build&apos;, parameters: [
+              [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+              [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: visualizationGit],
+              [$class: &apos;StringParameterValue&apos;, name: &apos;DEPLOY_METHOD&apos;, value: &apos;s3&apos;]
+            ]
+          } else {
+            echo &apos;Skipping PIC-SURE Visualization Build&apos;
           }
         }
       }

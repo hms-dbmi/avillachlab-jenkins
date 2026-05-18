@@ -110,6 +110,39 @@ pipeline {
                 }
             }
         }
+        stage(&apos;Install Logging Client Library&apos;) {
+            steps {
+                script {
+                    try {
+                        build job: &apos;PIC-SURE Logging Client Install&apos;
+                    } catch (Exception e) {
+                        echo &quot;Logging client install failed (${e.message}). Downstream builds will proceed without it.&quot;
+                    }
+                }
+            }
+        }
+        stage(&apos;PIC-SURE API Build&apos;) {
+            steps {
+                script {
+                    def apiGit = build_hashes[&apos;PSA&apos;] ?: &apos;*/release&apos;
+                    build job: &apos;PIC-SURE API Build&apos;, parameters: [
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: apiGit]
+                    ]
+                }
+            }
+        }
+        stage(&apos;PIC-SURE HPDS Build&apos;) {
+            steps {
+                script {
+                    def hpdsGit = build_hashes[&apos;PSH&apos;] ?: &apos;*/main&apos;
+                    build job: &apos;PIC-SURE HPDS Build&apos;, parameters: [
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: hpdsGit]
+                    ]
+                }
+            }
+        }
         stage(&apos;PIC-SURE Visualization Build&apos;) {
             steps {
                 script{
