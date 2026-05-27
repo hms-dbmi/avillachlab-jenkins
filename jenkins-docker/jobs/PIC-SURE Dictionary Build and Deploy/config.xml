@@ -86,7 +86,7 @@ pipeline {
                     done
 
                     # The PIC-SURE Pipeline is always used to deploy to staging.
-                    get_stack \&quot;staging\&quot;
+                    get_stack \&quot;${TARGET_STACK}\&quot;
                     &apos;
                     &quot;&quot;&quot;, returnStdout: true).trim()
 
@@ -122,7 +122,8 @@ pipeline {
                 script{
                     def gitHash = git_hash ? git_hash : build_hashes[&apos;PSD&apos;]
                     def dictionaryBuildResult = build job: &apos;PIC-SURE Dictionary Build&apos;, parameters: [
-                        [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: git_hash]
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;GIT_HASH&apos;, value: gitHash],
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
                     ]
                 }
             }
