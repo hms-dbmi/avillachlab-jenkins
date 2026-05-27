@@ -1,7 +1,7 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
   <actions/>
-  <description>Renders HPDS configuration templates with environment-specific values and uploads to S3.</description>
+  <description>Renders the PIC-SURE Visualization configuration template with environment-specific values and uploads to S3.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
@@ -16,16 +16,6 @@
           <description>Target stack identifier (e.g., a, b)</description>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
-        <hudson.model.BooleanParameterDefinition>
-          <name>RENDER_AUTH_HPDS</name>
-          <description>Render and upload the auth HPDS env file</description>
-          <defaultValue>true</defaultValue>
-        </hudson.model.BooleanParameterDefinition>
-        <hudson.model.BooleanParameterDefinition>
-          <name>RENDER_OPEN_HPDS</name>
-          <description>Render and upload the open HPDS env file</description>
-          <defaultValue>true</defaultValue>
-        </hudson.model.BooleanParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -58,10 +48,7 @@
       <command>#!/bin/bash
 set -e
 
-# Source folder containing the scripts
 source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
-
-# Iterate through the files in the folder and source them
 for script_file in &quot;$source_scripts_folder&quot;*.sh; do
     chmod +x &quot;$script_file&quot;
     if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
@@ -72,28 +59,14 @@ done
 
 cd app-infrastructure/template-renderer
 
-# Download S3-staged templates if they exist, otherwise fall back to repo versions
-echo &quot;Attempting to download templates from S3...&quot;
-
-if [ &quot;${RENDER_AUTH_HPDS}&quot; = &quot;true&quot; ]; then
-  aws s3 cp &quot;s3://${stack_s3_bucket}/configs/hpds/templates/${TARGET_STACK}/hpds-auth.env.tftpl&quot; \
-    templates/hpds-auth.env.tftpl \
-    &amp;&amp; echo &quot;Using stack-specific S3 template for hpds-auth.env.tftpl&quot; \
-    || { aws s3 cp &quot;s3://${stack_s3_bucket}/configs/hpds/templates/hpds-auth.env.tftpl&quot; \
-      templates/hpds-auth.env.tftpl \
-      &amp;&amp; echo &quot;Using shared S3 template for hpds-auth.env.tftpl&quot; \
-      || echo &quot;No S3 template found, using repo version of hpds-auth.env.tftpl&quot;; }
-fi
-
-if [ &quot;${RENDER_OPEN_HPDS}&quot; = &quot;true&quot; ]; then
-  aws s3 cp &quot;s3://${stack_s3_bucket}/configs/hpds/templates/${TARGET_STACK}/hpds-open.env.tftpl&quot; \
-    templates/hpds-open.env.tftpl \
-    &amp;&amp; echo &quot;Using stack-specific S3 template for hpds-open.env.tftpl&quot; \
-    || { aws s3 cp &quot;s3://${stack_s3_bucket}/configs/hpds/templates/hpds-open.env.tftpl&quot; \
-      templates/hpds-open.env.tftpl \
-      &amp;&amp; echo &quot;Using shared S3 template for hpds-open.env.tftpl&quot; \
-      || echo &quot;No S3 template found, using repo version of hpds-open.env.tftpl&quot;; }
-fi
+echo &quot;Attempting to download visualization template from S3...&quot;
+aws s3 cp &quot;s3://${stack_s3_bucket}/configs/pic-sure-visualization/templates/${TARGET_STACK}/visualization.env.tftpl&quot; \
+  templates/visualization.env.tftpl \
+  &amp;&amp; echo &quot;Using stack-specific S3 template for visualization.env.tftpl&quot; \
+  || { aws s3 cp &quot;s3://${stack_s3_bucket}/configs/pic-sure-visualization/templates/visualization.env.tftpl&quot; \
+    templates/visualization.env.tftpl \
+    &amp;&amp; echo &quot;Using shared S3 template for visualization.env.tftpl&quot; \
+    || echo &quot;No S3 template found, using repo version of visualization.env.tftpl&quot;; }
 
 terraform init -input=false
 
@@ -102,11 +75,10 @@ terraform apply -auto-approve -input=false \
   -var=&quot;environment_name=${environment_name}&quot; \
   -var=&quot;target_stack=${TARGET_STACK}&quot; \
   -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
-  -var=&quot;render_auth_hpds=${RENDER_AUTH_HPDS}&quot; \
-  -var=&quot;render_open_hpds=${RENDER_OPEN_HPDS}&quot; \
-  -var=&quot;render_visualization=false&quot;
-
-       </command>
+  -var=&quot;render_auth_hpds=false&quot; \
+  -var=&quot;render_open_hpds=false&quot; \
+  -var=&quot;render_visualization=true&quot;
+</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>

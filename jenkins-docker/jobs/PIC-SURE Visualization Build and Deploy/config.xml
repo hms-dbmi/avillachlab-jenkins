@@ -88,9 +88,6 @@ pipeline {
             }
         }
         stage(&apos;Retrieve Build Spec&apos;) {
-            when {
-                    expression { return params.git_hash == &apos;&apos; }
-            }
             steps {
                 script {
                     def result = build job: &apos;Retrieve Build Spec&apos;
@@ -150,6 +147,17 @@ pipeline {
                     def result = build job: &apos;PIC-SURE Visualization Build&apos;, parameters: [
                         [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: gitHash],
                         [$class: &apos;StringParameterValue&apos;, name: &apos;DEPLOY_METHOD&apos;, value: &apos;s3&apos;],
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
+                    ]
+                }
+            }
+        }
+        stage(&apos;Render PIC-SURE Visualization Config&apos;) {
+            steps {
+                script {
+                    def infraHash = infrastructure_git_hash
+                    def result = build job: &apos;Render PIC-SURE Visualization Config Template&apos;, parameters: [
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;INFRASTRUCTURE_GIT_HASH&apos;, value: infraHash],
                         [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
                     ]
                 }

@@ -309,6 +309,20 @@ pipeline {
       }
     }
 
+    stage(&apos;Render PIC-SURE Visualization Config&apos;) {
+      when {
+        expression { return params.INCLUDE_PIC_SURE_VISUALIZATION }
+      }
+      steps {
+        script {
+          build job: &apos;Render PIC-SURE Visualization Config Template&apos;, parameters: [
+            [$class: &apos;StringParameterValue&apos;, name: &apos;INFRASTRUCTURE_GIT_HASH&apos;, value: infrastructure_git_hash],
+            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
+          ]
+        }
+      }
+    }
+
     stage(&apos;Application Deploys (parallel)&apos;) {
       steps {
         parallel (

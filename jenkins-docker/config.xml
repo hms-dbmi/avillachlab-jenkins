@@ -208,6 +208,10 @@
         <string>PIC-SURE HPDS Open Build and Deploy</string>
         <string>PIC-SURE Pipeline Build and Deploy</string>
         <string>PIC-SURE API Build and Deploy</string>
+        <string>PIC-SURE Visualization Build and Deploy</string>
+        <string>Render PIC-SURE Visualization Config Template</string>
+        <string>Upload PIC-SURE Visualization Template</string>
+        <string>Download PIC-SURE Visualization Template</string>
       </jobNames>
       <jobFilters/>
       <columns>
