@@ -112,12 +112,19 @@ pipeline {
                 }
             }
         }
-        stage(&apos;Render HPDS Config Templates&apos;) {
+        stage(&apos;Render Config Templates&apos;) {
             steps {
                 script {
                     target_stack = new JsonSlurper().parseText(stacksJson).environments.next_prod
                     live_stack = new JsonSlurper().parseText(stacksJson).environments.prod
-                    def result = build job: &apos;Render HPDS Config Templates&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;INFRASTRUCTURE_GIT_HASH&apos;, value: infrastructure_git_hash], [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: target_stack], [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_AUTH_HPDS&apos;, value: true], [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPEN_HPDS&apos;, value: true]]
+                    parallel(
+                        hpds: {
+                            build job: &apos;Render HPDS Config Templates&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;INFRASTRUCTURE_GIT_HASH&apos;, value: infrastructure_git_hash], [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: target_stack], [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_AUTH_HPDS&apos;, value: true], [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPEN_HPDS&apos;, value: true]]
+                        },
+                        visualization: {
+                            build job: &apos;Render PIC-SURE Visualization Config Template&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;INFRASTRUCTURE_GIT_HASH&apos;, value: infrastructure_git_hash], [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: target_stack]]
+                        }
+                    )
                 }
             }
         }

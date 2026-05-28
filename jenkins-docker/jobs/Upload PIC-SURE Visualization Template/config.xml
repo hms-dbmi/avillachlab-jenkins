@@ -1,0 +1,64 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description>Upload PIC-SURE Visualization template file (.tftpl) to S3 for use by the Render PIC-SURE Visualization Config Template job.</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>TARGET_STACK</name>
+          <description>Target stack identifier (e.g., a, b). Leave empty to upload to the shared template path.</description>
+          <defaultValue></defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.FileParameterDefinition>
+          <name>visualization.env.tftpl</name>
+          <description>Upload a visualization.env.tftpl file. This template is rendered with environment-specific values during deployment.</description>
+        </hudson.model.FileParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.scm.NullSCM"/>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <jdk>(System)</jdk>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+set -e
+
+source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+    chmod +x &quot;$script_file&quot;
+    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+        echo &quot;sourcing $script_file&quot;
+        source &quot;$script_file&quot;
+    fi
+done
+
+if [ -n &quot;${TARGET_STACK}&quot; ]; then
+    S3_PREFIX=&quot;configs/pic-sure-visualization/templates/${TARGET_STACK}&quot;
+    echo &quot;Uploading to stack-specific path: ${S3_PREFIX}/&quot;
+else
+    S3_PREFIX=&quot;configs/pic-sure-visualization/templates&quot;
+    echo &quot;Uploading to shared path: ${S3_PREFIX}/&quot;
+fi
+
+if [ -f visualization.env.tftpl ]; then
+    aws s3 --sse=AES256 cp visualization.env.tftpl &quot;s3://$stack_s3_bucket/${S3_PREFIX}/visualization.env.tftpl&quot;
+    echo &quot;Uploaded visualization.env.tftpl&quot;
+else
+    echo &quot;No visualization.env.tftpl file provided, skipping.&quot;
+fi
+</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers/>
+</project>

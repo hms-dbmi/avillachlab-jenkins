@@ -1,7 +1,7 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
   <actions/>
-  <description>Deploys wildfly-host containers (API, PSAMA, Dictionary) sequentially via a single
+  <description>Deploys wildfly-host containers (API, PSAMA, Dictionary, Visualization) sequentially via a single
 SSM command to avoid systemd D-Bus race conditions, then waits for Spring Boot
 startup on all enabled containers in parallel.</description>
   <keepDependencies>false</keepDependencies>
@@ -34,6 +34,11 @@ startup on all enabled containers in parallel.</description>
         <hudson.model.BooleanParameterDefinition>
           <name>DEPLOY_DICTIONARY</name>
           <description>Deploy Dictionary API</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>DEPLOY_VISUALIZATION</name>
+          <description>Deploy PIC-SURE Visualization Service</description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.StringParameterDefinition>
@@ -130,6 +135,9 @@ fi
 if [[ &quot;${DEPLOY_DICTIONARY}&quot; == &quot;true&quot; ]]; then
   deploy_flags=&quot;${deploy_flags} --deploy_dictionary&quot;
 fi
+if [[ &quot;${DEPLOY_VISUALIZATION}&quot; == &quot;true&quot; ]]; then
+  deploy_flags=&quot;${deploy_flags} --deploy_visualization&quot;
+fi
 
 remote_cmd=$(
   cat &lt;&lt;EOF
@@ -154,7 +162,7 @@ command_id=&quot;$(
   aws ssm send-command \
     --instance-ids &quot;${wildfly_instance_id}&quot; \
     --document-name &quot;AWS-RunShellScript&quot; \
-    --comment &quot;Deploy Wildfly Stack (API+PSAMA+Dictionary)&quot; \
+    --comment &quot;Deploy Wildfly Stack (API+PSAMA+Dictionary+Visualization)&quot; \
     --parameters &quot;${remote_cmd_json}&quot; \
     --timeout-seconds 600 \
     --query &quot;Command.CommandId&quot; \
@@ -180,6 +188,11 @@ fi
 
 if [[ &quot;${DEPLOY_DICTIONARY}&quot; == &quot;true&quot; ]]; then
   wait_for_spring_boot_ssm_logs &quot;${wildfly_instance_id}&quot; &quot;dictionary-api&quot; &amp;
+  pids+=($!)
+fi
+
+if [[ &quot;${DEPLOY_VISUALIZATION}&quot; == &quot;true&quot; ]]; then
+  wait_for_spring_boot_ssm_logs &quot;${wildfly_instance_id}&quot; &quot;visualization&quot; &amp;
   pids+=($!)
 fi
 
