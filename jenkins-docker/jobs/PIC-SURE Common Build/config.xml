@@ -1,0 +1,65 @@
+
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+    <actions/>
+    <description>Git hash for this job should be set dynamically by the deployment pipeline, do not add to the global config.</description>
+    <keepDependencies>false</keepDependencies>
+    <properties>
+        <hudson.model.ParametersDefinitionProperty>
+            <parameterDefinitions>
+                <hudson.model.StringParameterDefinition>
+                    <name>TARGET_STACK</name>
+                    <trim>false</trim>
+                </hudson.model.StringParameterDefinition>
+                <hudson.model.StringParameterDefinition>
+                    <name>git_hash</name>
+                    <defaultValue>ALS-11850</defaultValue>
+                    <trim>false</trim>
+                </hudson.model.StringParameterDefinition>
+                <hudson.model.StringParameterDefinition>
+                    <name>S3_BUCKET_NAME</name>
+                    <defaultValue>${stack_s3_bucket}</defaultValue>
+                    <trim>false</trim>
+                </hudson.model.StringParameterDefinition>
+            </parameterDefinitions>
+        </hudson.model.ParametersDefinitionProperty>
+    </properties>
+    <scm class="hudson.plugins.git.GitSCM" plugin="git@5.10.1">
+        <configVersion>2</configVersion>
+        <userRemoteConfigs>
+            <hudson.plugins.git.UserRemoteConfig>
+                <url>${pic_sure_common_git_repo}</url>
+            </hudson.plugins.git.UserRemoteConfig>
+        </userRemoteConfigs>
+        <branches>
+            <hudson.plugins.git.BranchSpec>
+                <name>${git_hash}</name>
+            </hudson.plugins.git.BranchSpec>
+        </branches>
+        <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+        <submoduleCfg class="empty-list"/>
+        <extensions/>
+    </scm>
+    <canRoam>true</canRoam>
+    <disabled>false</disabled>
+    <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+    <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+    <jdk>(System)</jdk>
+    <triggers/>
+    <concurrentBuild>false</concurrentBuild>
+    <builders>
+        <hudson.tasks.Shell>
+            <command>docker build --load -f docker/build.Dockerfile -t hms-dbmi/hpds-build .
+
+                docker run --rm \
+                -v &quot;/var/jenkins_home/workspace/$JOB_NAME/:/app:z&quot; \
+                -v maven_m2_cache:/root/.m2 \
+                -w /app \
+                hms-dbmi/hpds-build \
+                sh -lc &quot;mvn clean install -DskipTests&quot;</command>
+            <configuredLocalRules/>
+        </hudson.tasks.Shell>
+    </builders>
+    <publishers/>
+    <buildWrappers/>
+</project>
