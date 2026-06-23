@@ -143,15 +143,13 @@ pipeline {
                         script {
                             def dictionaryBuildResult = build job: &apos;PIC-SURE Dictionary Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],[$class: &apos;StringParameterValue&apos;, name: &apos;GIT_HASH&apos;, value: build_hashes[&apos;PSD&apos;]]]
                         }
+                    },
+                    visualization:{
+                        script {
+                            def result = build job: &apos;PIC-SURE Visualization Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSV&apos;]],[$class: &apos;StringParameterValue&apos;, name: &apos;DEPLOY_METHOD&apos;, value: &apos;s3&apos;]]
+                        }
                     }
                 )
-            }
-        }
-        stage(&apos;PIC-SURE Visualization Build&apos;) {
-            steps {
-                script {
-                    def result = build job: &apos;PIC-SURE Visualization Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSV&apos;]],[$class: &apos;StringParameterValue&apos;, name: &apos;DEPLOY_METHOD&apos;, value: &apos;s3&apos;]]
-                }
             }
         }
     }
