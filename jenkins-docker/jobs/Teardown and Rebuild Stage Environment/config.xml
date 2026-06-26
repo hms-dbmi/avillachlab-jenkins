@@ -380,7 +380,6 @@ else
   aws s3 --sse=AES256 cp httpd-vhosts.conf s3://$stack_s3_bucket/$target_stack/configs/httpd/httpd-vhosts.conf
   aws s3 --sse=AES256 cp standalone.xml s3://$stack_s3_bucket/$target_stack/configs/wildfly/standalone.xml
   aws s3 --sse=AES256 cp aggregate-resource.properties s3://$stack_s3_bucket/$target_stack/configs/wildfly/aggregate-resource.properties
-  aws s3 --sse=AES256 cp visualization-resource.properties s3://$stack_s3_bucket/$target_stack/configs/wildfly/visualization-resource.properties
 
   # Because this file is not "rendered" it isn't placed in the root of the job workspace.
   aws s3 --sse=AES256 cp configs/banner_config.json s3://$stack_s3_bucket/$target_stack/configs/httpd/banner_config.json
