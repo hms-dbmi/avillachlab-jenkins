@@ -34,7 +34,7 @@ pipeline {
                   -v maven_m2_cache:/root/.m2 \
                   -w /app \
                   --platform=linux/amd64 \
-                  maven:3-amazoncorretto-21 \
+                  maven:3.9-amazoncorretto-25 \
                   sh -lc "mvn clean install -DskipTests" """
             }
         }
