@@ -52,8 +52,12 @@ Jenkins.instance.getItemByFullName(&quot;Import_HPDS_Dictionary_File&quot;)
     ])).get()
 
 
-Jenkins.instance.getItemByFullName(&quot;PIC-SURE Pipeline&quot;)
-    .scheduleBuild2(0).get()
+def run = Jenkins.instance.getItemByFullName(&quot;PIC-SURE Pipeline&quot;)
+.scheduleBuild2(0).get()
+
+if (run.getResult() != Result.SUCCESS) {
+    throw new AbortException(&quot;PIC-SURE Pipeline failed&quot;)
+}
 
 </script>
           <sandbox>false</sandbox>
