@@ -48,20 +48,22 @@
   <concurrentBuild>false</concurrentBuild>
   <builders>
     <hudson.tasks.Shell>
-      <command>GIT_BRANCH_SHORT=`echo ${GIT_BRANCH} | cut -d &quot;/&quot; -f 2`
+      <command>if [ -d pic-sure-legacy ]; then LEGACY_DIR=pic-sure-legacy; else LEGACY_DIR=.; fi
+
+GIT_BRANCH_SHORT=`echo ${GIT_BRANCH} | cut -d &quot;/&quot; -f 2`
 GIT_COMMIT_SHORT=`echo ${GIT_COMMIT} | cut -c1-7`
 
 docker run --rm \
   -v &quot;/var/jenkins_home/workspace/$JOB_NAME/:/app:z&quot; \
   -v maven_m2_cache:/root/.m2 \
-  -w /app \
+  -w /app/$LEGACY_DIR \
   --platform=linux/amd64 \
   maven:3.9-eclipse-temurin-21 \
   sh -lc &quot;mvn clean install -DskipTests&quot;
 
 docker build --load \
-  -f docker/bdc/bdc.Dockerfile \
-  -t hms-dbmi/pic-sure-wildfly:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
+  -f $LEGACY_DIR/docker/bdc/bdc.Dockerfile \
+  -t hms-dbmi/pic-sure-wildfly:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} $LEGACY_DIR
 
 docker save hms-dbmi/pic-sure-wildfly:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-wildfly.tar.gz
 aws s3 --sse=AES256 cp pic-sure-wildfly.tar.gz s3://$S3_BUCKET_NAME/$TARGET_STACK/containers/pic-sure-wildfly.tar.gz</command>

@@ -12,7 +12,7 @@
                 </hudson.model.StringParameterDefinition>
                 <hudson.model.StringParameterDefinition>
                     <name>git_hash</name>
-                    <defaultValue>ALS-11850</defaultValue>
+                    <defaultValue>refs/heads/frozen/legacy-java11</defaultValue>
                     <trim>false</trim>
                 </hudson.model.StringParameterDefinition>
                 <hudson.model.StringParameterDefinition>

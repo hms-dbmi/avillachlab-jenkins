@@ -24,7 +24,7 @@
         <hudson.model.StringParameterDefinition>
           <name>git_hash</name>
           <description>The Git hash to checkout</description>
-          <defaultValue>main</defaultValue>
+          <defaultValue>pic_sure_api_mono_repo</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
@@ -75,7 +75,7 @@
       <submoduleCfg class="empty-list"/>
       <extensions/>
     </scm>
-    <scriptPath>jenkinsfile</scriptPath>
+    <scriptPath>services/pic-sure-logging/jenkinsfile</scriptPath>
     <lightweight>false</lightweight>
   </definition>
   <triggers/>

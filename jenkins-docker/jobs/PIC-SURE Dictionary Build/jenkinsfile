@@ -3,7 +3,7 @@ pipeline {
 
     parameters {
         string(name: 'GIT_REPO_URL', defaultValue: '${dictionary_git_repo}', description: 'The GitHub repository URL')
-        string(name: 'GIT_HASH', defaultValue: 'main', description: 'The Git hash to checkout')
+        string(name: 'GIT_HASH', defaultValue: 'pic_sure_api_mono_repo', description: 'The Git hash to checkout')
         string(name: 'DOCKER_REPO', defaultValue: 'avillach', description: 'The Docker repository name')
         string(name: 'API_IMAGE_NAME', defaultValue: 'dictionary-api', description: 'The Docker image name for the Dictionary API')
         string(name: 'DOCKER_IMAGE_VERSION', defaultValue: 'latest', description: 'The Docker image version/tag')
@@ -32,7 +32,7 @@ pipeline {
                 sh """docker run --rm \
                   -v "/var/jenkins_home/workspace/${JOB_NAME}/:/app:z" \
                   -v maven_m2_cache:/root/.m2 \
-                  -w /app \
+                  -w /app/services/picsure-dictionary \
                   --platform=linux/amd64 \
                   maven:3.9-amazoncorretto-25 \
                   sh -lc "mvn clean install -DskipTests" """
@@ -41,7 +41,7 @@ pipeline {
 
         stage('Build Dictionary Docker Image') {
             steps {
-                dir('.') {
+                dir('services/picsure-dictionary') {
                     script {
                         sh "echo $pwd"
 

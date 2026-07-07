@@ -65,7 +65,7 @@
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>git_hash</name>
-          <defaultValue>main</defaultValue>
+          <defaultValue>pic_sure_api_mono_repo</defaultValue>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
@@ -93,7 +93,7 @@
       <submoduleCfg class="empty-list"/>
       <extensions/>
     </scm>
-    <scriptPath>Jenkinsfile.fence</scriptPath>
+    <scriptPath>services/pic-sure-auth-microapp/Jenkinsfile.fence</scriptPath>
     <lightweight>false</lightweight>
   </definition>
   <triggers/>
