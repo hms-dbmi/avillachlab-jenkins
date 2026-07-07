@@ -144,40 +144,6 @@ pipeline {
                 }
             }
         }
-        stage(&apos;Install Logging and Common Library&apos;) {
-          steps {
-            parallel (
-                logging: {
-                    script {
-                        try {
-                            build job: &apos;PIC-SURE Logging Client Install&apos;
-                        } catch (Exception e) {
-                            echo &quot;Logging client install failed (${e.message}). Downstream builds will proceed without it.&quot;
-                        }
-                    }
-                },
-                common: {
-                    script {
-                        def commonGithash = build_hashes[&apos;PSC&apos;]
-                        build job: &apos;PIC-SURE Common Build&apos;, parameters: [
-                          [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: commonGithash]
-                        ]
-                    }
-                }
-            )
-          }
-        }        
-        stage(&apos;PIC-SURE API Build&apos;) {
-            steps {
-                script{
-                    def gitHash = git_hash ? git_hash : build_hashes[&apos;PSA&apos;]
-                    def result = build job: &apos;PIC-SURE API Build&apos;, parameters: [
-                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                            [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: gitHash]
-                    ]
-                }
-            }
-        }
         stage(&apos;PIC-SURE API Deploy&apos;) {
             steps {
                 script {

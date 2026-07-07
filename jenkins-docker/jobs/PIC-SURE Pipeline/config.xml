@@ -89,25 +89,9 @@ pipeline {
                 }
             }
         }
-        stage(&apos;Install Logging Client Library&apos;) {
-            steps {
-                script {
-                    try {
-                        build job: &apos;PIC-SURE Logging Client Install&apos;
-                    } catch (Exception e) {
-                        echo &quot;Logging client install failed (${e.message}). Downstream builds will proceed without it.&quot;
-                    }
-                }
-            }
-        }
-        stage(&apos;PIC-SURE Common Build, PIC-SURE Frontend Build&apos;){
+        stage(&apos;PIC-SURE Frontend Build&apos;){
             steps {
                 parallel (
-                    picsurecommon:{
-                        script {
-                            def result = build job: &apos;PIC-SURE Common Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSC&apos;]]]
-                        }
-                    },
                     picsurefrontend:{
                         script{
                             def result = build job: &apos;PIC-SURE Frontend Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSF&apos;]]]
