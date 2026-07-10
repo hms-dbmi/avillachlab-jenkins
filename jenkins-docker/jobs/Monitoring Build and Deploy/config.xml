@@ -96,7 +96,7 @@ git clone --branch &quot;${git_hash}&quot; --single-branch &quot;${all_in_one_re
     </hudson.tasks.Shell>
     <hudson.tasks.Shell>
       <command>#!/bin/bash
-set -e
+set -euo pipefail
 
 # Pinned image set (7) per docs/monitoring.md. podman-exporter is renamed on
 # upload -- deploy-monitoring.sh/deploy-exporters.sh expect the exact key
@@ -175,9 +175,9 @@ echo &quot;Monitoring instance-id is $MONITORING_INSTANCE_ID&quot;
 # Re-fetch the freshly-uploaded deploy-monitoring.sh the same way user-data does,
 # then re-run it, so redeploys pick up script changes as well as artifact changes.
 monitoring_command_json=$(jq -n \
-  --arg s3cp &quot;aws --region us-east-1 s3 cp s3://$stack_s3_bucket/monitoring/deploy-monitoring.sh /opt/picsure/deploy-monitoring.sh&quot; \
-  --arg chmod &quot;chmod +x /opt/picsure/deploy-monitoring.sh&quot; \
-  --arg run &quot;/opt/picsure/deploy-monitoring.sh --stack_s3_bucket \&quot;$stack_s3_bucket\&quot; --environment_name \&quot;${environment_name}\&quot; --public_dns \&quot;${public_dns}\&quot; --staging_dns \&quot;${staging_dns}\&quot; --mysql_host \&quot;${mysql_host}\&quot;&quot; \
+  --arg s3cp &quot;sudo aws --region us-east-1 s3 cp s3://$stack_s3_bucket/monitoring/deploy-monitoring.sh /opt/picsure/deploy-monitoring.sh&quot; \
+  --arg chmod &quot;sudo chmod +x /opt/picsure/deploy-monitoring.sh&quot; \
+  --arg run &quot;sudo /opt/picsure/deploy-monitoring.sh --stack_s3_bucket \&quot;$stack_s3_bucket\&quot; --environment_name \&quot;${environment_name}\&quot; --public_dns \&quot;${public_dns}\&quot; --staging_dns \&quot;${staging_dns}\&quot; --mysql_host \&quot;${mysql_host}\&quot;&quot; \
   &apos;{commands: [$s3cp, $chmod, $run]}&apos;)
 
 monitoring_command_id=$(aws ssm send-command \
@@ -189,8 +189,8 @@ monitoring_command_id=$(aws ssm send-command \
   --query &quot;Command.CommandId&quot; \
   --output text)
 
-# Wait for the command to complete (timeout after 60 attempts / ~5 minutes).
-monitoring_max_attempts=60
+# Wait for the command to complete (timeout after 190 attempts / ~16 minutes).
+monitoring_max_attempts=190
 monitoring_attempt=0
 monitoring_check_failed=false
 while true; do
