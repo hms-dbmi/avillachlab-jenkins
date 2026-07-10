@@ -1,0 +1,184 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description>Dashboards/config only -- no image pulls. Rebuilds config-bundle.tar.gz from
+pic-sure-all-in-one's monitoring/{prometheus,grafana,blackbox} directories and uploads it
+alone to s3://$stack_s3_bucket/monitoring/config-bundle.tar.gz, then re-invokes
+deploy-monitoring.sh on the monitoring host (tag:Node=MONITORING, tag:Environment=$environment_name)
+via SSM. deploy-monitoring.sh re-extracts the bundle and recreates the prometheus/grafana/
+blackbox containers, so dashboard and scrape-config edits roll out without touching container
+images or secrets.
+
+This job never creates or overwrites the operator-managed secrets (monitoring.env, app-token,
+db-exporters.env). See pic-sure-bdc-infrastructure docs/monitoring.md for the full S3 artifact
+contract and the manual break-glass procedure this job automates.</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>git_hash</name>
+          <defaultValue>main</defaultValue>
+          <description>pic-sure-all-in-one ref to pull monitoring/{prometheus,grafana,blackbox} from for the config bundle. Use pic_sure_api_monitoring until that branch is merged to main.</description>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>all_in_one_repo</name>
+          <defaultValue>https://github.com/hms-dbmi/pic-sure-all-in-one.git</defaultValue>
+          <description>GitHub URL for pic-sure-all-in-one. FISMA Jenkins has no global var for this repo yet, so it is passed explicitly.</description>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>public_dns</name>
+          <defaultValue></defaultValue>
+          <description>Environment's public ALB DNS name, passed through to deploy-monitoring.sh --public_dns. Empty leaves __PUBLIC_DNS__ unrendered and logs a WARN (see docs/monitoring.md).</description>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>staging_dns</name>
+          <defaultValue></defaultValue>
+          <description>Staging-stack DNS name, passed through to deploy-monitoring.sh --staging_dns. Empty leaves __STAGING_DNS__ unrendered and logs a WARN (see docs/monitoring.md).</description>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>mysql_host</name>
+          <defaultValue></defaultValue>
+          <description>RDS MySQL endpoint, passed through to deploy-monitoring.sh --mysql_host. Empty skips mysqld-exporter with a WARN (see docs/monitoring.md).</description>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.scm.NullSCM"/>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <jdk>(System)</jdk>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+set -e
+
+# Public repo, no credentials needed (mirrors the plain `git clone` pattern in
+# Bash_Functions). FISMA Jenkins has no global var for pic-sure-all-in-one.
+rm -rf pic-sure-all-in-one
+git clone --branch &quot;${git_hash}&quot; --single-branch &quot;${all_in_one_repo}&quot; pic-sure-all-in-one</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+set -e
+
+# Config bundle only -- no container images, no deploy scripts re-upload.
+tar -czf config-bundle.tar.gz -C pic-sure-all-in-one/monitoring prometheus grafana blackbox
+aws s3 --sse=AES256 cp config-bundle.tar.gz &quot;s3://$stack_s3_bucket/monitoring/config-bundle.tar.gz&quot;
+
+# Secrets (monitoring.env, app-token, db-exporters.env) are OPERATOR-managed --
+# this job never writes them.</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+set -e
+
+source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+ls -la &quot;$source_scripts_folder&quot;
+
+for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+    chmod +x &quot;$script_file&quot;
+    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+        echo &quot;sourcing $script_file&quot;
+        source &quot;$script_file&quot;
+    fi
+done
+
+reset_role
+assume_role
+
+# The monitoring host is outside the blue/green stacks (no terraform.tfstate
+# output to key off), so resolve it by its Node/Environment tags instead.
+MONITORING_INSTANCE_ID=$(aws ec2 describe-instances \
+  --filters &quot;Name=tag:Node,Values=MONITORING&quot; &quot;Name=tag:Environment,Values=${environment_name}&quot; &quot;Name=instance-state-name,Values=running&quot; \
+  --query &quot;Reservations[].Instances[].InstanceId&quot; --output text)
+
+if [ -z &quot;$MONITORING_INSTANCE_ID&quot; ] || [ &quot;$(echo &quot;$MONITORING_INSTANCE_ID&quot; | wc -w)&quot; -ne 1 ]; then
+  echo &quot;ERROR: expected exactly one running instance tagged Node=MONITORING, Environment=${environment_name}. Got: '${MONITORING_INSTANCE_ID}'&quot;
+  exit 1
+fi
+
+echo &quot;Monitoring instance-id is $MONITORING_INSTANCE_ID&quot;
+
+# Re-fetch deploy-monitoring.sh (unchanged by this job, but kept current the
+# same way user-data does) and re-run it so the new bundle is extracted and
+# the prometheus/grafana/blackbox containers are recreated.
+monitoring_command_json=$(jq -n \
+  --arg s3cp &quot;aws --region us-east-1 s3 cp s3://$stack_s3_bucket/monitoring/deploy-monitoring.sh /opt/picsure/deploy-monitoring.sh&quot; \
+  --arg chmod &quot;chmod +x /opt/picsure/deploy-monitoring.sh&quot; \
+  --arg run &quot;/opt/picsure/deploy-monitoring.sh --stack_s3_bucket \&quot;$stack_s3_bucket\&quot; --environment_name \&quot;${environment_name}\&quot; --public_dns \&quot;${public_dns}\&quot; --staging_dns \&quot;${staging_dns}\&quot; --mysql_host \&quot;${mysql_host}\&quot;&quot; \
+  &apos;{commands: [$s3cp, $chmod, $run]}&apos;)
+
+monitoring_command_id=$(aws ssm send-command \
+  --instance-ids &quot;${MONITORING_INSTANCE_ID}&quot; \
+  --document-name &quot;AWS-RunShellScript&quot; \
+  --comment &quot;Deploy FISMA monitoring config bundle&quot; \
+  --parameters &quot;$monitoring_command_json&quot; \
+  --timeout-seconds 900 \
+  --query &quot;Command.CommandId&quot; \
+  --output text)
+
+# Wait for the command to complete (timeout after 60 attempts / ~5 minutes).
+monitoring_max_attempts=60
+monitoring_attempt=0
+monitoring_check_failed=false
+while true; do
+  monitoring_attempt=$((monitoring_attempt + 1))
+  if [[ ${monitoring_attempt} -gt ${monitoring_max_attempts} ]]; then
+    echo &quot;ERROR: Timed out waiting for monitoring config deploy on ${MONITORING_INSTANCE_ID} after ${monitoring_max_attempts} attempts.&quot;
+    monitoring_check_failed=true
+    break
+  fi
+  monitoring_status=$(aws ssm get-command-invocation --command-id ${monitoring_command_id} --instance-id ${MONITORING_INSTANCE_ID} --query &apos;Status&apos; --output text)
+  if [[ &quot;${monitoring_status}&quot; == &quot;Success&quot; ]]; then
+    break
+  elif [[ &quot;${monitoring_status}&quot; == &quot;Failed&quot; || &quot;${monitoring_status}&quot; == &quot;Cancelled&quot; || &quot;${monitoring_status}&quot; == &quot;TimedOut&quot; ]]; then
+    echo &quot;ERROR: Monitoring config deploy failed on ${MONITORING_INSTANCE_ID}. Command status: ${monitoring_status}&quot;
+    monitoring_check_failed=true
+    break
+  else
+    echo &quot;Waiting for monitoring config deploy... (${monitoring_status}) [attempt ${monitoring_attempt}/${monitoring_max_attempts}]&quot;
+    sleep 5
+  fi
+done
+
+echo &quot;--- deploy-monitoring.sh stdout ---&quot;
+aws ssm get-command-invocation --command-id ${monitoring_command_id} --instance-id ${MONITORING_INSTANCE_ID} --query &apos;StandardOutputContent&apos; --output text
+echo &quot;--- deploy-monitoring.sh stderr ---&quot;
+aws ssm get-command-invocation --command-id ${monitoring_command_id} --instance-id ${MONITORING_INSTANCE_ID} --query &apos;StandardErrorContent&apos; --output text
+
+reset_role
+
+if [[ &quot;$monitoring_check_failed&quot; == &quot;true&quot; ]]; then
+  exit 1
+fi</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.45">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+    <hudson.plugins.build__timeout.BuildTimeoutWrapper plugin="build-timeout@1.31">
+      <strategy class="hudson.plugins.build_timeout.impl.AbsoluteTimeOutStrategy">
+        <timeoutMinutes>20</timeoutMinutes>
+      </strategy>
+      <operationList/>
+    </hudson.plugins.build__timeout.BuildTimeoutWrapper>
+  </buildWrappers>
+</project>
