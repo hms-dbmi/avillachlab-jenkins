@@ -60,6 +60,16 @@ for script_file in &quot;$source_scripts_folder&quot;*.sh; do
     fi
 done
 
+assume_role
+
+# Get logging API key from logging.env in S3 (same derivation as Teardown and Rebuild)
+logging_api_key=$(
+  aws s3 cp &quot;s3://$stack_s3_bucket/configs/pic-sure-logging/logging.env&quot; /tmp/logging.env &gt;/dev/null &amp;&amp;
+  grep -oP &apos;^LOGGING_API_KEY=\K.*&apos; /tmp/logging.env
+)
+rm -f /tmp/logging.env 2&gt;/dev/null || true
+logging_api_key=&quot;${logging_api_key:-disabled}&quot;
+
 cd app-infrastructure/template-renderer
 
 terraform init -input=false
@@ -77,8 +87,10 @@ terraform apply -auto-approve -input=false \
   -var=&quot;render_picsure_services=true&quot; \
   -var=&quot;picsure_token_introspection_token=${picsure_token_introspection_token}&quot; \
   -var=&quot;logging_api_key=${logging_api_key}&quot; \
-  -var=&quot;app_user_secret_name=${app_user_secret_name}&quot; \
+  -var=&quot;app_user_secret_name=${database_app_user_secret_name}&quot; \
   -var=&quot;include_open_hpds=${include_open_hpds}&quot;
+
+reset_role
 </command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
