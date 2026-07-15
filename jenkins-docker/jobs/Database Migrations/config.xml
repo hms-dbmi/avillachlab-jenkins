@@ -21,7 +21,7 @@
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>COPY_APPLICATION_TOKEN_FROM_DB</name>
-          <description>The value must be the name of an auth database. For example auth2. This will copy the existing token from the auth2 database into the auth database. Additionally, the token will be compared to the current WildFly standalone.xml token. If it is different it will replace the token and restart the WildFly. It will do this for both stacks.</description>
+          <description>The value must be the name of an auth database. For example auth2. This will copy the existing token from the auth2 database into the auth database. Additionally, the token will be compared to the stack&apos;s gateway.env in S3. If it is different it will replace the token and redeploy the gateway container. It will do this for both stacks.</description>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
