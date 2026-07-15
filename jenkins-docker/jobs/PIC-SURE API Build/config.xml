@@ -1,7 +1,7 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
   <actions/>
-  <description>Git hash for this job should be set dynamically by the deployment pipeline, do not add to the global config.</description>
+  <description>Builds the pic-sure monorepo gateway-rewrite services (gateway, operations-service, hpds-query-service) and ships all three container tarballs. Git hash for this job should be set dynamically by the deployment pipeline, do not add to the global config.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
@@ -56,15 +56,17 @@ docker run --rm \
   -v maven_m2_cache:/root/.m2 \
   -w /app \
   --platform=linux/amd64 \
-  maven:3.9-eclipse-temurin-21 \
-  sh -lc &quot;mvn clean install -DskipTests&quot;
+  maven:3-amazoncorretto-25 \
+  sh -lc &quot;mvn -B clean install -DskipTests -T1C&quot;
 
-docker build --load \
-  -f docker/bdc/bdc.Dockerfile \
-  -t hms-dbmi/pic-sure-wildfly:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
+for svc in gateway operations-service hpds-query-service; do
+  docker build --load \
+    -t hms-dbmi/pic-sure-${svc}:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} \
+    services/pic-sure-${svc}/
 
-docker save hms-dbmi/pic-sure-wildfly:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-wildfly.tar.gz
-aws s3 --sse=AES256 cp pic-sure-wildfly.tar.gz s3://$S3_BUCKET_NAME/$TARGET_STACK/containers/pic-sure-wildfly.tar.gz</command>
+  docker save hms-dbmi/pic-sure-${svc}:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-${svc}.tar.gz
+  aws s3 --sse=AES256 cp pic-sure-${svc}.tar.gz s3://$S3_BUCKET_NAME/$TARGET_STACK/containers/pic-sure-${svc}.tar.gz
+done</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
