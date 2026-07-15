@@ -427,37 +427,6 @@ create_jwt_token() {
   cd &quot;${WORKSPACE}&quot;
 }
 
-# Function to update the WildFly token in standalone.xml
-# -----------------------------------------------
-# Functionality:
-#   1. Updates the token introspection value in WildFly&apos;s standalone.xml using AWS SSM.
-#   2. Uses sed to find and replace the token value in the specified file.
-# Example Use:
-#   replace_wildfly_token &quot;$wildfly_instance_id&quot; &quot;$introspection_token&quot;
-# Result:
-#   The introspection token in WildFly&apos;s standalone.xml is updated.
-replace_wildfly_token() {
-    local wildfly_instance_id=$1
-    local introspection_token=$2
-    update_wildly_standalone_xml_token=&quot;sudo sed -i &apos;s#&lt;simple name=\&quot;java:global/token_introspection_token\&quot; value=\&quot;[^\&quot;]*\&quot;/&gt;#&lt;simple name=\&quot;java:global/token_introspection_token\&quot; value=\&quot;${introspection_token}\&quot;/&gt;#&apos; /opt/picsure/standalone.xml&quot;
-    replace_token_command_json=$(jq -n --arg cmd &quot;$update_wildly_standalone_xml_token&quot; &apos;{commands: [$cmd]}&apos;)
-    
-    echo &quot;${update_wildly_standalone_xml_token}&quot;
-    echo &quot;${replace_token_command_json}&quot;
-
-    # Execute command to update the token using AWS SSM
-    command_id=$(aws ssm send-command \
-    --instance-ids &quot;${wildfly_instance_id}&quot; \
-    --document-name &quot;AWS-RunShellScript&quot; \
-    --comment &quot;Update WildFly token&quot; \
-    --parameters &quot;$replace_token_command_json&quot; \
-    --query &quot;Command.CommandId&quot; \
-    --output text)
-
-    wait_for_command ${command_id} ${wildfly_instance_id}
-    echo &quot;Token update success&quot;
-}
-
 EOF</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
@@ -987,23 +956,21 @@ EOF</command>
     </hudson.tasks.Shell>
     <hudson.tasks.Shell>
       <command>cat &lt;&lt;&apos;EOF&apos; &gt; application_functions.sh
-# Function to restart the WildFly container
+# Function to restart the gateway container
 # -----------------------------------------------
 # Functionality:
-#   1. Restarts the WildFly container via AWS SSM by executing a Docker restart command.
+#   1. Restarts the gateway container&apos;s systemd unit via AWS SSM.
 # Example Use:
-#   restart_wildfly &quot;$wildfly_instance_id&quot;
-# Result:
-#   The WildFly container is restarted successfully.
-restart_wildfly() {
+#   restart_gateway &quot;$wildfly_instance_id&quot;
+restart_gateway() {
     local wildfly_instance_id=$1
-    restart_command=&quot;sudo docker restart wildfly&quot;
+    restart_command=&quot;sudo systemctl restart container-gateway.service&quot;
     restart_command_json=$(jq -n --arg cmd &quot;$restart_command&quot; &apos;{commands: [$cmd]}&apos;)
 
     command_id=$(aws ssm send-command \
     --instance-ids &quot;${wildfly_instance_id}&quot; \
     --document-name &quot;AWS-RunShellScript&quot; \
-    --comment &quot;Restart WildFly container&quot; \
+    --comment &quot;Restart gateway container&quot; \
     --parameters &quot;$restart_command_json&quot; \
     --query &quot;Command.CommandId&quot; \
     --output text)
@@ -1011,72 +978,46 @@ restart_wildfly() {
     wait_for_command ${command_id} ${wildfly_instance_id}
 }
 
-# Function to update the WildFly token in standalone.xml
+# Function to update the gateway introspection token
 # -----------------------------------------------
 # Functionality:
-#   1. Compares the existing token in WildFly&apos;s standalone.xml with the new introspection token.
-#   2. If the tokens are the same, no update is made.
-#   3. If the tokens are different, the new token is updated in the standalone.xml file using AWS SSM and the
-#	WildFly docker container is restarted.
+#   1. Downloads the stack&apos;s gateway.env from S3 and compares TOKEN_INTROSPECTION_TOKEN.
+#   2. If different, rewrites the line, uploads, and re-runs deploy-gateway.sh via SSM
+#      (podman bakes env at create time — a plain restart would not pick it up).
 # Example Use:
-#   update_wildfly_token &quot;$wildfly_instance_id&quot; &quot;$introspection_token&quot;
-# Result:
-#   The introspection token in WildFly&apos;s standalone.xml is updated only if it&apos;s different from the existing token.
-update_wildfly_token() {
+#   update_gateway_token &quot;$wildfly_instance_id&quot; &quot;$introspection_token&quot; &quot;a&quot; &quot;$stack_s3_bucket&quot;
+update_gateway_token() {
     local wildfly_instance_id=$1
     local introspection_token=$2
+    local target_stack=$3
+    local stack_s3_bucket=$4
+    local env_s3_uri=&quot;s3://${stack_s3_bucket}/configs/gateway/${target_stack}/gateway.env&quot;
 
-    # Command to extract the current token from standalone.xml
-    get_current_token_command=&quot;grep &apos;&lt;simple name=\&quot;java:global/token_introspection_token\&quot;&apos; /opt/picsure/standalone.xml | sed -n &apos;s/.*value=\&quot;\\([^\&quot;]*\\)\&quot;.*/\\1/p&apos;&quot;
-    
-    # Format the command in JSON
-    get_token_command_json=$(jq -n --arg cmd &quot;$get_current_token_command&quot; &apos;{commands: [$cmd]}&apos;)
-    
-    # Execute the command using AWS SSM and wait for immediate response
-    command_id=$(aws ssm send-command \
-        --instance-ids &quot;${wildfly_instance_id}&quot; \
-        --document-name &quot;AWS-RunShellScript&quot; \
-        --parameters &quot;$get_token_command_json&quot; \
-        --query &quot;Command.CommandId&quot; \
-        --output text)
-    
-    # Immediately fetch the command output after execution
-    current_token=$(aws ssm get-command-invocation \
-        --command-id ${command_id} \
-        --instance-id ${wildfly_instance_id} \
-        --query &apos;StandardOutputContent&apos; \
-        --output text)
+    aws s3 cp &quot;$env_s3_uri&quot; gateway.env
+    current_token=$(grep &apos;^TOKEN_INTROSPECTION_TOKEN=&apos; gateway.env | cut -d &apos;=&apos; -f 2-)
 
-    echo &quot;Current token: $current_token&quot;
-    echo &quot;New token: $introspection_token&quot;
-
-    # Compare the current token with the new token
     if [ &quot;$current_token&quot; = &quot;$introspection_token&quot; ]; then
         echo &quot;Tokens are identical. No update required.&quot;
     else
-        echo &quot;Tokens differ. Updating token.&quot;
+        echo &quot;Tokens differ. Updating gateway.env and redeploying the gateway.&quot;
+        sed -i &quot;s|^TOKEN_INTROSPECTION_TOKEN=.*|TOKEN_INTROSPECTION_TOKEN=${introspection_token}|&quot; gateway.env
+        aws s3 --sse=AES256 cp gateway.env &quot;$env_s3_uri&quot;
 
-        # Update WildFly standalone.xml token
-        update_wildly_standalone_xml_token=&quot;sudo sed -i &apos;s#&lt;simple name=\&quot;java:global/token_introspection_token\&quot; value=\&quot;[^\&quot;]*\&quot;/&gt;#&lt;simple name=\&quot;java:global/token_introspection_token\&quot; value=\&quot;${introspection_token}\&quot;/&gt;#&apos; /opt/picsure/standalone.xml&quot;
-        replace_token_command_json=$(jq -n --arg cmd &quot;$update_wildly_standalone_xml_token&quot; &apos;{commands: [$cmd]}&apos;)
+        redeploy_command=&quot;sudo /opt/picsure/deploy-gateway.sh --stack_s3_bucket ${stack_s3_bucket} --target_stack ${target_stack}&quot;
+        redeploy_command_json=$(jq -n --arg cmd &quot;$redeploy_command&quot; &apos;{commands: [$cmd]}&apos;)
 
-        echo &quot;${update_wildly_standalone_xml_token}&quot;
-        echo &quot;${replace_token_command_json}&quot;
-
-        # Execute command to update the token using AWS SSM
         command_id=$(aws ssm send-command \
         --instance-ids &quot;${wildfly_instance_id}&quot; \
         --document-name &quot;AWS-RunShellScript&quot; \
-        --comment &quot;Update WildFly token&quot; \
-        --parameters &quot;$replace_token_command_json&quot; \
+        --comment &quot;Redeploy gateway with updated token&quot; \
+        --parameters &quot;$redeploy_command_json&quot; \
         --query &quot;Command.CommandId&quot; \
         --output text)
 
         wait_for_command ${command_id} ${wildfly_instance_id}
         echo &quot;Token update success&quot;
     fi
-    
-    restart_wildfly &quot;$wildfly_instance_id&quot;
+    rm -f gateway.env
 }
 
 # Function to monitor Docker logs via SSM to detect if Spring Boot has started
