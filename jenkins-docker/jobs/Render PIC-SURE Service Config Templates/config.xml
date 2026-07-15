@@ -1,0 +1,95 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description>Renders the gateway/operations/query env files for a stack and uploads to S3. Always renders all three together (shared tokens are minted per run). Re-running rotates QUERY_SERVICE_INTERNAL_TOKEN / PICSURE_APPLICATION_TOKEN / AGGREGATE_OBFUSCATION_SALT — always redeploy the three services afterwards.</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>INFRASTRUCTURE_GIT_HASH</name>
+          <description>Git hash of the infrastructure repo to checkout</description>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>TARGET_STACK</name>
+          <description>Target stack identifier (e.g., a, b)</description>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.1">
+    <configVersion>2</configVersion>
+    <userRemoteConfigs>
+      <hudson.plugins.git.UserRemoteConfig>
+        <url>${infrastructure_git_repo}</url>
+        <credentialsId>${git_credentials_id}</credentialsId>
+      </hudson.plugins.git.UserRemoteConfig>
+    </userRemoteConfigs>
+    <branches>
+      <hudson.plugins.git.BranchSpec>
+        <name>${INFRASTRUCTURE_GIT_HASH}</name>
+      </hudson.plugins.git.BranchSpec>
+    </branches>
+    <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+    <submoduleCfg class="empty-list"/>
+    <extensions/>
+  </scm>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <jdk>(System)</jdk>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+set -e
+
+# Source folder containing the scripts
+source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+
+# Iterate through the files in the folder and source them
+for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+    chmod +x &quot;$script_file&quot;
+    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+        echo &quot;sourcing $script_file&quot;
+        source &quot;$script_file&quot;
+    fi
+done
+
+cd app-infrastructure/template-renderer
+
+terraform init -input=false
+
+# All three env files render together: the shared tokens are minted per apply
+# and must stay identical across gateway.env, operations.env, and query.env.
+terraform apply -auto-approve -input=false \
+  -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot; \
+  -var=&quot;environment_name=${environment_name}&quot; \
+  -var=&quot;target_stack=${TARGET_STACK}&quot; \
+  -var=&quot;env_private_dns_name=${env_private_dns_name}&quot; \
+  -var=&quot;render_auth_hpds=false&quot; \
+  -var=&quot;render_open_hpds=false&quot; \
+  -var=&quot;render_visualization=false&quot; \
+  -var=&quot;render_picsure_services=true&quot; \
+  -var=&quot;picsure_token_introspection_token=${picsure_token_introspection_token}&quot; \
+  -var=&quot;logging_api_key=${logging_api_key}&quot; \
+  -var=&quot;app_user_secret_name=${app_user_secret_name}&quot; \
+  -var=&quot;include_open_hpds=${include_open_hpds}&quot;
+</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.46">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
+</project>
