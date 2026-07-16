@@ -79,7 +79,7 @@ pipeline {
                         fi
                     done
 
-                    get_stack \&quot;staging\&quot;
+                    get_stack \&quot;${TARGET_STACK}\&quot;
                     &apos;
                     &quot;&quot;&quot;, returnStdout: true).trim()
 
@@ -98,8 +98,8 @@ pipeline {
                     sh &apos;cat build-spec.json&apos;
                     sh &apos;cat pipeline_git_commit.txt&apos;
                     sh &apos;pwd&apos;
-                    def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/PIC-SURE Visualization Build and Deploy/build-spec.json&apos;))
-                    pipelineBuildId = new File(&apos;/var/jenkins_home/workspace/PIC-SURE Visualization Build and Deploy/pipeline_git_commit.txt&apos;).text.trim()
+                    def buildSpec = new JsonSlurper().parseText(readFile(&apos;build-spec.json&apos;))
+                    pipelineBuildId = readFile(&apos;pipeline_git_commit.txt&apos;).trim()
                     for(def build : buildSpec.application){
                         build_hashes[build.project_job_git_key] = build.git_hash
                     }
