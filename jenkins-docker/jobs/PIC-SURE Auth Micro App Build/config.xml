@@ -1,101 +1,88 @@
 <?xml version='1.1' encoding='UTF-8'?>
-<flow-definition plugin="workflow-job@1571.vb_423c255d6d9">
-  <actions>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2277.v00573e73ddf1"/>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2277.v00573e73ddf1">
-      <jobProperties/>
-      <triggers/>
-      <parameters>
-        <string>STACK_SPECIFIC_APPLICATION_ID</string>
-        <string>TARGET_STACK</string>
-        <string>STACK_S3_BUCKET</string>
-        <string>REPOSITORY_NAME</string>
-        <string>DATASOURCE_USERNAME</string>
-        <string>DOCKER_REGISTRY</string>
-        <string>DATASOURCE_URL</string>
-      </parameters>
-      <options/>
-    </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
-  </actions>
-  <description></description>
+<project>
+  <actions/>
+  <description>Packages the PSAMA image from the per-stack reactor lane (converted from Jenkinsfile.fence, which is no longer referenced). Job name kept for pipeline/history compatibility.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
-          <name>DOCKER_REGISTRY</name>
-          <description>Docker registry URL (e.g., ECR URL)</description>
-          <defaultValue>hms-dbmi</defaultValue>
+          <name>TARGET_STACK</name>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>REPOSITORY_NAME</name>
-          <description>Docker repository name</description>
-          <defaultValue>psama</defaultValue>
+          <name>S3_BUCKET_NAME</name>
+          <defaultValue>${stack_s3_bucket}</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>pipeline_build_id</name>
+          <defaultValue>MANUAL_RUN</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>DATASOURCE_URL</name>
-          <description>Datasource URL</description>
           <defaultValue>${database_host_address}</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>DATASOURCE_USERNAME</name>
-          <description>Datasource username</description>
           <defaultValue>${database_app_user_secret_name}</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>STACK_SPECIFIC_APPLICATION_ID</name>
-          <description>Application ID for base query</description>
           <defaultValue>${application_id_for_base_query}</defaultValue>
           <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>TARGET_STACK</name>
-          <description>Target stack for application deployment.</description>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>STACK_S3_BUCKET</name>
-          <description>The s3 bucket</description>
-          <defaultValue>${stack_s3_bucket}</defaultValue>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>git_hash</name>
-          <defaultValue>pic_sure_api_mono_repo</defaultValue>
-          <trim>true</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>S3_BUCKET_NAME</name>
-          <defaultValue>${stack_s3_bucket}</defaultValue>
-          <trim>true</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition" plugin="workflow-cps@4254.v0c8e228524ea_">
-    <scm class="hudson.plugins.git.GitSCM" plugin="git@5.9.0">
-      <configVersion>2</configVersion>
-      <userRemoteConfigs>
-        <hudson.plugins.git.UserRemoteConfig>
-          <url>${pic_sure_auth_microapp_repo}</url>
-        </hudson.plugins.git.UserRemoteConfig>
-      </userRemoteConfigs>
-      <branches>
-        <hudson.plugins.git.BranchSpec>
-          <name>${git_hash}</name>
-        </hudson.plugins.git.BranchSpec>
-      </branches>
-      <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
-      <submoduleCfg class="empty-list"/>
-      <extensions/>
-    </scm>
-    <scriptPath>services/pic-sure-auth-microapp/Jenkinsfile.fence</scriptPath>
-    <lightweight>false</lightweight>
-  </definition>
-  <triggers/>
+  <scm class="hudson.scm.NullSCM"/>
+  <canRoam>true</canRoam>
   <disabled>false</disabled>
-</flow-definition>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <jdk>(System)</jdk>
+  <triggers/>
+  <concurrentBuild>true</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+set -e
+
+: &quot;${TARGET_STACK:?TARGET_STACK is required}&quot;
+: &quot;${S3_BUCKET_NAME:?S3_BUCKET_NAME is required}&quot;
+
+MAVEN_WS=&quot;/var/jenkins_home/workspace/PIC-SURE Maven Build - ${TARGET_STACK}&quot;
+AUTH_DIR=&quot;$MAVEN_WS/services/pic-sure-auth-microapp&quot;
+
+if [ ! -f &quot;$MAVEN_WS/build-info.txt&quot; ] \
+   || ! ls &quot;$AUTH_DIR&quot;/pic-sure-auth-services/target/pic-sure-auth-services-*.jar &gt;/dev/null 2&gt;&amp;1; then
+  echo &quot;ERROR: no reactor artifacts for stack ${TARGET_STACK} -- run &apos;PIC-SURE Maven Build&apos; first&quot;
+  exit 2
+fi
+. &quot;$MAVEN_WS/build-info.txt&quot;
+
+docker build --load \
+  -f &quot;$AUTH_DIR/pic-sure-auth-services/bdc.Dockerfile&quot; \
+  --build-arg DATASOURCE_URL=&quot;${DATASOURCE_URL}&quot; \
+  --build-arg DATASOURCE_USERNAME=&quot;${DATASOURCE_USERNAME}&quot; \
+  --build-arg STACK_SPECIFIC_APPLICATION_ID=&quot;${STACK_SPECIFIC_APPLICATION_ID}&quot; \
+  -t &quot;hms-dbmi/psama:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}&quot; \
+  &quot;$AUTH_DIR&quot;
+docker save &quot;hms-dbmi/psama:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}&quot; | gzip &gt; psama.tar.gz
+aws s3 --sse=AES256 cp psama.tar.gz &quot;s3://$S3_BUCKET_NAME/$TARGET_STACK/containers/psama.tar.gz&quot;</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.49">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
+</project>
