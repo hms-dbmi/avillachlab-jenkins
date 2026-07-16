@@ -170,7 +170,7 @@ pipeline {
                 script {
                     def result = build job: &apos;PIC-SURE HPDS Auth Deploy&apos;, parameters: [
                         [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                        [$class: &apos;StringParameterValue&apos;, name: &apos;STACK_S3_BUCKET&apos;, value: STACK_S3_BUCKET],
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: STACK_S3_BUCKET],
                         [$class: &apos;StringParameterValue&apos;, name: &apos;DATA_S3_OBJECT_KEY&apos;, value: DATA_S3_OBJECT_KEY],
                         [$class: &apos;StringParameterValue&apos;, name: &apos;GENOMIC_DATASET_S3_OBJECT_KEY&apos;, value: GENOMIC_DATASET_S3_OBJECT_KEY]
                     ]

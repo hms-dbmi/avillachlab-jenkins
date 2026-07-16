@@ -71,7 +71,7 @@ startup on all enabled containers in parallel.</description>
   <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
   <jdk>(System)</jdk>
   <triggers/>
-  <concurrentBuild>false</concurrentBuild>
+  <concurrentBuild>true</concurrentBuild>
   <builders>
     <hudson.tasks.Shell>
       <command>#!/usr/bin/env bash

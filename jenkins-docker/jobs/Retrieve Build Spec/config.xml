@@ -42,7 +42,7 @@
   <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
   <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
   <triggers/>
-  <concurrentBuild>false</concurrentBuild>
+  <concurrentBuild>true</concurrentBuild>
   <builders>
     <hudson.tasks.Shell>
       <command>echo ${GIT_COMMIT} &gt; pipeline_git_commit.txt</command>

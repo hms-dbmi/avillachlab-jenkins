@@ -726,7 +726,8 @@ restore_schema() {
     local s3_bucket=$stack_s3_bucket # The S3 bucket where the dump file is stored
 
     # Temporary local path to store the dump file
-    local temp_dump_file=&quot;/tmp/$backup_filename&quot;
+    local tmp_backup
+    tmp_backup=$(mktemp &quot;/tmp/${backup_filename}.XXXXXX&quot;)
 
     # Check if the S3 bucket and backup file are provided
     if [ -z &quot;$s3_bucket&quot; ] || [ -z &quot;$backup_filename&quot; ]; then
@@ -737,19 +738,19 @@ restore_schema() {
     echo &quot;Downloading the dump file $backup_filename from S3 bucket $s3_bucket...&quot;
 
     # Download the dump file from S3
-    aws s3 cp &quot;s3://$s3_bucket/database_backups/$backup_filename&quot; &quot;$temp_dump_file&quot; --sse AES256
+    aws s3 cp &quot;s3://$s3_bucket/database_backups/$backup_filename&quot; &quot;$tmp_backup&quot; --sse AES256
     if [ $? -ne 0 ]; then
         echo &quot;Failed to download the dump file from S3. Exiting.&quot;
         return 1
     fi
 
     # Check if the dump file was downloaded successfully
-    if [ ! -f &quot;$temp_dump_file&quot; ]; then
-        echo &quot;Dump file $temp_dump_file does not exist after download. Exiting.&quot;
+    if [ ! -f &quot;$tmp_backup&quot; ]; then
+        echo &quot;Dump file $tmp_backup does not exist after download. Exiting.&quot;
         return 1
     fi
 
-    echo &quot;Restoring schema: $schema_name from dump file: $temp_dump_file...&quot;
+    echo &quot;Restoring schema: $schema_name from dump file: $tmp_backup...&quot;
 
     # Drop the schema if it exists and recreate it
     DROP_SCHEMA_CMD=&quot;DROP SCHEMA IF EXISTS $schema_name; CREATE SCHEMA $schema_name;&quot;
@@ -757,12 +758,12 @@ restore_schema() {
         -e &quot;$DROP_SCHEMA_CMD&quot; 2&gt;/dev/null
 
     # Restore the schema from the downloaded dump file
-    docker run --rm -i $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; &quot;$schema_name&quot; &lt; &quot;$temp_dump_file&quot; 2&gt;/dev/null
+    docker run --rm -i $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; &quot;$schema_name&quot; &lt; &quot;$tmp_backup&quot; 2&gt;/dev/null
 
     echo &quot;Schema $schema_name restored successfully from $backup_filename.&quot;
 
     # Cleanup: Remove the downloaded dump file
-    rm -f &quot;$temp_dump_file&quot;
+    rm -f &quot;$tmp_backup&quot;
 }
 
 

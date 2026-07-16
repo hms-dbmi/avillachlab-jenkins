@@ -300,7 +300,7 @@ pipeline {
               if (params.INCLUDE_PIC_SURE_HPDS_OPEN) {
                 build job: &apos;PIC-SURE HPDS Open Deploy&apos;, parameters: [
                   [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;STACK_S3_BUCKET&apos;, value: String.valueOf(params.STACK_S3_BUCKET)],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: String.valueOf(params.STACK_S3_BUCKET)],
                   [$class: &apos;StringParameterValue&apos;, name: &apos;DESTIGMATIZED_DATASET_S3_OBJECT_KEY&apos;, value: String.valueOf(params.DESTIGMATIZED_DATASET_S3_OBJECT_KEY)]
                 ]
               } else {
