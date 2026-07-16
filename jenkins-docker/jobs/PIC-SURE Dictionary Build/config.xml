@@ -1,112 +1,89 @@
 <?xml version='1.1' encoding='UTF-8'?>
-<flow-definition plugin="workflow-job@1571.vb_423c255d6d9">
-  <actions>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobAction plugin="pipeline-model-definition@2.2277.v00573e73ddf1"/>
-    <org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction plugin="pipeline-model-definition@2.2277.v00573e73ddf1">
-      <jobProperties/>
-      <triggers/>
-      <parameters>
-        <string>DOCKER_IMAGE_VERSION</string>
-        <string>TARGET_STACK</string>
-        <string>STACK_S3_BUCKET</string>
-        <string>GIT_HASH</string>
-        <string>DOCKER_REPO</string>
-        <string>API_IMAGE_NAME</string>
-        <string>SPRING_PROFILE</string>
-        <string>DATASOURCE_USERNAME</string>
-        <string>DATASOURCE_URL</string>
-        <string>GIT_REPO_URL</string>
-      </parameters>
-      <options/>
-    </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
-  </actions>
-  <description></description>
+<project>
+  <actions/>
+  <description>Packages the dictionary-api image from the per-stack reactor lane and ships the tarball to the stack&apos;s S3 prefix. Requires a prior successful &apos;PIC-SURE Maven Build&apos; for the same TARGET_STACK.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
-          <name>GIT_REPO_URL</name>
-          <description>The GitHub repository URL</description>
-          <defaultValue>${dictionary_git_repo}</defaultValue>
+          <name>TARGET_STACK</name>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>GIT_HASH</name>
-          <description>The Git hash to checkout</description>
-          <defaultValue>main</defaultValue>
+          <name>S3_BUCKET_NAME</name>
+          <defaultValue>${stack_s3_bucket}</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>DOCKER_REPO</name>
-          <description>The Docker repository name</description>
-          <defaultValue>avillach</defaultValue>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>API_IMAGE_NAME</name>
-          <description>The Docker image name for the Dictionary API</description>
-          <defaultValue>dictionary-api</defaultValue>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>DOCKER_IMAGE_VERSION</name>
-          <description>The Docker image version/tag</description>
-          <defaultValue>latest</defaultValue>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>SPRING_PROFILE</name>
-          <description>The Spring profile</description>
-          <defaultValue>bdc</defaultValue>
+          <name>pipeline_build_id</name>
+          <defaultValue>MANUAL_RUN</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>DATASOURCE_URL</name>
-          <description>Datasource URL</description>
           <defaultValue>${database_psql_host_address}</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>DATASOURCE_USERNAME</name>
-          <description>Datasource username</description>
           <defaultValue>${database_psql_app_user_secret_name}</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>TARGET_STACK</name>
-          <description>a or b. The target stack.</description>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>STACK_S3_BUCKET</name>
-          <defaultValue>${stack_s3_bucket}</defaultValue>
+          <name>SPRING_PROFILE</name>
+          <defaultValue>bdc</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
-  <definition class="org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition" plugin="workflow-cps@4256.v991a_f1991c03">
-    <scm class="hudson.plugins.git.GitSCM" plugin="git@5.10.0">
-      <configVersion>2</configVersion>
-      <userRemoteConfigs>
-        <hudson.plugins.git.UserRemoteConfig>
-          <url>${jenkins_git_repo}</url>
-          <credentialsId>${git_credentials_id}</credentialsId>
-        </hudson.plugins.git.UserRemoteConfig>
-      </userRemoteConfigs>
-      <branches>
-        <hudson.plugins.git.BranchSpec>
-          <name>${jenkins_git_hash}</name>
-        </hudson.plugins.git.BranchSpec>
-      </branches>
-      <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
-      <submoduleCfg class="empty-list"/>
-      <extensions/>
-    </scm>
-    <scriptPath>jenkins-docker/jobs/PIC-SURE Dictionary Build/jenkinsfile</scriptPath>
-    <lightweight>false</lightweight>
-  </definition>
-  <triggers/>
+  <scm class="hudson.scm.NullSCM"/>
+  <canRoam>true</canRoam>
   <disabled>false</disabled>
-</flow-definition>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <jdk>(System)</jdk>
+  <triggers/>
+  <concurrentBuild>true</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+set -e
+
+: &quot;${TARGET_STACK:?TARGET_STACK is required}&quot;
+: &quot;${S3_BUCKET_NAME:?S3_BUCKET_NAME is required}&quot;
+
+MAVEN_WS=&quot;/var/jenkins_home/workspace/PIC-SURE Maven Build - ${TARGET_STACK}&quot;
+DICT_DIR=&quot;$MAVEN_WS/services/picsure-dictionary&quot;
+
+# Guard: this job does not compile; it needs the reactor&apos;s artifacts for THIS stack.
+if [ ! -f &quot;$MAVEN_WS/build-info.txt&quot; ] || ! ls &quot;$DICT_DIR&quot;/target/dictionary-*.jar &gt;/dev/null 2&gt;&amp;1; then
+  echo &quot;ERROR: no reactor artifacts for stack ${TARGET_STACK} -- run &apos;PIC-SURE Maven Build&apos; first&quot;
+  exit 2
+fi
+. &quot;$MAVEN_WS/build-info.txt&quot;
+
+docker build --load \
+  -f &quot;$DICT_DIR/bdc.Dockerfile&quot; \
+  --build-arg DATASOURCE_URL=&quot;${DATASOURCE_URL}&quot; \
+  --build-arg DATASOURCE_USERNAME=&quot;${DATASOURCE_USERNAME}&quot; \
+  --build-arg SPRING_PROFILE=&quot;${SPRING_PROFILE}&quot; \
+  -t &quot;avillach/dictionary-api:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}&quot; \
+  &quot;$DICT_DIR&quot;
+
+docker save &quot;avillach/dictionary-api:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}&quot; | gzip &gt; dictionary-api.tar.gz
+aws s3 --sse=AES256 cp dictionary-api.tar.gz &quot;s3://$S3_BUCKET_NAME/$TARGET_STACK/containers/dictionary-api.tar.gz&quot;</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.49">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
+</project>
