@@ -1,7 +1,7 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
   <actions/>
-  <description>The single maven reactor build of the pic-sure monorepo. Every image job consumes this job's per-stack workspace; no other job runs Maven against the monorepo. Fail-closed: build-info.txt is removed before maven and rewritten only on success.</description>
+  <description>The single maven reactor build of the pic-sure monorepo. Every image job consumes this job's per-stack workspace; no other job runs Maven against the monorepo. Fail-closed: build-info.txt is removed before maven and rewritten only on success. WARNING: do not start two manual runs for the same TARGET_STACK concurrently, and do not run manually while a pipeline holds that stack's lock -- the per-stack workspace is shared and concurrent same-stack runs corrupt it. Orchestrated runs are protected by lock(stack-&lt;stack&gt;).</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>

@@ -10,7 +10,6 @@
         <string>TARGET_STACK</string>
         <string>STACK_S3_BUCKET</string>
         <string>DATA_S3_OBJECT_KEY</string>
-        <string>git_hash</string>
       </parameters>
       <options/>
     </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
@@ -33,11 +32,6 @@
             <string>live</string>
           </choices>
         </hudson.model.ChoiceParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>git_hash</name>
-          <description>If you want to a specific branch. Leave blank to use the release control</description>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>STACK_S3_BUCKET</name>
           <description>If you want to a specific branch. Leave blank to use the release control</description>
@@ -79,7 +73,6 @@ pipeline {
 
     parameters {
         choice(name: &apos;TARGET_STACK&apos;, choices: [&apos;staging&apos;,&apos;live&apos;], description: &apos;Based on selection we determine if is a or b stack.&apos;)
-        string(name: &apos;git_hash&apos;, defaultValue: &apos;&apos;, description: &apos;If you want to a specific branch. Leave blank to use the release control&apos;)
         string(name: &apos;STACK_S3_BUCKET&apos;, defaultValue: &apos;${stack_s3_bucket}&apos;, description: &apos;If you want to a specific branch. Leave blank to use the release control&apos;)
         string(name: &apos;DATA_S3_OBJECT_KEY&apos;, defaultValue: &apos;&apos;, description: &apos;Optional. Setting this value will update related files, folders, datasets, etc.&apos;)
         string(name: &apos;BRANCH&apos;, defaultValue: &apos;&apos;, description: &apos;If you want to a specific branch. Leave blank to use the release control&apos;)
