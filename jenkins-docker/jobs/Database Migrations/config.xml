@@ -21,7 +21,7 @@
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>COPY_APPLICATION_TOKEN_FROM_DB</name>
-          <description>The value must be the name of an auth database. For example auth2. This will copy the existing token from the auth2 database into the auth database. Additionally, the token will be compared to the current WildFly standalone.xml token. If it is different it will replace the token and restart the WildFly. It will do this for both stacks.</description>
+          <description>The value must be the name of an auth database. For example auth2. This will copy the existing token from the auth2 database into the auth database. Additionally, the token will be compared to the stack&apos;s gateway.env in S3. If it is different it will replace the token and redeploy the gateway container. It will do this for both stacks.</description>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
@@ -133,7 +133,7 @@ run_flyway_migration &quot;$picsure_sql_path&quot; &quot;conf/picsure_flyway.con
 
 # If we have dropped the AUTH_TABLES we will need to update the introspection token
 if [ &quot;$DROP_AUTH_TABLES&quot; = true ]; then
-	# Update a stack&apos;s wildfly introspection token and restart the wildfly instance
+	# Update a stack&apos;s gateway introspection token and redeploy the gateway container
     tf_download_state &quot;a&quot; &quot;$stack_s3_bucket&quot;
     if [ -f &quot;terraform_a.tfstate&quot; ]; then
         wildfly_instance_id=$(tf_extract_wildfly_instance_id &quot;a&quot;)
@@ -141,13 +141,13 @@ if [ &quot;$DROP_AUTH_TABLES&quot; = true ]; then
         if [ -z &quot;$wildfly_instance_id&quot; ] || [ &quot;$wildfly_instance_id&quot; = &quot;null&quot; ]; then
             echo &quot;Error: WildFly instance ID for A stack not found&quot;
         else
-            update_wildfly_token &quot;$wildfly_instance_id&quot; &quot;$introspection_token&quot;
+            update_gateway_token &quot;$wildfly_instance_id&quot; &quot;$introspection_token&quot; &quot;a&quot; &quot;$stack_s3_bucket&quot;
         fi
     else
     	echo &quot;Terraform state file not found for A stack&quot;
     fi
 
-	# Update b stack&apos;s wildfly introspection token and restart the wildfly instance
+	# Update b stack&apos;s gateway introspection token and redeploy the gateway container
     tf_download_state &quot;b&quot; &quot;$stack_s3_bucket&quot;
     if [ -f &quot;terraform_b.tfstate&quot; ]; then
         wildfly_instance_id=$(tf_extract_wildfly_instance_id &quot;b&quot;)
@@ -155,7 +155,7 @@ if [ &quot;$DROP_AUTH_TABLES&quot; = true ]; then
         if [ -z &quot;$wildfly_instance_id&quot; ] || [ &quot;$wildfly_instance_id&quot; = &quot;null&quot; ]; then
             echo &quot;Error: WildFly instance ID for B stack not found&quot;
         else
-            update_wildfly_token &quot;$wildfly_instance_id&quot; &quot;$introspection_token&quot;
+            update_gateway_token &quot;$wildfly_instance_id&quot; &quot;$introspection_token&quot; &quot;b&quot; &quot;$stack_s3_bucket&quot;
         fi
 	else
     	echo &quot;Terraform state file not found for B stack&quot;

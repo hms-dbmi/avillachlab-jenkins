@@ -42,7 +42,7 @@
         </hudson.model.StringParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
           <name>INCLUDE_PIC_SURE_API</name>
-          <description>Include PIC-SURE API in the build and deploy process</description>
+          <description>Include PIC-SURE API (gateway, operations, query) in the build and deploy process</description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
@@ -258,7 +258,9 @@ pipeline {
                 build job: &apos;PIC-SURE Wildfly Stack Deploy&apos;, parameters: [
                   [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
                   [$class: &apos;StringParameterValue&apos;, name: &apos;DATASET_S3_OBJECT_KEY&apos;, value: String.valueOf(params.DATASET_S3_OBJECT_KEY)],
-                  [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_API&apos;, value: params.INCLUDE_PIC_SURE_API],
+                  [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_GATEWAY&apos;, value: params.INCLUDE_PIC_SURE_API],
+                  [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_OPERATIONS&apos;, value: params.INCLUDE_PIC_SURE_API],
+                  [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_QUERY&apos;, value: params.INCLUDE_PIC_SURE_API],
                   [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_PSAMA&apos;, value: params.INCLUDE_PIC_SURE_AUTH_MICRO_APP],
                   [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_DICTIONARY&apos;, value: params.INCLUDE_PIC_SURE_DICTIONARY],
                   [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_VISUALIZATION&apos;, value: params.INCLUDE_PIC_SURE_VISUALIZATION]

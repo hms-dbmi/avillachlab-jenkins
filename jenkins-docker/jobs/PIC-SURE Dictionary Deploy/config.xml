@@ -28,7 +28,6 @@ D-Bus race conditions with other wildfly-host containers.</description>
         build job: &apos;PIC-SURE Wildfly Stack Deploy&apos;, parameters: [
           [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: params.S3_BUCKET_NAME],
           [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: params.TARGET_STACK],
-          [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_API&apos;, value: false],
           [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_PSAMA&apos;, value: false],
           [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_DICTIONARY&apos;, value: true]
         ]

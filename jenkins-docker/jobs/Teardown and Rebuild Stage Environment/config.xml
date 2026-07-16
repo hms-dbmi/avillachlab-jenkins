@@ -359,7 +359,9 @@ else
 
   # Files that are needed, but are do not need to rendered by terraform.
   # Deploy Scripts
-  aws s3 --sse=AES256 cp scripts/deploy/deploy-wildfly.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-wildfly.sh
+  aws s3 --sse=AES256 cp scripts/deploy/deploy-gateway.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-gateway.sh
+  aws s3 --sse=AES256 cp scripts/deploy/deploy-operations.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-operations.sh
+  aws s3 --sse=AES256 cp scripts/deploy/deploy-query.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-query.sh
   aws s3 --sse=AES256 cp scripts/deploy/deploy-psama.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-psama.sh
   aws s3 --sse=AES256 cp scripts/deploy/deploy-dictionary.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-dictionary.sh
   aws s3 --sse=AES256 cp scripts/deploy/deploy-wildfly-stack.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-wildfly-stack.sh
@@ -378,8 +380,6 @@ else
   #  have terraform provision these to the ec2 and remove the aws cli stuff from the user-scripts and here
   aws s3 --sse=AES256 cp picsureui-settings.json s3://$stack_s3_bucket/$target_stack/configs/httpd/picsureui_settings.json
   aws s3 --sse=AES256 cp httpd-vhosts.conf s3://$stack_s3_bucket/$target_stack/configs/httpd/httpd-vhosts.conf
-  aws s3 --sse=AES256 cp standalone.xml s3://$stack_s3_bucket/$target_stack/configs/wildfly/standalone.xml
-  aws s3 --sse=AES256 cp aggregate-resource.properties s3://$stack_s3_bucket/$target_stack/configs/wildfly/aggregate-resource.properties
 
   # Because this file is not "rendered" it isn't placed in the root of the job workspace.
   aws s3 --sse=AES256 cp configs/banner_config.json s3://$stack_s3_bucket/$target_stack/configs/httpd/banner_config.json
