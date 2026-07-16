@@ -1,0 +1,69 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description>Packages the query service image from the per-stack reactor lane and ships the tarball to the stack&apos;s S3 prefix. Requires a prior successful &apos;PIC-SURE Maven Build&apos; for the same TARGET_STACK.</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>TARGET_STACK</name>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>S3_BUCKET_NAME</name>
+          <defaultValue>${stack_s3_bucket}</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>pipeline_build_id</name>
+          <defaultValue>MANUAL_RUN</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.scm.NullSCM"/>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <jdk>(System)</jdk>
+  <triggers/>
+  <concurrentBuild>true</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+set -e
+
+: &quot;${TARGET_STACK:?TARGET_STACK is required}&quot;
+: &quot;${S3_BUCKET_NAME:?S3_BUCKET_NAME is required}&quot;
+
+MAVEN_WS=&quot;/var/jenkins_home/workspace/PIC-SURE Maven Build - ${TARGET_STACK}&quot;
+
+# Guard: this job does not compile; it needs the reactor&apos;s artifacts for THIS stack.
+if [ ! -f &quot;$MAVEN_WS/build-info.txt&quot; ] || ! ls &quot;$MAVEN_WS&quot;/services/pic-sure-hpds-query-service/target/pic-sure-hpds-query-service-*.jar &gt;/dev/null 2&gt;&amp;1; then
+  echo &quot;ERROR: no reactor artifacts for stack ${TARGET_STACK} -- run &apos;PIC-SURE Maven Build&apos; first&quot;
+  exit 2
+fi
+. &quot;$MAVEN_WS/build-info.txt&quot;
+
+docker build --load \
+  -t &quot;hms-dbmi/pic-sure-hpds-query-service:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}&quot; \
+  &quot;$MAVEN_WS/services/pic-sure-hpds-query-service/&quot;
+
+docker save &quot;hms-dbmi/pic-sure-hpds-query-service:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}&quot; | gzip &gt; pic-sure-hpds-query-service.tar.gz
+aws s3 --sse=AES256 cp pic-sure-hpds-query-service.tar.gz &quot;s3://$S3_BUCKET_NAME/$TARGET_STACK/containers/pic-sure-hpds-query-service.tar.gz&quot;</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.49">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
+</project>
