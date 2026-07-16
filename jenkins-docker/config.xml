@@ -52,6 +52,10 @@
         <string>Import_and_Rekey_HPDS_Data</string>
         <string>Import HPDS VCF Data</string>
         <string>PIC-SURE Pipeline</string>
+        <string>PIC-SURE Maven Build</string>
+        <string>PIC-SURE Gateway Image</string>
+        <string>PIC-SURE HPDS Query Service Image</string>
+        <string>PIC-SURE Operations Service Image</string>
       </jobNames>
       <jobFilters/>
       <columns>
@@ -130,12 +134,11 @@
         <string>Create stack_variables.tf Files</string>
         <string>Destroy Old Jenkins Server</string>
         <string>List Instance Profiles</string>
-        <string>PIC-SURE Auth Micro-App Build</string>
-        <string>PIC-SURE API Build</string>
+        <string>PIC-SURE Auth Micro App Build</string>
         <string>PIC-SURE API Deploy</string>
-        <string>PIC-SURE-HPDS Build</string>
-        <string>PIC-SURE-Frontend Build</string>
-        <string>PIC-SURE-VISUALIZATION Build</string>
+        <string>PIC-SURE HPDS Build</string>
+        <string>PIC-SURE Frontend Build</string>
+        <string>PIC-SURE Visualization Build</string>
         <string>Retrieve Build Spec</string>
         <string>Retrieve Deployment State</string>
         <string>Teardown and Rebuild Stage Environment</string>
@@ -175,7 +178,6 @@
       <jobNames>
         <comparator class="hudson.util.CaseInsensitiveComparator"/>
         <string>PIC-SURE Pipeline</string>
-        <string>PIC-SURE API Build</string>
         <string>PIC-SURE Auth Micro App Build</string>
         <string>PIC-SURE Dictionary Build</string>
         <string>PIC-SURE Frontend Build</string>

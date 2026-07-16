@@ -50,7 +50,7 @@
   <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
   <jdk>(System)</jdk>
   <triggers/>
-  <concurrentBuild>false</concurrentBuild>
+  <concurrentBuild>true</concurrentBuild>
   <builders>
     <hudson.tasks.Shell>
       <command>#!/bin/bash
@@ -63,8 +63,8 @@ aws s3api get-object --bucket $stack_s3_bucket --key &quot;configs/pic-sure-fron
 
 cp -f configuration.json ./src/lib/assets/configuration.json
 
-docker build --no-cache --load -f Dockerfile --build-arg THEME=${THEME} -t hms-dbmi/pic-sure-frontend:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} .
-docker save hms-dbmi/pic-sure-frontend:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT} | gzip &gt; pic-sure-frontend.tar.gz
+docker build --no-cache --load -f Dockerfile --build-arg THEME=${THEME} -t hms-dbmi/pic-sure-frontend:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}_${TARGET_STACK} .
+docker save hms-dbmi/pic-sure-frontend:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}_${TARGET_STACK} | gzip &gt; pic-sure-frontend.tar.gz
 aws s3 --sse=AES256 cp pic-sure-frontend.tar.gz s3://$S3_BUCKET_NAME/$TARGET_STACK/containers/pic-sure-frontend.tar.gz
 </command>
       <configuredLocalRules/>
