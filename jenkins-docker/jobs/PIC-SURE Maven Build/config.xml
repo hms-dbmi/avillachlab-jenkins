@@ -1,0 +1,84 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description>The single maven reactor build of the pic-sure monorepo. Every image job consumes this job's per-stack workspace; no other job runs Maven against the monorepo. Fail-closed: build-info.txt is removed before maven and rewritten only on success.</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>git_hash</name>
+          <defaultValue>pic_sure_api_mono_repo</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>TARGET_STACK</name>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>pipeline_build_id</name>
+          <defaultValue>MANUAL_RUN</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.10.0">
+    <configVersion>2</configVersion>
+    <userRemoteConfigs>
+      <hudson.plugins.git.UserRemoteConfig>
+        <url>${pic_sure_api_git_repo}</url>
+      </hudson.plugins.git.UserRemoteConfig>
+    </userRemoteConfigs>
+    <branches>
+      <hudson.plugins.git.BranchSpec>
+        <name>${git_hash}</name>
+      </hudson.plugins.git.BranchSpec>
+    </branches>
+    <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+    <submoduleCfg class="empty-list"/>
+    <extensions/>
+  </scm>
+  <canRoam>true</canRoam>
+  <customWorkspace>/var/jenkins_home/workspace/PIC-SURE Maven Build - ${TARGET_STACK}</customWorkspace>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <jdk>(System)</jdk>
+  <triggers/>
+  <concurrentBuild>true</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+set -e
+
+: &quot;${TARGET_STACK:?TARGET_STACK is required}&quot;
+
+GIT_BRANCH_SHORT=$(echo &quot;${GIT_BRANCH}&quot; | awk -F/ '{print $NF}')
+GIT_COMMIT_SHORT=$(echo &quot;${GIT_COMMIT}&quot; | cut -c1-7)
+
+# Fail closed: image jobs must not consume a mixed lane after a failed build.
+rm -f build-info.txt
+
+# The single reactor build for this stack's lane. Identity-map mount (BDC:
+# host path == container path); per-stack m2 avoids concurrent-install races.
+docker run --rm \
+  -v &quot;/var/jenkins_home/workspace/PIC-SURE Maven Build - ${TARGET_STACK}/:/app:z&quot; \
+  -v &quot;maven_m2_cache_${TARGET_STACK}:/root/.m2&quot; \
+  -w /app \
+  --platform=linux/amd64 \
+  maven:3-amazoncorretto-25 \
+  sh -lc &quot;mvn -B clean install -T1C -DskipTests&quot;
+
+# Tag metadata for the image jobs (they source this file).
+{
+  echo &quot;GIT_BRANCH_SHORT=$GIT_BRANCH_SHORT&quot;
+  echo &quot;GIT_COMMIT_SHORT=$GIT_COMMIT_SHORT&quot;
+} &gt; build-info.txt
+cat build-info.txt</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers/>
+</project>
