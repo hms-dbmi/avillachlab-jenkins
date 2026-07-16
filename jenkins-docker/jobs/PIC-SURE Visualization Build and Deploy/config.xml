@@ -87,55 +87,44 @@ pipeline {
                 }
             }
         }
-        stage(&apos;Retrieve Build Spec&apos;) {
+        stage(&apos;Build and Deploy&apos;) {
             steps {
                 script {
-                    def result = build job: &apos;Retrieve Build Spec&apos;
-                    retrieveBuildSpecId = result.number
-                }
-                script {
-                    copyArtifacts filter: &apos;*&apos;, projectName: &apos;Retrieve Build Spec&apos;, selector: specific(&quot;&quot;+retrieveBuildSpecId)
-                    sh &apos;cat build-spec.json&apos;
-                    sh &apos;cat pipeline_git_commit.txt&apos;
-                    sh &apos;pwd&apos;
-                    def buildSpec = new JsonSlurper().parseText(readFile(&apos;build-spec.json&apos;))
-                    pipelineBuildId = readFile(&apos;pipeline_git_commit.txt&apos;).trim()
-                    for(def build : buildSpec.application){
-                        build_hashes[build.project_job_git_key] = build.git_hash
+                    lock(&quot;stack-${targetStack}&quot;) {
+                        def result = build job: &apos;Retrieve Build Spec&apos;
+                        retrieveBuildSpecId = result.number
+
+                        copyArtifacts filter: &apos;*&apos;, projectName: &apos;Retrieve Build Spec&apos;, selector: specific(&quot;&quot;+retrieveBuildSpecId)
+                        sh &apos;cat build-spec.json&apos;
+                        sh &apos;cat pipeline_git_commit.txt&apos;
+                        sh &apos;pwd&apos;
+                        def buildSpec = new JsonSlurper().parseText(readFile(&apos;build-spec.json&apos;))
+                        pipelineBuildId = readFile(&apos;pipeline_git_commit.txt&apos;).trim()
+                        for(def build : buildSpec.application){
+                            build_hashes[build.project_job_git_key] = build.git_hash
+                        }
+                        infrastructure_git_hash = buildSpec.infrastructure_git_hash
+
+                        build job: &apos;PIC-SURE Maven Build&apos;, parameters: [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSA&apos;]],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId]
+                        ]
+
+                        build job: &apos;PIC-SURE Visualization Build&apos;, parameters: [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId]
+                        ]
+
+                        build job: &apos;Render PIC-SURE Visualization Config Template&apos;, parameters: [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;INFRASTRUCTURE_GIT_HASH&apos;, value: infrastructure_git_hash],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
+                        ]
+
+                        build job: &apos;PIC-SURE Visualization Deploy&apos;, parameters: [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
+                        ]
                     }
-                    infrastructure_git_hash = buildSpec.infrastructure_git_hash
-                }
-            }
-        }
-        stage(&apos;PIC-SURE Visualization Build&apos;) {
-            steps {
-                script{
-                    def gitHash = git_hash ? git_hash : build_hashes[&apos;PSV&apos;]
-                    def result = build job: &apos;PIC-SURE Visualization Build&apos;, parameters: [
-                        [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: gitHash],
-                        [$class: &apos;StringParameterValue&apos;, name: &apos;DEPLOY_METHOD&apos;, value: &apos;s3&apos;],
-                        [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
-                    ]
-                }
-            }
-        }
-        stage(&apos;Render PIC-SURE Visualization Config&apos;) {
-            steps {
-                script {
-                    def infraHash = infrastructure_git_hash
-                    def result = build job: &apos;Render PIC-SURE Visualization Config Template&apos;, parameters: [
-                        [$class: &apos;StringParameterValue&apos;, name: &apos;INFRASTRUCTURE_GIT_HASH&apos;, value: infraHash],
-                        [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
-                    ]
-                }
-            }
-        }
-        stage(&apos;PIC-SURE Visualization Deploy&apos;) {
-            steps {
-                script {
-                    def result = build job: &apos;PIC-SURE Visualization Deploy&apos;, parameters: [
-                        [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
-                    ]
                 }
             }
         }

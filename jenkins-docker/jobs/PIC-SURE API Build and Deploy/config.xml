@@ -109,48 +109,38 @@ pipeline {
                 }
             }
         }
-        stage(&apos;Retrieve Build Spec&apos;) {
-            when {
-                    expression { return params.git_hash == &apos;&apos; }
-            }
+        stage(&apos;Build and Deploy&apos;) {
             steps {
                 script {
-                    def result = build job: &apos;Retrieve Build Spec&apos;
-                    retrieveBuildSpecId = result.number
-                }
-                script {
-                    copyArtifacts filter: &apos;*&apos;, projectName: &apos;Retrieve Build Spec&apos;, selector: specific(&quot;&quot;+retrieveBuildSpecId)
-                    sh &apos;cat build-spec.json&apos;
-                    sh &apos;cat pipeline_git_commit.txt&apos;
-                    sh &apos;pwd&apos;
-                    def buildSpec = new JsonSlurper().parseText(readFile(&apos;build-spec.json&apos;))
-                    pipelineBuildId = readFile(&apos;pipeline_git_commit.txt&apos;).trim()
-                    for(def build : buildSpec.application){
-                        build_hashes[build.project_job_git_key] = build.git_hash
+                    if (params.git_hash == &apos;&apos;) {
+                        def result = build job: &apos;Retrieve Build Spec&apos;
+                        retrieveBuildSpecId = result.number
+
+                        copyArtifacts filter: &apos;*&apos;, projectName: &apos;Retrieve Build Spec&apos;, selector: specific(&quot;&quot;+retrieveBuildSpecId)
+                        sh &apos;cat build-spec.json&apos;
+                        sh &apos;cat pipeline_git_commit.txt&apos;
+                        sh &apos;pwd&apos;
+                        def buildSpec = new JsonSlurper().parseText(readFile(&apos;build-spec.json&apos;))
+                        pipelineBuildId = readFile(&apos;pipeline_git_commit.txt&apos;).trim()
+                        for(def build : buildSpec.application){
+                            build_hashes[build.project_job_git_key] = build.git_hash
+                        }
+                        infrastructure_git_hash = buildSpec.infrastructure_git_hash
                     }
-                    infrastructure_git_hash = buildSpec.infrastructure_git_hash
-                }
-            }
-        }
-        stage(&apos;Database Migrations&apos;) {
-            when {
-                expression { return params.RUN_DATABASE_MIGRATIONS }
-            }
-            steps {
-                script {
-                    def result = build job: &apos;Database Migrations&apos;, parameters: [
-                        [$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash],
-                    ]
-                }
-            }
-        }
-        stage(&apos;PIC-SURE API Deploy&apos;) {
-            steps {
-                script {
-                    def result = build job: &apos;PIC-SURE API Deploy&apos;, parameters:
-                        [
+
+                    if (params.RUN_DATABASE_MIGRATIONS) {
+                        lock(&apos;shared-db&apos;) {
+                            build job: &apos;Database Migrations&apos;, parameters: [
+                                [$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash],
+                            ]
+                        }
+                    }
+
+                    lock(&quot;stack-${targetStack}&quot;) {
+                        build job: &apos;PIC-SURE API Deploy&apos;, parameters: [
                             [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
                         ]
+                    }
                 }
             }
         }
