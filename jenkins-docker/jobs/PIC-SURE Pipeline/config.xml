@@ -27,6 +27,16 @@ def pipelineBuildId
 def hasOverrideUI
 def targetStack
 
+@NonCPS
+def parseBuildHashes(String text) {
+    def spec = new JsonSlurper().parseText(text)
+    def result = [:]
+    for (build in spec.application) {
+        result[build.project_job_git_key.toString()] = build.git_hash?.toString()
+    }
+    return result
+}
+
 pipeline {
     agent any
 
@@ -43,14 +53,13 @@ pipeline {
                 }
                 script {
                     copyArtifacts filter: &apos;*&apos;, projectName: &apos;Retrieve Build Spec&apos;, selector: specific(&quot;&quot;+retrieveBuildSpecId)
-                    def buildSpec = new JsonSlurper().parseText(readFile(&apos;build-spec.json&apos;))
+                    // parseBuildHashes returns a plain (serializable) LinkedHashMap.
+                    // The lazy JSON structures never leave the @NonCPS method.
+                    build_hashes.putAll(parseBuildHashes(readFile(&apos;build-spec.json&apos;)))
                     pipelineBuildId = readFile(&apos;pipeline_git_commit.txt&apos;).trim()
-                    for(def build : buildSpec.application){
-                        build_hashes[build.project_job_git_key] = build.git_hash
-                        if(build.project_job_git_key == &quot;OVERRIDE_UI&quot;) {
-                            hasOverrideUI = true;
-                            echo &quot;Hex Code: ${build.project_job_git_key} = Color Name: ${build.git_hash}&quot;
-                        }
+                    if (build_hashes[&apos;OVERRIDE_UI&apos;]) {
+                        hasOverrideUI = true;
+                        echo &quot;Hex Code: OVERRIDE_UI = Color Name: ${build_hashes[&apos;OVERRIDE_UI&apos;]}&quot;
                     }
                 }
             }

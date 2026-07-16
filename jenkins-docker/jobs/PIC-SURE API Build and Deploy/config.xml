@@ -56,13 +56,28 @@
   </properties>
   <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@4175.ve65b_fa_663eed">
     <script>import groovy.json.JsonSlurper;
+
+@NonCPS
+def parseBuildHashes(String text) {
+    def spec = new JsonSlurper().parseText(text)
+    def result = [:]
+    for (build in spec.application) {
+        result[build.project_job_git_key.toString()] = build.git_hash?.toString()
+    }
+    return result
+}
+
+@NonCPS
+def parseInfrastructureGitHash(String text) {
+    return new JsonSlurper().parseText(text).infrastructure_git_hash?.toString()
+}
 def bdc_ui_docker_tag;
 
 def retrieveBuildSpecId;
 def bdcUIBuildSpecId;
 def overrideUiBuildSpec;
 def pipelineBuildId;
-def build_hashes = {};
+def build_hashes = [:];
 def hasOverrideUI;
 def infrastructure_git_hash;
 def targetStack;
@@ -120,12 +135,9 @@ pipeline {
                         sh &apos;cat build-spec.json&apos;
                         sh &apos;cat pipeline_git_commit.txt&apos;
                         sh &apos;pwd&apos;
-                        def buildSpec = new JsonSlurper().parseText(readFile(&apos;build-spec.json&apos;))
+                        build_hashes = parseBuildHashes(readFile(&apos;build-spec.json&apos;))
                         pipelineBuildId = readFile(&apos;pipeline_git_commit.txt&apos;).trim()
-                        for(def build : buildSpec.application){
-                            build_hashes[build.project_job_git_key] = build.git_hash
-                        }
-                        infrastructure_git_hash = buildSpec.infrastructure_git_hash
+                        infrastructure_git_hash = parseInfrastructureGitHash(readFile(&apos;build-spec.json&apos;))
                     }
 
                     if (params.RUN_DATABASE_MIGRATIONS) {
