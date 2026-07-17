@@ -19,6 +19,7 @@
     <userRemoteConfigs>
       <hudson.plugins.git.UserRemoteConfig>
         <url>${picsure_logging_client_repo}</url>
+        <credentialsId>${git_credentials_id}</credentialsId>
       </hudson.plugins.git.UserRemoteConfig>
     </userRemoteConfigs>
     <branches>
