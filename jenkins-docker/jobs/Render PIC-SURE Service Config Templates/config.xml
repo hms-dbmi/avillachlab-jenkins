@@ -62,6 +62,30 @@ done
 
 assume_role
 
+# Get the introspection token from the PSAMA database (same derivation as Teardown
+# and Rebuild). The token is never echoed: it is a live credential.
+db_app_user_json=$(fetch_secret &quot;$database_app_user_secret_name&quot;)
+picsure_db_username=$(extract_field &quot;$db_app_user_json&quot; &quot;username&quot;)
+picsure_db_password=$(extract_field &quot;$db_app_user_json&quot; &quot;password&quot;)
+picsure_db_host=$database_host_address
+
+if [ -z &quot;$picsure_db_username&quot; ] || [ -z &quot;$picsure_db_password&quot; ] || [ -z &quot;$picsure_db_host&quot; ]; then
+  echo &quot;Error: One or more required database variables are empty.&quot; &gt;&amp;2
+  exit 1
+fi
+
+initialize_shared_db_config &quot;${picsure_db_host%:3306}&quot; &quot;$picsure_db_username&quot; &quot;$picsure_db_password&quot;
+picsure_token_introspection_token=$(get_token_by_uuid &quot;$application_id_for_base_query&quot;)
+unset_shared_db_config
+
+# Fail closed: rendering with an empty token produces a gateway.env whose introspection
+# calls PSAMA rejects with 403, which surfaces to users as 502 on authenticated routes.
+if [ -z &quot;$picsure_token_introspection_token&quot; ]; then
+  echo &quot;Error: no introspection token found for application ${application_id_for_base_query}.&quot; &gt;&amp;2
+  echo &quot;Run the Update PIC-SURE Token Introspection Token job to mint one, then re-run this job.&quot; &gt;&amp;2
+  exit 1
+fi
+
 # Get logging API key from logging.env in S3 (same derivation as Teardown and Rebuild)
 logging_api_key=$(
   aws s3 cp &quot;s3://$stack_s3_bucket/configs/pic-sure-logging/logging.env&quot; /tmp/logging.env &gt;/dev/null &amp;&amp;
