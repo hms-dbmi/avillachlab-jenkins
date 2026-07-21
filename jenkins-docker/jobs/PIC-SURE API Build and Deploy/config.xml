@@ -11,6 +11,9 @@
         <string>RUN_DATABASE_MIGRATIONS</string>
         <string>DATASET_S3_OBJECT_KEY</string>
         <string>git_hash</string>
+        <string>DEPLOY_GATEWAY</string>
+        <string>DEPLOY_OPERATIONS</string>
+        <string>DEPLOY_QUERY</string>
       </parameters>
       <options/>
     </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
@@ -51,6 +54,21 @@
           <description>Run database migrations</description>
           <defaultValue>true</defaultValue>
         </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>DEPLOY_GATEWAY</name>
+          <description>Build and deploy pic-sure-gateway</description>
+          <defaultValue>true</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>DEPLOY_OPERATIONS</name>
+          <description>Build and deploy pic-sure-operations-service</description>
+          <defaultValue>true</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>DEPLOY_QUERY</name>
+          <description>Build and deploy pic-sure-hpds-query-service</description>
+          <defaultValue>true</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -89,6 +107,9 @@ pipeline {
         string(name: &apos;DATASET_S3_OBJECT_KEY&apos;, defaultValue: &apos;&apos;, description: &apos;&apos;)
         string(name: &apos;STACK_S3_BUCKET&apos;, defaultValue: &apos;&apos;, description: &apos;&apos;)
         booleanParam(name: &apos;RUN_DATABASE_MIGRATIONS&apos;, defaultValue: true, description: &apos;Run database migrations&apos;)
+        booleanParam(name: &apos;DEPLOY_GATEWAY&apos;, defaultValue: true, description: &apos;Build and deploy pic-sure-gateway&apos;)
+        booleanParam(name: &apos;DEPLOY_OPERATIONS&apos;, defaultValue: true, description: &apos;Build and deploy pic-sure-operations-service&apos;)
+        booleanParam(name: &apos;DEPLOY_QUERY&apos;, defaultValue: true, description: &apos;Build and deploy pic-sure-hpds-query-service&apos;)
     }
 
     environment {
@@ -127,6 +148,10 @@ pipeline {
         stage(&apos;Build and Deploy&apos;) {
             steps {
                 script {
+                    if (!(params.DEPLOY_GATEWAY || params.DEPLOY_OPERATIONS || params.DEPLOY_QUERY)) {
+                        error &apos;Nothing selected: enable at least one of DEPLOY_GATEWAY / DEPLOY_OPERATIONS / DEPLOY_QUERY.&apos;
+                    }
+
                     if (params.git_hash == &apos;&apos;) {
                         def result = build job: &apos;Retrieve Build Spec&apos;
                         retrieveBuildSpecId = result.number
@@ -149,8 +174,27 @@ pipeline {
                     }
 
                     lock(&quot;stack-${targetStack}&quot;) {
+                        build job: &apos;PIC-SURE Maven Build&apos;, parameters: [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: params.git_hash ?: build_hashes[&apos;PSA&apos;]],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId ?: &apos;MANUAL_RUN&apos;]
+                        ]
+
+                        def imageParams = [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId ?: &apos;MANUAL_RUN&apos;]
+                        ]
+                        def branches = [:]
+                        if (params.DEPLOY_GATEWAY)    { branches[&apos;gateway&apos;]    = { build job: &apos;PIC-SURE Gateway Image&apos;, parameters: imageParams } }
+                        if (params.DEPLOY_OPERATIONS) { branches[&apos;operations&apos;] = { build job: &apos;PIC-SURE Operations Service Image&apos;, parameters: imageParams } }
+                        if (params.DEPLOY_QUERY)      { branches[&apos;query&apos;]      = { build job: &apos;PIC-SURE HPDS Query Service Image&apos;, parameters: imageParams } }
+                        parallel branches
+
                         build job: &apos;PIC-SURE API Deploy&apos;, parameters: [
                             [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_GATEWAY&apos;, value: params.DEPLOY_GATEWAY],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_OPERATIONS&apos;, value: params.DEPLOY_OPERATIONS],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_QUERY&apos;, value: params.DEPLOY_QUERY]
                         ]
                     }
                 }
