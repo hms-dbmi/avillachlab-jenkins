@@ -34,7 +34,7 @@
   <builders>
     <hudson.tasks.Shell>
       <command>#!/bin/bash
-set -e
+set -euo pipefail
 
 : &quot;${TARGET_STACK:?TARGET_STACK is required}&quot;
 : &quot;${S3_BUCKET_NAME:?S3_BUCKET_NAME is required}&quot;
