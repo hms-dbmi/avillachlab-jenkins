@@ -153,9 +153,8 @@ assume_role
 
 echo &quot;Database Secret Name: $database_app_user_secret_name&quot;
 
-# Getting a secret value by secret name
+# Getting a secret value by secret name. Never echo it: it is a live credential.
 db_app_user_json=$(fetch_secret &quot;$database_app_user_secret_name&quot;)
-echo &quot;Database JSON: $db_app_user_json&quot;
 
 # dbuser - seems to be the root user
 picsure_db_username=$(extract_field &quot;$db_app_user_json&quot; &quot;username&quot;)
@@ -168,10 +167,9 @@ if [ -z &quot;$picsure_db_username&quot; ] || [ -z &quot;$picsure_db_password&qu
   exit 1
 fi
 
-# Get introspection token from database.
+# Get introspection token from database. Never echo it: it is a live credential.
 initialize_shared_db_config &quot;${picsure_db_host%:3306}&quot; &quot;$picsure_db_username&quot; &quot;$picsure_db_password&quot;
 picsure_token_introspection_token=$(get_token_by_uuid &quot;$application_id_for_base_query&quot;)
-echo &quot;Introspection Token: $picsure_token_introspection_token&quot;
 unset_shared_db_config
 
 # The database password likely contains special characters that don&apos;t play well with XML.
@@ -354,7 +352,7 @@ else
      -var=&quot;ras_session_logout_uri=${ras_session_logout_uri}&quot; \
      -var=&quot;login_redirect_uri=${login_redirect_uri}&quot; \
      -var=&quot;logging_service_url=http://pic-sure-logging&quot; \
-     -var=&quot;logging_api_key=${logging_api_key}&quot; || true
+     -var=&quot;logging_api_key=${logging_api_key}&quot; || apply_rc=$?
 
 
   reset_role
@@ -364,6 +362,13 @@ else
   # terraform destroy will not destroy anything as it points to old state and apply will fail as objects may already exist
   # Will have to manually destroy and delete roles, ec2s, etc. in that scenario
   aws s3 cp terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate
+
+  # Fail the build on a failed apply -- but only after the state upload above, so the
+  # partially-created resources stay tracked for the next destroy.
+  if [ &quot;${apply_rc:-0}&quot; -ne 0 ]; then
+    echo &quot;ERROR: terraform apply failed (exit ${apply_rc}). State was uploaded; failing the build.&quot; &gt;&amp;2
+    exit &quot;${apply_rc}&quot;
+  fi
 
   # roles are now in the same state as their related resources..
   #aws s3 cp ../s3-deployment-roles/terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate_roles
