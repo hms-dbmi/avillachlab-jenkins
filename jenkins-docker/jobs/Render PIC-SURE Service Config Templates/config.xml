@@ -86,13 +86,25 @@ if [ -z &quot;$picsure_token_introspection_token&quot; ]; then
   exit 1
 fi
 
-# Get logging API key from logging.env in S3 (same derivation as Teardown and Rebuild)
-logging_api_key=$(
-  aws s3 cp &quot;s3://$stack_s3_bucket/configs/pic-sure-logging/logging.env&quot; /tmp/logging.env &gt;/dev/null &amp;&amp;
-  grep -oP &apos;^LOGGING_API_KEY=\K.*&apos; /tmp/logging.env
-)
+# Get logging API key from logging.env in S3 (same derivation as Teardown and Rebuild).
+# The key is never echoed: it is a live credential.
+if ! aws s3 cp &quot;s3://$stack_s3_bucket/configs/pic-sure-logging/logging.env&quot; /tmp/logging.env &gt;/dev/null; then
+  rm -f /tmp/logging.env 2&gt;/dev/null || true
+  echo &quot;Error: could not read s3://$stack_s3_bucket/configs/pic-sure-logging/logging.env.&quot; &gt;&amp;2
+  echo &quot;That object is hand-maintained (there is no terraform template for it); confirm it exists, then re-run this job.&quot; &gt;&amp;2
+  exit 1
+fi
+logging_api_key=$(grep -oP &apos;^LOGGING_API_KEY=\K.*&apos; /tmp/logging.env || true)
 rm -f /tmp/logging.env 2&gt;/dev/null || true
-logging_api_key=&quot;${logging_api_key:-disabled}&quot;
+
+# Fail closed, like the introspection token above. This previously defaulted to the literal
+# string &quot;disabled&quot;, which rendered a gateway.env whose audit events pic-sure-logging
+# rejects with 401 -- silently, because the logging client logs the failure and drops the event.
+if [ -z &quot;$logging_api_key&quot; ]; then
+  echo &quot;Error: logging.env defines no non-empty LOGGING_API_KEY.&quot; &gt;&amp;2
+  echo &quot;Rendering would ship a gateway.env whose audit events pic-sure-logging rejects with 401. Fix logging.env, then re-run this job.&quot; &gt;&amp;2
+  exit 1
+fi
 
 cd app-infrastructure/template-renderer
 
