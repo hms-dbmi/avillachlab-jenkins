@@ -24,8 +24,7 @@
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
           <name>git_hash</name>
-          <description>If you want to a specific git_hash. Leave blank to use the release control</description>
-          <defaultValue>main</defaultValue>
+          <description>Monorepo git hash for the reactor build. Leave blank to use the release control</description>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.ChoiceParameterDefinition>
@@ -70,7 +69,7 @@ def targetStack;
 pipeline {
     agent any
     parameters {
-        string(name: &apos;git_hash&apos;, defaultValue: &apos;main&apos;, description: &apos;If you want to a specific git_hash. Leave blank to use the release control&apos;)
+        string(name: &apos;git_hash&apos;, defaultValue: &apos;&apos;, description: &apos;Monorepo git hash for the reactor build. Leave blank to use the release control&apos;)
         choice(name: &apos;TARGET_STACK&apos;, choices: [&apos;staging&apos;,&apos;live&apos;], description: &apos;Based on selection we determine if is a or b stack.&apos;)
     }
 
@@ -125,6 +124,17 @@ pipeline {
                             pipelineBuildId = readFile(&apos;pipeline_git_commit.txt&apos;).trim()
                             infrastructure_git_hash = parseInfrastructureGitHash(readFile(&apos;build-spec.json&apos;))
                         }
+
+                        build job: &apos;PIC-SURE Maven Build&apos;, parameters: [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: params.git_hash ?: build_hashes[&apos;PSA&apos;]],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId ?: &apos;MANUAL_RUN&apos;]
+                        ]
+
+                        build job: &apos;PIC-SURE Dictionary Build&apos;, parameters: [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId ?: &apos;MANUAL_RUN&apos;]
+                        ]
 
                         build job: &apos;PIC-SURE Dictionary Deploy&apos;, parameters: [
                             [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
