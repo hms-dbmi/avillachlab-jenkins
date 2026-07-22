@@ -136,6 +136,9 @@
         <string>List Instance Profiles</string>
         <string>PIC-SURE Auth Micro App Image</string>
         <string>PIC-SURE API Deploy</string>
+        <string>PIC-SURE Gateway Deploy</string>
+        <string>PIC-SURE Operations Service Deploy</string>
+        <string>PIC-SURE HPDS Query Service Deploy</string>
         <string>PIC-SURE HPDS Image</string>
         <string>PIC-SURE Frontend Build</string>
         <string>PIC-SURE Visualization Image</string>
@@ -210,6 +213,9 @@
         <string>PIC-SURE HPDS Open Build and Deploy</string>
         <string>PIC-SURE Pipeline Build and Deploy</string>
         <string>PIC-SURE API Build and Deploy</string>
+        <string>PIC-SURE Gateway Build and Deploy</string>
+        <string>PIC-SURE Operations Service Build and Deploy</string>
+        <string>PIC-SURE HPDS Query Service Build and Deploy</string>
         <string>PIC-SURE Visualization Build and Deploy</string>
         <string>Render PIC-SURE Visualization Config Template</string>
         <string>Upload PIC-SURE Visualization Template</string>
