@@ -20,6 +20,12 @@ add this work when moving to modular composition approach.</description>
           <name>infrastructure_git_hash</name>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>fail_empty_stacks</name>
+          <description>Fail the swap if either stack resolves to no HTTPD instances. Keep true for established environments so a no-op swap cannot flip the state file.</description>
+          <defaultValue>true</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -73,6 +79,9 @@ EOF</command>
     </hudson.tasks.Shell>
     <hudson.tasks.Shell>
       <command>#!/bin/bash
+# Fail fast: a swap that silently moves nothing must fail the build so the
+# calling pipeline does not go on to flip the deployment state file.
+set -eo pipefail
 
 # Source folder containing the scripts
 source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
@@ -87,12 +96,27 @@ for script_file in &quot;$source_scripts_folder&quot;*.sh; do
     fi
 done
 
+# assume_role exports empty creds on STS failure instead of returning non-zero;
+# verify we actually got credentials before touching target groups.
 assume_role
-# Command to execute swap_stacks
+if [ -z &quot;${AWS_ACCESS_KEY_ID:-}&quot; ]; then
+  echo &quot;ERROR: assume_role did not produce credentials; aborting swap.&quot; &gt;&amp;2
+  exit 1
+fi
+
+# Target group names come from injected global config; without them swap_stacks
+# would look up empty ARNs and skip every leg while still reporting success.
+if [ -z &quot;${staging_tg_name:-}&quot; ] || [ -z &quot;${live_tg_name:-}&quot; ]; then
+  echo &quot;ERROR: staging_tg_name and live_tg_name must both be set.&quot; &gt;&amp;2
+  exit 1
+fi
+
+# Command to execute swap_stacks. The 5th arg makes an empty stack fatal.
 swap_stacks &quot;${staging_tg_name}&quot; \
     &quot;${live_tg_name}&quot; \
     &quot;${WORKSPACE}/staging_httpd_tags_file.json&quot; \
-    &quot;${WORKSPACE}/live_httpd_tags_file.json&quot;
+    &quot;${WORKSPACE}/live_httpd_tags_file.json&quot; \
+    &quot;${fail_empty_stacks:-true}&quot;
 
 
 
