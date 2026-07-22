@@ -135,7 +135,6 @@
         <string>Destroy Old Jenkins Server</string>
         <string>List Instance Profiles</string>
         <string>PIC-SURE Auth Micro App Image</string>
-        <string>PIC-SURE API Deploy</string>
         <string>PIC-SURE Gateway Deploy</string>
         <string>PIC-SURE Operations Service Deploy</string>
         <string>PIC-SURE HPDS Query Service Deploy</string>
@@ -212,7 +211,6 @@
         <string>PIC-SURE HPDS Auth Build and Deploy</string>
         <string>PIC-SURE HPDS Open Build and Deploy</string>
         <string>PIC-SURE Pipeline Build and Deploy</string>
-        <string>PIC-SURE API Build and Deploy</string>
         <string>PIC-SURE Gateway Build and Deploy</string>
         <string>PIC-SURE Operations Service Build and Deploy</string>
         <string>PIC-SURE HPDS Query Service Build and Deploy</string>
