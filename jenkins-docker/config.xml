@@ -134,11 +134,11 @@
         <string>Create stack_variables.tf Files</string>
         <string>Destroy Old Jenkins Server</string>
         <string>List Instance Profiles</string>
-        <string>PIC-SURE Auth Micro App Build</string>
+        <string>PIC-SURE Auth Micro App Image</string>
         <string>PIC-SURE API Deploy</string>
-        <string>PIC-SURE HPDS Build</string>
+        <string>PIC-SURE HPDS Image</string>
         <string>PIC-SURE Frontend Build</string>
-        <string>PIC-SURE Visualization Build</string>
+        <string>PIC-SURE Visualization Image</string>
         <string>Retrieve Build Spec</string>
         <string>Retrieve Deployment State</string>
         <string>Teardown and Rebuild Stage Environment</string>
@@ -178,10 +178,10 @@
       <jobNames>
         <comparator class="hudson.util.CaseInsensitiveComparator"/>
         <string>PIC-SURE Pipeline</string>
-        <string>PIC-SURE Auth Micro App Build</string>
-        <string>PIC-SURE Dictionary Build</string>
+        <string>PIC-SURE Auth Micro App Image</string>
+        <string>PIC-SURE Dictionary Image</string>
         <string>PIC-SURE Frontend Build</string>
-        <string>PIC-SURE HPDS Build</string>
+        <string>PIC-SURE HPDS Image</string>
       </jobNames>
       <jobFilters/>
       <columns>

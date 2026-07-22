@@ -138,7 +138,7 @@ pipeline {
                             [$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId]
                         ]
 
-                        build job: &apos;PIC-SURE HPDS Build&apos;, parameters: [
+                        build job: &apos;PIC-SURE HPDS Image&apos;, parameters: [
                             [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
                             [$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId]
                         ]

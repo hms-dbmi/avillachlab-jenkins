@@ -226,11 +226,11 @@ pipeline {
               branches[&apos;operations&apos;] = { build job: &apos;PIC-SURE Operations Service Image&apos;, parameters: imageParams }
               branches[&apos;query&apos;]      = { build job: &apos;PIC-SURE HPDS Query Service Image&apos;, parameters: imageParams }
             }
-            if (params.INCLUDE_PIC_SURE_HPDS_AUTH || params.INCLUDE_PIC_SURE_HPDS_OPEN) { branches[&apos;hpds&apos;] = { build job: &apos;PIC-SURE HPDS Build&apos;, parameters: imageParams } }
-            if (params.INCLUDE_PIC_SURE_AUTH_MICRO_APP) { branches[&apos;psama&apos;] = { build job: &apos;PIC-SURE Auth Micro App Build&apos;, parameters: imageParams } }
-            if (params.INCLUDE_PIC_SURE_VISUALIZATION)  { branches[&apos;visualization&apos;] = { build job: &apos;PIC-SURE Visualization Build&apos;, parameters: imageParams } }
-            if (params.INCLUDE_PIC_SURE_DICTIONARY)     { branches[&apos;dictionary&apos;] = { build job: &apos;PIC-SURE Dictionary Build&apos;, parameters: imageParams } }
-            if (params.INCLUDE_PIC_SURE_LOGGING)        { branches[&apos;logging&apos;] = { build job: &apos;PIC-SURE Logging Build&apos;, parameters: imageParams } }
+            if (params.INCLUDE_PIC_SURE_HPDS_AUTH || params.INCLUDE_PIC_SURE_HPDS_OPEN) { branches[&apos;hpds&apos;] = { build job: &apos;PIC-SURE HPDS Image&apos;, parameters: imageParams } }
+            if (params.INCLUDE_PIC_SURE_AUTH_MICRO_APP) { branches[&apos;psama&apos;] = { build job: &apos;PIC-SURE Auth Micro App Image&apos;, parameters: imageParams } }
+            if (params.INCLUDE_PIC_SURE_VISUALIZATION)  { branches[&apos;visualization&apos;] = { build job: &apos;PIC-SURE Visualization Image&apos;, parameters: imageParams } }
+            if (params.INCLUDE_PIC_SURE_DICTIONARY)     { branches[&apos;dictionary&apos;] = { build job: &apos;PIC-SURE Dictionary Image&apos;, parameters: imageParams } }
+            if (params.INCLUDE_PIC_SURE_LOGGING)        { branches[&apos;logging&apos;] = { build job: &apos;PIC-SURE Logging Image&apos;, parameters: imageParams } }
             if (branches) { parallel branches }
 
             if (params.INCLUDE_PIC_SURE_VISUALIZATION) {
