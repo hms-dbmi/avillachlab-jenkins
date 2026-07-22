@@ -170,7 +170,8 @@ swap_stacks() {
   local live_tg_name=$2
   local staging_httpd_tags_file=&quot;$3&quot;
   local live_httpd_tags_file=&quot;$4&quot;
-  local fail_empty_stacks=&quot;${5,,:-&quot;false&quot;,,}&quot;  # Set to true for stable prod and release testing
+  local fail_empty_stacks=&quot;${5:-false}&quot;  # Set to true for stable prod and release testing
+  fail_empty_stacks=&quot;${fail_empty_stacks,,}&quot;  # normalize to lowercase
   echo &quot;staging_tg_name=$1&quot;
   echo &quot;live_tg_name=$2&quot;
   echo &quot;staging_httpd_tags_file=$3&quot;
@@ -418,12 +419,15 @@ create_jwt_token() {
   mvn clean install || { echo &quot;Maven build failed&quot;; exit 1; }
 
   cd target || { echo &quot;Target directory not found&quot;; exit 1; }
-  echo &quot;$secret&quot; &gt; secrets.txt
+  # secrets.txt holds the PSAMA signing secret. Write it 0600 and always remove it,
+  # even if the jar fails, so it never lingers in the browsable Jenkins workspace.
+  ( umask 077; echo &quot;$secret&quot; &gt; secrets.txt )
 
   # Assuming generateJwt.jar is built and exists
   export CREATE_JWT_TOKEN_OUTPUT=$(java -jar generateJwt.jar &quot;secrets.txt&quot; sub &quot;$subject&quot; &quot;$duration_int&quot; &quot;$duration_unit&quot; | grep -v &quot;Generating&quot;)
 
   # Cleanup
+  rm -f secrets.txt
   cd &quot;${WORKSPACE}&quot;
 }
 
@@ -463,6 +467,11 @@ create_flyway_conf() {
 
   # Ensure the conf directory exists
   mkdir -p conf
+
+  # flyway.conf carries the DB password and the introspection-token placeholder.
+  # Pre-create it 0600 so the secrets are not world-readable in the workspace; the
+  # subsequent truncating writes preserve the mode. The caller removes conf/ at end.
+  ( umask 077; : &gt; &quot;$CONF_FILE&quot; )
 
   # Create or overwrite the flyway.conf file with the new content
   echo &quot;flyway.url=jdbc:mysql://$2/$1&quot; &gt; $CONF_FILE
@@ -538,11 +547,11 @@ grant_user_permissions() {
   local grant_sql=&quot;GRANT SELECT, INSERT, UPDATE, DELETE ON ${database_name}.* TO &apos;${user_name}&apos;@&apos;%&apos;;&quot;
 
   # Execute the SQL command using Docker and MySQL client
-  docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+  docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
     -e &quot;$grant_sql&quot; &quot;mysql&quot;
 
   # Apply the changes
-  docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+  docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
     -e &quot;FLUSH PRIVILEGES;&quot; &quot;mysql&quot;
 }
 
@@ -551,10 +560,10 @@ create_database_if_not_exists() {
   # Parameters: $1 = DATABASE_NAME
 
   # Use printf to properly quote the password and the entire command
-  CMD=$(printf &quot;mysql -h%s -u%s -p&apos;%s&apos; -e &apos;CREATE DATABASE IF NOT EXISTS %s;&apos;&quot; &quot;$RDS_ENDPOINT&quot; &quot;$DATABASE_USER&quot; &quot;$DATABASE_PASSWORD&quot; &quot;$1&quot;)
+  CMD=$(printf &quot;mysql -h%s -u%s -e &apos;CREATE DATABASE IF NOT EXISTS %s;&apos;&quot; &quot;$RDS_ENDPOINT&quot; &quot;$DATABASE_USER&quot; &quot;$1&quot;)
 
   # Run the command in a Docker container
-  docker run --rm $MYSQL_IMAGE /bin/bash -c &quot;$CMD&quot;
+  docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE /bin/bash -c &quot;$CMD&quot;
 }
 
 # Function to drop all tables in a given database
@@ -569,7 +578,7 @@ drop_all_tables() {
     local schema_name=$1
 
     # Check if the schema exists
-    SCHEMA_EXISTS=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    SCHEMA_EXISTS=$(docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
         -sse &quot;SELECT SCHEMA_NAME FROM information_schema.schemata WHERE SCHEMA_NAME = &apos;$schema_name&apos;;&quot; 2&gt;/dev/null)
 
     if [ -z &quot;$SCHEMA_EXISTS&quot; ]; then
@@ -581,14 +590,14 @@ drop_all_tables() {
     echo &quot;Dropping all tables in schema: $schema_name...&quot;
 
     # Fetch list of tables in the schema
-    TABLES=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    TABLES=$(docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
         --database=$schema_name -Nse &quot;SHOW TABLES;&quot; 2&gt;/dev/null)
 
     # Drop each table
     for TABLE in $TABLES; do
         echo &quot;Dropping Table: $TABLE&quot;
         DROP_CMD=&quot;SET FOREIGN_KEY_CHECKS = 0; DROP TABLE IF EXISTS $TABLE; SET FOREIGN_KEY_CHECKS = 1;&quot;
-        docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+        docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
             --database=$schema_name -e &quot;$DROP_CMD&quot; 2&gt;/dev/null
     done
 
@@ -607,7 +616,7 @@ drop_schema() {
     local schema_name=$1
 
     # Check if the schema exists
-    SCHEMA_EXISTS=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    SCHEMA_EXISTS=$(docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
         -sse &quot;SELECT SCHEMA_NAME FROM information_schema.schemata WHERE SCHEMA_NAME = &apos;$schema_name&apos;;&quot; 2&gt;/dev/null)
 
     if [ -z &quot;$SCHEMA_EXISTS&quot; ]; then
@@ -619,7 +628,7 @@ drop_schema() {
     echo &quot;Dropping schema: $schema_name...&quot;
 
     DROP_SCHEMA_CMD=&quot;DROP SCHEMA IF EXISTS $schema_name;&quot;
-    docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
         -e &quot;$DROP_SCHEMA_CMD&quot; 2&gt;/dev/null
 
     echo &quot;Schema $schema_name dropped.&quot;
@@ -629,7 +638,7 @@ drop_schema() {
 
 # create_top_admin &quot;email&quot; &quot;connection_id&quot;
 create_top_admin() {
-  docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+  docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
   -e &quot;CALL CreateSuperUser(&apos;$1&apos;, &apos;$2&apos;);&quot; &quot;auth&quot;
 }
 
@@ -637,7 +646,7 @@ does_user_exists() {
 	# $1 email
     # $2 connection_id
 
-    local query_result=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    local query_result=$(docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
     -s -r -e &quot;select email from user where email = &apos;$1&apos; and connectionId = (select uuid from connection where id = &apos;$2&apos;);&quot; &quot;auth&quot;)
 
     echo &quot;$query_result&quot;
@@ -650,7 +659,7 @@ update_token_by_uuid() {
   local target_database=&quot;${3:-auth}&quot;
 
   # Perform the update operation
-  docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+  docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
     -e &quot;UPDATE application SET token=&apos;$new_token&apos; WHERE uuid=UNHEX(REPLACE(&apos;$uuid&apos;, &apos;-&apos;, &apos;&apos;));&quot; &quot;auth&quot;
 }
 
@@ -663,7 +672,7 @@ get_token_by_uuid() {
   local query=&quot;SELECT token FROM application WHERE uuid=UNHEX(REPLACE(&apos;$uuid&apos;, &apos;-&apos;, &apos;&apos;));&quot;
 
   # Execute the query using Docker and MySQL client
-  local token=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+  local token=$(docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
     -sse &quot;$query&quot; &quot;$schema&quot;)
 
   echo &quot;$token&quot;
@@ -682,8 +691,8 @@ run_sql_script() {
   fi
 
   # Run the SQL script in a Docker container
-  docker run --rm -v &quot;$1:/sql_script.sql:Z&quot; $MYSQL_IMAGE \
-    mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; &quot;$2&quot; &lt; /sql_script.sql
+  docker run --rm -v &quot;$1:/sql_script.sql:Z&quot; -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE \
+    mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; &quot;$2&quot; &lt; /sql_script.sql
 }
 
 # Function to back up a schema with a timestamp
@@ -754,11 +763,11 @@ restore_schema() {
 
     # Drop the schema if it exists and recreate it
     DROP_SCHEMA_CMD=&quot;DROP SCHEMA IF EXISTS $schema_name; CREATE SCHEMA $schema_name;&quot;
-    docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
         -e &quot;$DROP_SCHEMA_CMD&quot; 2&gt;/dev/null
 
     # Restore the schema from the downloaded dump file
-    docker run --rm -i $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; &quot;$schema_name&quot; &lt; &quot;$tmp_backup&quot; 2&gt;/dev/null
+    docker run --rm -i -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; &quot;$schema_name&quot; &lt; &quot;$tmp_backup&quot; 2&gt;/dev/null
 
     echo &quot;Schema $schema_name restored successfully from $backup_filename.&quot;
 
@@ -785,13 +794,13 @@ copy_database() {
     echo &quot;Starting database copy from $source_database to $target_database...&quot;
 
     # Step 1: Check if the target database exists
-    DATABASE_EXISTS=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    DATABASE_EXISTS=$(docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
         -sse &quot;SELECT SCHEMA_NAME FROM information_schema.schemata WHERE SCHEMA_NAME = &apos;$target_database&apos;;&quot;)
 
     if [ -z &quot;$DATABASE_EXISTS&quot; ]; then
         # If the target database doesn&apos;t exist, create it
         echo &quot;Target database $target_database does not exist. Creating database...&quot;
-        docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+        docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
             -e &quot;CREATE DATABASE IF NOT EXISTS $target_database;&quot;
 
         if [ $? -eq 0 ]; then
@@ -815,18 +824,18 @@ copy_database() {
     echo &quot;Copying all tables from $source_database to $target_database...&quot;
 
     # Get the list of tables from the source database and execute SQL commands to copy structure and data
-    TABLES=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    TABLES=$(docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
         --skip-column-names -e &quot;SELECT table_name FROM information_schema.tables WHERE table_schema = &apos;$source_database&apos;;&quot;)
 
     for TABLE in $TABLES; do
         # Create table in the target database
         echo &quot;Creating table $TABLE in $target_database...&quot;
-        docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+        docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
             -e &quot;CREATE TABLE $target_database.$TABLE LIKE $source_database.$TABLE;&quot;
 
         # Copy data from the source table to the target table
         echo &quot;Copying data from $source_database.$TABLE to $target_database.$TABLE...&quot;
-        docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+        docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
             -e &quot;INSERT INTO $target_database.$TABLE SELECT * FROM $source_database.$TABLE;&quot;
     done
 
@@ -938,19 +947,32 @@ get_stack() {
     local target_stack=$1
     local json_file=&quot;s3://${stack_s3_bucket}/deployment_state_metadata/stacks.json&quot;
 
-    # Fetch JSON content directly from S3 without downloading
+    # Fetch JSON content directly from S3 without downloading. Fail closed: an S3
+    # error must not be silently treated as an empty (and later &quot;null&quot;) stack name.
     local stacks_json
-    stacks_json=$(aws s3 cp &quot;$json_file&quot; - 2&gt;/dev/null)
+    if ! stacks_json=$(aws s3 cp &quot;$json_file&quot; -); then
+        echo &quot;ERROR: get_stack could not read $json_file&quot; &gt;&amp;2
+        return 1
+    fi
 
-    local staging_stack live_stack
+    local staging_stack live_stack resolved
     staging_stack=$(echo &quot;$stacks_json&quot; | jq -r &apos;.environments.next_prod&apos;)
     live_stack=$(echo &quot;$stacks_json&quot; | jq -r &apos;.environments.prod&apos;)
 
     if [[ &quot;$target_stack&quot; == &quot;live&quot; ]]; then
-        echo &quot;$live_stack&quot;
+        resolved=&quot;$live_stack&quot;
+    elif [[ &quot;$target_stack&quot; == &quot;staging&quot; ]]; then
+        resolved=&quot;$staging_stack&quot;
     else
-        echo &quot;$staging_stack&quot;
+        echo &quot;ERROR: get_stack expects &apos;live&apos; or &apos;staging&apos;, got: &apos;$target_stack&apos;&quot; &gt;&amp;2
+        return 1
     fi
+
+    if [[ -z &quot;$resolved&quot; || &quot;$resolved&quot; == &quot;null&quot; ]]; then
+        echo &quot;ERROR: get_stack resolved an empty/null stack for &apos;$target_stack&apos;&quot; &gt;&amp;2
+        return 1
+    fi
+    echo &quot;$resolved&quot;
 }
 EOF</command>
       <configuredLocalRules/>
