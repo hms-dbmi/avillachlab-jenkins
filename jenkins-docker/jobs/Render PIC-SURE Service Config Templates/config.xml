@@ -108,6 +108,13 @@ fi
 
 cd app-infrastructure/template-renderer
 
+# This render job is stateless (each run inits from empty state), but the local
+# terraform.tfstate transiently holds live secrets -- DB app-user credentials,
+# the introspection token, the logging key, and the full rendered env contents.
+# Remove it on exit so it never lingers in the browsable Jenkins workspace.
+tfstate_dir=&quot;$PWD&quot;
+trap &apos;rm -f &quot;$tfstate_dir&quot;/terraform.tfstate &quot;$tfstate_dir&quot;/terraform.tfstate.backup&apos; EXIT
+
 terraform init -input=false
 
 # All three env files render together: the shared tokens are minted per apply

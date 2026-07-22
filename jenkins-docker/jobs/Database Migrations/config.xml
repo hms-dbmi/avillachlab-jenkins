@@ -104,9 +104,7 @@ if [ &quot;$COPY_APPLICATION_TOKEN_FROM_DB&quot; ]; then
     introspection_token=$(get_token_by_uuid &quot;$application_id_for_base_query&quot; &quot;$COPY_APPLICATION_TOKEN_FROM_DB&quot;)
 else
     create_jwt_token &quot;$picsure_client_secret&quot; &quot;$pic_sure_introspection_token_repo&quot; &quot;PSAMA_APPLICATION|$application_id_for_base_query&quot; &quot;${duration_int:-365}&quot; &quot;${duration_unit:-day}&quot;
-    echo &quot;New JWT generated successfully.&quot;
-    echo &quot;Update the picsure_token_introspection_token configuration with the following:&quot;
-	echo &quot;$CREATE_JWT_TOKEN_OUTPUT&quot;
+    echo &quot;New JWT generated successfully (value not logged).&quot;
 	introspection_token=$CREATE_JWT_TOKEN_OUTPUT
 fi
 
@@ -161,6 +159,9 @@ if [ &quot;$DROP_AUTH_TABLES&quot; = true ]; then
     	echo &quot;Terraform state file not found for B stack&quot;
     fi
 fi
+
+# flyway.conf files carry the DB password and the introspection-token placeholder.
+rm -rf conf
 
 unset_shared_db_config
 reset_role
