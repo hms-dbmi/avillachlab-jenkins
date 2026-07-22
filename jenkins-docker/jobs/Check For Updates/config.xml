@@ -45,12 +45,6 @@ def envVars= Hudson.instance.getItem(&quot;Check For Updates&quot;).lastBuild.pr
 Jenkins.instance.getItemByFullName(&quot;Bash_Functions&quot;)
 .scheduleBuild2(0).get()
 
-Jenkins.instance.getItemByFullName(&quot;Import_HPDS_Dictionary_File&quot;)
-.scheduleBuild2(0, new ParametersAction([
-    new StringParameterValue(&quot;dictionary_s3_key&quot;, buildSpec.source_dictionary_s3_object_key.trim()),
-    new StringParameterValue(&quot;pipeline_build_id&quot;,  envVars[&quot;GIT_COMMIT&quot;].trim())
-    ])).get()
-
 
 def run = Jenkins.instance.getItemByFullName(&quot;PIC-SURE Pipeline&quot;)
 .scheduleBuild2(0).get()

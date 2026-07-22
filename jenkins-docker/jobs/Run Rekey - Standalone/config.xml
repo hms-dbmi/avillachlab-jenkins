@@ -43,13 +43,7 @@ def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspa
 def envVars= Hudson.instance.getItem(&quot;Run Rekey - Standalone&quot;).lastBuild.properties.get(&quot;envVars&quot;);
 
 Jenkins.instance.getItemByFullName(&quot;Bash_Functions&quot;)
-.scheduleBuild2(0).get()
-
-Jenkins.instance.getItemByFullName(&quot;Import_HPDS_Dictionary_File&quot;)
-.scheduleBuild2(0, new ParametersAction([
-    new StringParameterValue(&quot;dictionary_s3_key&quot;, buildSpec.source_dictionary_s3_object_key.trim()),
-    new StringParameterValue(&quot;pipeline_build_id&quot;,  envVars[&quot;GIT_COMMIT&quot;].trim())
-    ])).get()</script>
+.scheduleBuild2(0).get()</script>
           <sandbox>false</sandbox>
         </script>
       </source>
