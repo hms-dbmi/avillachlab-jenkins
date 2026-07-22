@@ -128,7 +128,8 @@ pipeline {
                         build job: &apos;PIC-SURE Maven Build&apos;, parameters: [
                             [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: params.git_hash ?: build_hashes[&apos;PSA&apos;]],
                             [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                            [$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId ?: &apos;MANUAL_RUN&apos;]
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId ?: &apos;MANUAL_RUN&apos;],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;MODULES&apos;, value: &apos;services/picsure-dictionary&apos;]
                         ]
 
                         build job: &apos;PIC-SURE Dictionary Image&apos;, parameters: [
