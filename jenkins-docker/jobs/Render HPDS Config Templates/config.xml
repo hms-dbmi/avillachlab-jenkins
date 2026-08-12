@@ -75,24 +75,67 @@ cd app-infrastructure/template-renderer
 # Download S3-staged templates if they exist, otherwise fall back to repo versions
 echo &quot;Attempting to download templates from S3...&quot;
 
+download_s3_template() {
+  local object_key=$1
+  local destination=$2
+  local aws_error
+  local candidate
+
+  candidate=$(mktemp &quot;$(dirname &quot;$destination&quot;)/.template-download.XXXXXX&quot;)
+  if aws_error=$(aws s3 cp &quot;s3://${stack_s3_bucket}/${object_key}&quot; &quot;$candidate&quot; 2&gt;&amp;1 &gt;/dev/null); then
+    if [ ! -s &quot;$candidate&quot; ]; then
+      rm -f &quot;$candidate&quot;
+      echo &quot;Error: s3://${stack_s3_bucket}/${object_key} is empty; refusing to use it.&quot; &gt;&amp;2
+      return 2
+    fi
+    mv &quot;$candidate&quot; &quot;$destination&quot;
+    return 0
+  fi
+
+  rm -f &quot;$candidate&quot;
+  case &quot;$aws_error&quot; in
+    *&quot;An error occurred (404)&quot;*|*&quot;An error occurred (NoSuchKey)&quot;*|*&quot;An error occurred (NotFound)&quot;*)
+      return 1
+      ;;
+  esac
+
+  echo &quot;Error: could not read s3://${stack_s3_bucket}/${object_key}; refusing to fall back after a non-missing-object AWS error.&quot; &gt;&amp;2
+  return 2
+}
+
+resolve_template() {
+  local template_file=$1
+  local download_status
+
+  if download_s3_template &quot;configs/hpds/templates/${TARGET_STACK}/${template_file}&quot; &quot;templates/${template_file}&quot;; then
+    echo &quot;Using stack-specific S3 template for ${template_file}&quot;
+    return 0
+  else
+    download_status=$?
+    if [ &quot;$download_status&quot; -ne 1 ]; then
+      return &quot;$download_status&quot;
+    fi
+  fi
+
+  if download_s3_template &quot;configs/hpds/templates/${template_file}&quot; &quot;templates/${template_file}&quot;; then
+    echo &quot;Using shared S3 template for ${template_file}&quot;
+    return 0
+  else
+    download_status=$?
+    if [ &quot;$download_status&quot; -ne 1 ]; then
+      return &quot;$download_status&quot;
+    fi
+  fi
+
+  echo &quot;No S3 template found, using repo version of ${template_file}&quot;
+}
+
 if [ &quot;${RENDER_AUTH_HPDS}&quot; = &quot;true&quot; ]; then
-  aws s3 cp &quot;s3://${stack_s3_bucket}/configs/hpds/templates/${TARGET_STACK}/hpds-auth.env.tftpl&quot; \
-    templates/hpds-auth.env.tftpl \
-    &amp;&amp; echo &quot;Using stack-specific S3 template for hpds-auth.env.tftpl&quot; \
-    || { aws s3 cp &quot;s3://${stack_s3_bucket}/configs/hpds/templates/hpds-auth.env.tftpl&quot; \
-      templates/hpds-auth.env.tftpl \
-      &amp;&amp; echo &quot;Using shared S3 template for hpds-auth.env.tftpl&quot; \
-      || echo &quot;No S3 template found, using repo version of hpds-auth.env.tftpl&quot;; }
+  resolve_template &quot;hpds-auth.env.tftpl&quot;
 fi
 
 if [ &quot;${RENDER_OPEN_HPDS}&quot; = &quot;true&quot; ]; then
-  aws s3 cp &quot;s3://${stack_s3_bucket}/configs/hpds/templates/${TARGET_STACK}/hpds-open.env.tftpl&quot; \
-    templates/hpds-open.env.tftpl \
-    &amp;&amp; echo &quot;Using stack-specific S3 template for hpds-open.env.tftpl&quot; \
-    || { aws s3 cp &quot;s3://${stack_s3_bucket}/configs/hpds/templates/hpds-open.env.tftpl&quot; \
-      templates/hpds-open.env.tftpl \
-      &amp;&amp; echo &quot;Using shared S3 template for hpds-open.env.tftpl&quot; \
-      || echo &quot;No S3 template found, using repo version of hpds-open.env.tftpl&quot;; }
+  resolve_template &quot;hpds-open.env.tftpl&quot;
 fi
 
 terraform init -input=false

@@ -60,39 +60,10 @@ pipeline {
       }
     }
 
-    stage(&apos;Resolve Infrastructure Git Hash&apos;) {
-      steps {
-        script {
-          if (params.INFRASTRUCTURE_GIT_HASH?.trim()) {
-            infrastructure_git_hash = params.INFRASTRUCTURE_GIT_HASH.trim()
-            echo &quot;Using provided INFRASTRUCTURE_GIT_HASH: ${infrastructure_git_hash}&quot;
-          } else {
-            def result = build job: &apos;Retrieve Build Spec&apos;
-            copyArtifacts filter: &apos;build-spec.json&apos;, projectName: &apos;Retrieve Build Spec&apos;, selector: specific(&quot;&quot; + result.number)
-            def buildSpec = new JsonSlurper().parse(new File(&quot;${env.WORKSPACE}/build-spec.json&quot;))
-            infrastructure_git_hash = buildSpec.infrastructure_git_hash
-            echo &quot;Resolved INFRASTRUCTURE_GIT_HASH from release control: ${infrastructure_git_hash}&quot;
-          }
-        }
-      }
-    }
-
-    stage(&apos;Checkout Infrastructure Repo&apos;) {
-      steps {
-        checkout([
-          $class: &apos;GitSCM&apos;,
-          userRemoteConfigs: [[
-            url: &quot;${infrastructure_git_repo}&quot;,
-            credentialsId: &quot;${git_credentials_id}&quot;
-          ]],
-          branches: [[name: infrastructure_git_hash]]
-        ])
-      }
-    }
-
     stage(&apos;Download Template&apos;) {
       steps {
-        sh &apos;&apos;&apos;#!/bin/bash
+        script {
+          def s3Status = sh(script: &apos;&apos;&apos;#!/bin/bash
 set -euo pipefail
 
 source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
@@ -146,7 +117,6 @@ case &quot;$SERVICE&quot; in
         ;;
 esac
 
-repo_template=&quot;app-infrastructure/template-renderer/templates/$template_file&quot;
 TARGET_STACK=&quot;${TARGET_STACK:-}&quot;
 role_assumed=false
 cleanup() {
@@ -159,22 +129,107 @@ trap cleanup EXIT
 assume_role
 role_assumed=true
 
-found=false
-if [[ -n &quot;$TARGET_STACK&quot; ]] &amp;&amp; aws s3 --sse=AES256 cp &quot;s3://$stack_s3_bucket/$template_prefix/$TARGET_STACK/$template_file&quot; &quot;$template_file&quot; &gt;/dev/null 2&gt;&amp;1; then
-    echo &quot;Using stack-specific S3 template for $template_file&quot;
-    found=true
+download_s3_template() {
+    local object_key=$1
+    local destination=$2
+    local aws_error
+    local candidate
+
+    candidate=$(mktemp &quot;$(dirname &quot;$destination&quot;)/.template-download.XXXXXX&quot;)
+
+    if aws_error=$(aws s3 --sse=AES256 cp &quot;s3://$stack_s3_bucket/$object_key&quot; &quot;$candidate&quot; 2&gt;&amp;1 &gt;/dev/null); then
+        if [[ ! -s &quot;$candidate&quot; ]]; then
+            rm -f &quot;$candidate&quot;
+            echo &quot;Error: s3://$stack_s3_bucket/$object_key is empty; refusing to use it.&quot; &gt;&amp;2
+            return 2
+        fi
+        mv &quot;$candidate&quot; &quot;$destination&quot;
+        return 0
+    fi
+
+    rm -f &quot;$candidate&quot;
+
+    case &quot;$aws_error&quot; in
+        *&quot;An error occurred (404)&quot;*|*&quot;An error occurred (NoSuchKey)&quot;*|*&quot;An error occurred (NotFound)&quot;*)
+            return 1
+            ;;
+    esac
+
+    echo &quot;Error: could not read s3://$stack_s3_bucket/$object_key; refusing to fall back after a non-missing-object AWS error.&quot; &gt;&amp;2
+    return 2
+}
+
+if [[ -n &quot;$TARGET_STACK&quot; ]]; then
+    if download_s3_template &quot;$template_prefix/$TARGET_STACK/$template_file&quot; &quot;$template_file&quot;; then
+        echo &quot;Using stack-specific S3 template for $template_file&quot;
+        exit 0
+    else
+        download_status=$?
+        if [[ $download_status -ne 1 ]]; then
+            exit &quot;$download_status&quot;
+        fi
+    fi
 fi
 
-if [[ &quot;$found&quot; == false ]] &amp;&amp; aws s3 --sse=AES256 cp &quot;s3://$stack_s3_bucket/$template_prefix/$template_file&quot; &quot;$template_file&quot; &gt;/dev/null 2&gt;&amp;1; then
+if download_s3_template &quot;$template_prefix/$template_file&quot; &quot;$template_file&quot;; then
     echo &quot;Using shared S3 template for $template_file&quot;
-    found=true
+    exit 0
+else
+    download_status=$?
+    if [[ $download_status -ne 1 ]]; then
+        exit &quot;$download_status&quot;
+    fi
 fi
 
-if [[ &quot;$found&quot; == false ]]; then
-    echo &quot;No S3 template found, using repo version of $template_file&quot;
-    cp &quot;$repo_template&quot; &quot;$template_file&quot;
+echo &quot;No S3 template found, using repo version of $template_file&quot;
+printf &apos;%s\n&apos; &quot;$template_file&quot; &gt; .template-file
+exit 3
+&apos;&apos;&apos;, returnStatus: true)
+
+          if (s3Status == 3) {
+            if (params.INFRASTRUCTURE_GIT_HASH?.trim()) {
+              infrastructure_git_hash = params.INFRASTRUCTURE_GIT_HASH.trim()
+              echo &quot;Using provided INFRASTRUCTURE_GIT_HASH: ${infrastructure_git_hash}&quot;
+            } else {
+              def result = build job: &apos;Retrieve Build Spec&apos;
+              copyArtifacts filter: &apos;build-spec.json&apos;, projectName: &apos;Retrieve Build Spec&apos;, selector: specific(&quot;&quot; + result.number)
+              def buildSpec = new JsonSlurper().parse(new File(&quot;${env.WORKSPACE}/build-spec.json&quot;))
+              infrastructure_git_hash = buildSpec.infrastructure_git_hash
+              echo &quot;Resolved INFRASTRUCTURE_GIT_HASH from release control: ${infrastructure_git_hash}&quot;
+            }
+
+            checkout([
+              $class: &apos;GitSCM&apos;,
+              userRemoteConfigs: [[
+                url: &quot;${infrastructure_git_repo}&quot;,
+                credentialsId: &quot;${git_credentials_id}&quot;
+              ]],
+              branches: [[name: infrastructure_git_hash]]
+            ])
+
+            sh &apos;&apos;&apos;#!/bin/bash
+set -euo pipefail
+
+template_file=$(&lt;.template-file)
+case &quot;$template_file&quot; in
+    gateway.env.tftpl|operations.env.tftpl|query.env.tftpl|hpds-auth.env.tftpl|hpds-open.env.tftpl|visualization.env.tftpl) ;;
+    *)
+        echo &quot;Error: invalid repository fallback template filename.&quot; &gt;&amp;2
+        exit 1
+        ;;
+esac
+
+repo_template=&quot;app-infrastructure/template-renderer/templates/$template_file&quot;
+if [[ ! -s &quot;$repo_template&quot; ]]; then
+    echo &quot;Error: repository fallback $template_file is missing or empty.&quot; &gt;&amp;2
+    exit 1
 fi
+cp &quot;$repo_template&quot; &quot;$template_file&quot;
 &apos;&apos;&apos;
+          } else if (s3Status != 0) {
+            error(&quot;Template download failed before repository fallback (exit ${s3Status}).&quot;)
+          }
+        }
       }
     }
   }
