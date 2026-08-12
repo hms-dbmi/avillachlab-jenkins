@@ -85,8 +85,9 @@ required_keys=(
     PICSURE_APPLICATION_TOKEN
 )
 for key in &quot;${required_keys[@]}&quot;; do
-    if ! grep -q &quot;^${key}=.&quot; &quot;$ENV_FILE&quot;; then
-        echo &quot;Error: $ENV_FILE is missing a non-empty $key value; refusing to upload.&quot; &gt;&amp;2
+    key_count=$(grep -c &quot;^${key}=&quot; &quot;$ENV_FILE&quot; || true)
+    if [[ &quot;$key_count&quot; -ne 1 ]] || ! grep -q &quot;^${key}=.&quot; &quot;$ENV_FILE&quot;; then
+        echo &quot;Error: $ENV_FILE must define exactly one non-empty $key value; refusing to upload.&quot; &gt;&amp;2
         exit 1
     fi
 done
