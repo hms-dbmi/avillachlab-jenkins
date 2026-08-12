@@ -67,14 +67,21 @@ download_s3_template() {
   local aws_error
   local candidate
 
-  candidate=$(mktemp &quot;$(dirname &quot;$destination&quot;)/.template-download.XXXXXX&quot;)
+  if ! candidate=$(mktemp &quot;$(dirname &quot;$destination&quot;)/.template-download.XXXXXX&quot;); then
+    echo &quot;Error: could not create a temporary template file.&quot; &gt;&amp;2
+    return 2
+  fi
   if aws_error=$(aws s3 cp &quot;s3://${stack_s3_bucket}/${object_key}&quot; &quot;$candidate&quot; 2&gt;&amp;1 &gt;/dev/null); then
     if [ ! -s &quot;$candidate&quot; ]; then
       rm -f &quot;$candidate&quot;
       echo &quot;Error: s3://${stack_s3_bucket}/${object_key} is empty; refusing to use it.&quot; &gt;&amp;2
       return 2
     fi
-    mv &quot;$candidate&quot; &quot;$destination&quot;
+    if ! mv &quot;$candidate&quot; &quot;$destination&quot; &gt;/dev/null 2&gt;&amp;1; then
+      rm -f &quot;$candidate&quot;
+      echo &quot;Error: could not promote downloaded template to $destination.&quot; &gt;&amp;2
+      return 2
+    fi
     return 0
   fi
 
