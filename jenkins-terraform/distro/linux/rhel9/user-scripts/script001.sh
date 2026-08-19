@@ -4,7 +4,7 @@ set -euo pipefail
 echo "ENABLE_PODMAN=true" | sudo tee /opt/srce/startup.config
 
 sh /opt/srce/scripts/start-gsstools.sh
-sudo yum -y update
+sudo yum -y update --allowerasing
 
 # grab image tar
 aws s3 cp s3://${jenkins_tf_state_bucket}/containers/jenkins/jenkins.tar.gz jenkins.tar.gz
