@@ -56,13 +56,18 @@ set -euo pipefail
 
 MAVEN_WS=&quot;/var/jenkins_home/workspace/PIC-SURE Maven Build - ${TARGET_STACK}&quot;
 AUTH_DIR=&quot;$MAVEN_WS/services/pic-sure-auth-microapp&quot;
+MODULE=&quot;services/pic-sure-auth-microapp/pic-sure-auth-services&quot;
+STAMP=&quot;$MAVEN_WS/build-info/$(printf &apos;%s&apos; &quot;$MODULE&quot; | tr &apos;/&apos; &apos;_&apos;).txt&quot;
 
-if [ ! -f &quot;$MAVEN_WS/build-info.txt&quot; ] \
+# Guard: this job does not compile. It needs this module&apos;s own jar plus the stamp written
+# for this module, so a lane whose last build targeted a different module cannot mislabel
+# this image with a commit that never built this jar.
+if [ ! -f &quot;$STAMP&quot; ] \
    || ! ls &quot;$AUTH_DIR&quot;/pic-sure-auth-services/target/pic-sure-auth-services-*.jar &gt;/dev/null 2&gt;&amp;1; then
-  echo &quot;ERROR: no reactor artifacts for stack ${TARGET_STACK} -- run &apos;PIC-SURE Maven Build&apos; first&quot;
+  echo &quot;ERROR: no current artifacts for $MODULE on stack ${TARGET_STACK} -- run &apos;PIC-SURE Maven Build&apos; with MODULES=$MODULE first&quot;
   exit 2
 fi
-. &quot;$MAVEN_WS/build-info.txt&quot;
+. &quot;$STAMP&quot;
 
 docker build --load \
   -f &quot;$AUTH_DIR/pic-sure-auth-services/bdc.Dockerfile&quot; \

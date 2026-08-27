@@ -40,13 +40,17 @@ set -euo pipefail
 : &quot;${S3_BUCKET_NAME:?S3_BUCKET_NAME is required}&quot;
 
 MAVEN_WS=&quot;/var/jenkins_home/workspace/PIC-SURE Maven Build - ${TARGET_STACK}&quot;
+MODULE=&quot;services/pic-sure-hpds-query-service&quot;
+STAMP=&quot;$MAVEN_WS/build-info/$(printf &apos;%s&apos; &quot;$MODULE&quot; | tr &apos;/&apos; &apos;_&apos;).txt&quot;
 
-# Guard: this job does not compile; it needs the reactor&apos;s artifacts for THIS stack.
-if [ ! -f &quot;$MAVEN_WS/build-info.txt&quot; ] || ! ls &quot;$MAVEN_WS&quot;/services/pic-sure-hpds-query-service/target/pic-sure-hpds-query-service-*.jar &gt;/dev/null 2&gt;&amp;1; then
-  echo &quot;ERROR: no reactor artifacts for stack ${TARGET_STACK} -- run &apos;PIC-SURE Maven Build&apos; first&quot;
+# Guard: this job does not compile. It needs this module&apos;s own jar plus the stamp written
+# for this module, so a lane whose last build targeted a different module cannot mislabel
+# this image with a commit that never built this jar.
+if [ ! -f &quot;$STAMP&quot; ] || ! ls &quot;$MAVEN_WS/$MODULE&quot;/target/pic-sure-hpds-query-service-*.jar &gt;/dev/null 2&gt;&amp;1; then
+  echo &quot;ERROR: no current artifacts for $MODULE on stack ${TARGET_STACK} -- run &apos;PIC-SURE Maven Build&apos; with MODULES=$MODULE first&quot;
   exit 2
 fi
-. &quot;$MAVEN_WS/build-info.txt&quot;
+. &quot;$STAMP&quot;
 
 docker build --load \
   -t &quot;hms-dbmi/pic-sure-hpds-query-service:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}&quot; \

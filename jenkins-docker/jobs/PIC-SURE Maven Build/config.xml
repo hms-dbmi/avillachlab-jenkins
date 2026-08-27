@@ -1,7 +1,7 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
   <actions/>
-  <description>The single maven reactor build of the pic-sure monorepo. Every image job consumes this job's per-stack workspace; no other job runs Maven against the monorepo. Fail-closed: build-info.txt is removed before maven and rewritten only on success. Builds are serialized (concurrentBuild=false) because the per-stack workspace is shared and concurrent same-stack runs corrupt it; orchestrated runs additionally hold lock(stack-&lt;stack&gt;). Do not run manually while a pipeline holds that stack's lock.</description>
+  <description>The single maven reactor build of the pic-sure monorepo. Every image job consumes this job's per-stack workspace; no other job runs Maven against the monorepo. Fail-closed per module: each built module&apos;s build-info/ stamp is removed before maven and rewritten only on success, so an image job can tell whether ITS module was rebuilt rather than trusting one lane-wide file. Builds are serialized (concurrentBuild=false) because the per-stack workspace is shared and concurrent same-stack runs corrupt it; orchestrated runs additionally hold lock(stack-&lt;stack&gt;). Do not run manually while a pipeline holds that stack's lock.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
@@ -67,6 +67,37 @@ GIT_COMMIT_SHORT=$(echo &quot;${GIT_COMMIT}&quot; | cut -c1-7)
 # Fail closed: image jobs must not consume a mixed lane after a failed build.
 rm -f build-info.txt
 
+# Which modules this run is responsible for stamping. A targeted run owns exactly the
+# modules it was asked to build; -am also rebuilds their upstream deps, but no image job
+# reads those, so they need no stamp. A full run owns every reactor module.
+STAMP_DIR=&quot;build-info&quot;
+mkdir -p &quot;$STAMP_DIR&quot;
+stamp_modules=()
+if [ -n &quot;${MODULES:-}&quot; ]; then
+  IFS=&apos;,&apos; read -r -a raw_modules &lt;&lt;&lt; &quot;$MODULES&quot;
+  for m in &quot;${raw_modules[@]}&quot;; do
+    m=&quot;$(echo &quot;$m&quot; | tr -d &apos;[:space:]&apos;)&quot;
+    if [ -n &quot;$m&quot; ]; then stamp_modules+=(&quot;$m&quot;); fi
+  done
+else
+  while IFS= read -r m; do stamp_modules+=(&quot;$m&quot;); done \
+    &lt; &lt;(find . -mindepth 2 -name pom.xml | sed &apos;s|/pom.xml$||; s|^\./||&apos; | sort -u)
+fi
+
+if [ &quot;${#stamp_modules[@]}&quot; -eq 0 ]; then
+  echo &quot;ERROR: resolved no modules to stamp (MODULES=&apos;${MODULES:-}&apos;); image jobs would all fail closed&quot; &gt;&amp;2
+  exit 1
+fi
+
+stamp_path() { echo &quot;$STAMP_DIR/$(printf &apos;%s&apos; &quot;$1&quot; | tr &apos;/&apos; &apos;_&apos;).txt&quot;; }
+
+# Fail closed per module: drop the stamp for everything this run rebuilds and rewrite it
+# only on success. A module outside the selection keeps the stamp describing the jar still
+# sitting in its target/, which is the whole point of stamping per module.
+for m in &quot;${stamp_modules[@]}&quot;; do
+  rm -f &quot;$(stamp_path &quot;$m&quot;)&quot;
+done
+
 # Optional targeted build: when MODULES is set, build only those reactor modules
 # (plus their upstream deps via -am) instead of the full monorepo. Empty = full
 # build, so the full Pipeline jobs (which pass no MODULES) are unchanged.
@@ -86,12 +117,23 @@ docker run --rm \
   maven:3-amazoncorretto-25 \
   sh -lc &quot;mvn $MVN_GOALS&quot;
 
-# Tag metadata for the image jobs (they source this file).
+# Lane-wide copy, kept for this job&apos;s console output only. Image jobs read the per-module
+# stamps below; a lane-wide file cannot tell them whether THEIR module was rebuilt.
 {
   echo &quot;GIT_BRANCH_SHORT=$GIT_BRANCH_SHORT&quot;
   echo &quot;GIT_COMMIT_SHORT=$GIT_COMMIT_SHORT&quot;
 } &gt; build-info.txt
-cat build-info.txt</command>
+cat build-info.txt
+
+# Tag metadata the image jobs source, one file per module this run actually built.
+for m in &quot;${stamp_modules[@]}&quot;; do
+  {
+    echo &quot;GIT_BRANCH_SHORT=$GIT_BRANCH_SHORT&quot;
+    echo &quot;GIT_COMMIT_SHORT=$GIT_COMMIT_SHORT&quot;
+  } &gt; &quot;$(stamp_path &quot;$m&quot;)&quot;
+done
+echo &quot;stamped ${#stamp_modules[@]} module(s) at ${GIT_COMMIT_SHORT}:&quot;
+printf &apos;  %s\n&apos; &quot;${stamp_modules[@]}&quot;</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>

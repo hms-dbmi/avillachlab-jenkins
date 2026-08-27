@@ -41,16 +41,26 @@ set -euo pipefail
 
 MAVEN_WS=&quot;/var/jenkins_home/workspace/PIC-SURE Maven Build - ${TARGET_STACK}&quot;
 HPDS_DIR=&quot;$MAVEN_WS/services/pic-sure-hpds&quot;
+SERVICE_MODULE=&quot;services/pic-sure-hpds/service&quot;
+ETL_MODULE=&quot;services/pic-sure-hpds/etl&quot;
+SERVICE_STAMP=&quot;$MAVEN_WS/build-info/$(printf &apos;%s&apos; &quot;$SERVICE_MODULE&quot; | tr &apos;/&apos; &apos;_&apos;).txt&quot;
+ETL_STAMP=&quot;$MAVEN_WS/build-info/$(printf &apos;%s&apos; &quot;$ETL_MODULE&quot; | tr &apos;/&apos; &apos;_&apos;).txt&quot;
 
-# Guard: reactor produces the service jar AND the ETL fat-jars
-# (assembly outputDirectory writes them into docker/pic-sure-hpds-etl/).
-if [ ! -f &quot;$MAVEN_WS/build-info.txt&quot; ] \
+# Guard: both images ship out of one build, so both modules need a stamp. The reactor
+# produces the service jar and the ETL fat-jars, which the etl module&apos;s assembly writes
+# into docker/pic-sure-hpds-etl/ and its clean fileset removes again.
+if [ ! -f &quot;$SERVICE_STAMP&quot; ] || [ ! -f &quot;$ETL_STAMP&quot; ] \
    || ! ls &quot;$HPDS_DIR&quot;/service/target/service-*.jar &gt;/dev/null 2&gt;&amp;1 \
    || ! ls &quot;$HPDS_DIR&quot;/docker/pic-sure-hpds-etl/*-jar-with-dependencies.jar &gt;/dev/null 2&gt;&amp;1; then
-  echo &quot;ERROR: no reactor artifacts for stack ${TARGET_STACK} -- run 'PIC-SURE Maven Build' first&quot;
+  echo &quot;ERROR: no current artifacts for $SERVICE_MODULE and $ETL_MODULE on stack ${TARGET_STACK} -- run &apos;PIC-SURE Maven Build&apos; with MODULES=$SERVICE_MODULE,$ETL_MODULE first&quot;
   exit 2
 fi
-. &quot;$MAVEN_WS/build-info.txt&quot;
+# The two images carry one tag, so refuse a lane where the modules came from different runs.
+if ! cmp -s &quot;$SERVICE_STAMP&quot; &quot;$ETL_STAMP&quot;; then
+  echo &quot;ERROR: $SERVICE_MODULE and $ETL_MODULE were stamped by different builds; rebuild both together&quot;
+  exit 2
+fi
+. &quot;$SERVICE_STAMP&quot;
 
 docker build --load -f &quot;$HPDS_DIR/docker/pic-sure-hpds/Dockerfile&quot; \
   -t &quot;hms-dbmi/pic-sure-hpds:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}&quot; &quot;$HPDS_DIR&quot;
