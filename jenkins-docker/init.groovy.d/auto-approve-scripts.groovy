@@ -56,7 +56,10 @@ try {
                 ['source', 'scriptSource'].each { srcProp ->
                     try {
                         def src = b."$srcProp"
-                        ['command', 'scriptSource', 'secureGroovyScript'].each { sProp ->
+                        // 'script' is the shape this repo's jobs use
+                        // (StringSystemScriptSource.script); the rest cover other
+                        // groovy-plugin versions.
+                        ['script', 'command', 'scriptSource', 'secureGroovyScript'].each { sProp ->
                             try {
                                 def sgs = src?."$sProp"
                                 if (sgs instanceof SecureGroovyScript) {
