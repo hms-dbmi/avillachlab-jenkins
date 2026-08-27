@@ -131,6 +131,14 @@ pipeline {
                         infrastructure_git_hash = parseInfrastructureGitHash(readFile(&apos;build-spec.json&apos;))
                     }
 
+                    // infrastructure_git_hash only resolves via release control, which a
+                    // pinned git_hash skips. Passing null hands Database Migrations an empty
+                    // GitSCM branch spec and runs destructive migrations from whatever it
+                    // resolves to.
+                    if (params.RUN_DATABASE_MIGRATIONS &amp;&amp; !infrastructure_git_hash) {
+                        error(&quot;RUN_DATABASE_MIGRATIONS is set but no infrastructure_git_hash could be resolved. Either clear git_hash so release control supplies it, or uncheck RUN_DATABASE_MIGRATIONS.&quot;)
+                    }
+
                     // Optionally run DB migrations before taking the stack lock (shared-db, not nested).
                     if (params.RUN_DATABASE_MIGRATIONS) {
                         lock(&apos;shared-db&apos;) {
