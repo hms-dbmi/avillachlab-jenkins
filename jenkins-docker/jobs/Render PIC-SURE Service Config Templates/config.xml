@@ -88,14 +88,15 @@ fi
 
 # Get logging API key from logging.env in S3 (same derivation as Teardown and Rebuild).
 # The key is never echoed: it is a live credential.
-if ! aws s3 cp &quot;s3://$stack_s3_bucket/configs/pic-sure-logging/logging.env&quot; /tmp/logging.env &gt;/dev/null; then
-  rm -f /tmp/logging.env 2&gt;/dev/null || true
+logging_env=$(mktemp &quot;${TMPDIR:-/tmp}/logging.env.XXXXXX&quot;)
+if ! aws s3 cp &quot;s3://$stack_s3_bucket/configs/pic-sure-logging/logging.env&quot; &quot;$logging_env&quot; &gt;/dev/null; then
+  rm -f &quot;$logging_env&quot; 2&gt;/dev/null || true
   echo &quot;Error: could not read s3://$stack_s3_bucket/configs/pic-sure-logging/logging.env.&quot; &gt;&amp;2
   echo &quot;That object is hand-maintained (there is no terraform template for it); confirm it exists, then re-run this job.&quot; &gt;&amp;2
   exit 1
 fi
-logging_api_key=$(grep -oP &apos;^LOGGING_API_KEY=\K.*&apos; /tmp/logging.env || true)
-rm -f /tmp/logging.env 2&gt;/dev/null || true
+logging_api_key=$(grep -oP &apos;^LOGGING_API_KEY=\K.*&apos; &quot;$logging_env&quot; || true)
+rm -f &quot;$logging_env&quot; 2&gt;/dev/null || true
 
 # Fail closed, like the introspection token above. This previously defaulted to the literal
 # string &quot;disabled&quot;, which rendered a gateway.env whose audit events pic-sure-logging
