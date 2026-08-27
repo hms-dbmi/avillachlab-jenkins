@@ -4,19 +4,37 @@
  * Why: the controller is built fresh from this repo (config.xml, jobs, and
  * scriptApproval.xml are COPYed into the image). scriptApproval.xml records the
  * SHA-512 hash of each non-sandboxed system-Groovy script, and those hashes go
- * stale the moment a job's script text changes -- so a newly deployed controller
+ * stale the moment a job's script text changes, so a newly deployed controller
  * would leave those jobs "pending approval" until an admin clicked approve.
  *
  * This runs on every startup (Jenkins executes $JENKINS_HOME/init.groovy.d/*.groovy
  * after jobs are loaded) and pre-approves each baked job's script by hash, using
- * the plugin's OWN hashing so it always matches. It also clears anything already
- * queued as pending. Idempotent: re-approving is a no-op.
+ * the plugin's OWN hashing so it always matches. Idempotent: re-approving is a
+ * no-op.
  *
- * Trust model: every job here comes from this git-managed image, so approving the
- * scripts it ships is equivalent to trusting the repo. It does NOT globally
- * disable script security -- a script that is not present at startup (e.g. one a
- * user pastes into a new job later) still requires normal approval until the next
- * controller rebuild.
+ * Section 3 is wider than the other two and needs reading before you touch it. It
+ * approves everything already queued as pending, signatures as well as scripts,
+ * and "pending" means whatever accumulated in $JENKINS_HOME/scriptApproval.xml
+ * since the container was created. Requests filed by ordinary user activity land
+ * in that same queue, so section 3 is not limited to content this repo ships.
+ * That file sits in the container's writable layer, since /var/jenkins_home/workspace
+ * is the only part of JENKINS_HOME that is mounted, so a restart preserves the
+ * queue and a container recreate resets it to the baked file.
+ *
+ * The signature half of section 3 is load-bearing. The baked scriptApproval.xml
+ * was last updated in 2024 and lacks signatures the sandboxed Build and Deploy
+ * pipelines need: they call new JsonSlurper().parseText, while the baked list
+ * carries only the JsonSlurperClassic equivalents. Dropping that loop breaks
+ * those jobs on a fresh controller. It is also a poor mechanism, because a
+ * signature goes pending only after a script has already failed with
+ * RejectedAccessException, so the loop clears the failure on the NEXT startup
+ * rather than preventing it. Baking the missing signatures into
+ * scriptApproval.xml would fix the first run and let the signature loop go.
+ *
+ * Trust model: approving the scripts this image ships is equivalent to trusting
+ * the repo. Note it is not the privilege boundary on this controller either way,
+ * which runs AuthorizationStrategy$Unsecured with SecurityRealm$None, so every
+ * visitor already holds Overall/Administer and script console access.
  */
 import jenkins.model.Jenkins
 import org.jenkinsci.plugins.scriptsecurity.scripts.ScriptApproval
