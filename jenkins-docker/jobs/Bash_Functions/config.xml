@@ -188,6 +188,29 @@ swap_stacks() {
   local local_staging_httpd_instance_prv_ips=($(get_private_ip_by_tags &quot;$staging_httpd_tags_file&quot;))
   local local_live_httpd_instance_prv_ips=($(get_private_ip_by_tags &quot;$live_httpd_tags_file&quot;))
 
+  # Both legs are validated before any target group is touched. Checking per-leg instead
+  # lets leg 1 repoint live traffic and leg 2 exit, which skips Write Stack State and
+  # leaves stacks.json naming the old stack while the ALB serves the new one.
+  if [ &quot;${fail_empty_stacks}&quot; = &quot;true&quot; ]; then
+    local empty_legs=&quot;&quot;
+    if [ -z &quot;${local_staging_httpd_instance_prv_ips}&quot; ]; then
+      empty_legs=&quot;staging&quot;
+    fi
+    if [ -z &quot;${local_live_httpd_instance_prv_ips}&quot; ]; then
+      if [ -n &quot;$empty_legs&quot; ]; then
+        empty_legs=&quot;$empty_legs and live&quot;
+      else
+        empty_legs=&quot;live&quot;
+      fi
+    fi
+    if [ -n &quot;$empty_legs&quot; ]; then
+      echo &quot;No IP addresses found for: $empty_legs&quot;
+      echo &quot;Ensure nodes have been created with proper tags for Node, Project, and Stack keys.&quot;
+      echo &quot;failing build before any target group is modified&quot;
+      exit 1
+    fi
+  fi
+
   # Promote Staging to Live (green to blue)
   echo &quot;Promote Staging to Live (green to blue)&quot;
   if [ -z &quot;${local_staging_httpd_instance_prv_ips}&quot; ]; then
@@ -1018,6 +1041,7 @@ update_gateway_token() {
     local env_s3_uri=&quot;s3://${stack_s3_bucket}/configs/gateway/${target_stack}/gateway.env&quot;
 
     aws s3 cp &quot;$env_s3_uri&quot; gateway.env || { echo &quot;ERROR: could not fetch $env_s3_uri&quot;; return 1; }
+    grep -q &apos;^TOKEN_INTROSPECTION_TOKEN=&apos; gateway.env || { echo &quot;ERROR: $env_s3_uri has no TOKEN_INTROSPECTION_TOKEN line; the sed below would match nothing and redeploy the gateway with no token&quot;; rm -f gateway.env; return 1; }
     current_token=$(grep &apos;^TOKEN_INTROSPECTION_TOKEN=&apos; gateway.env | cut -d &apos;=&apos; -f 2-)
 
     if [ &quot;$current_token&quot; = &quot;$introspection_token&quot; ]; then
@@ -1025,7 +1049,7 @@ update_gateway_token() {
     else
         echo &quot;Tokens differ. Updating gateway.env and redeploying the gateway.&quot;
         sed -i &quot;s|^TOKEN_INTROSPECTION_TOKEN=.*|TOKEN_INTROSPECTION_TOKEN=${introspection_token}|&quot; gateway.env
-        aws s3 --sse=AES256 cp gateway.env &quot;$env_s3_uri&quot;
+        aws s3 --sse=AES256 cp gateway.env &quot;$env_s3_uri&quot; || { echo &quot;ERROR: could not upload $env_s3_uri. The DB now holds a token the gateway does not; NOT redeploying, since deploy-gateway.sh would re-pull the stale file and 502 every authenticated route.&quot;; rm -f gateway.env; return 1; }
 
         redeploy_command=&quot;sudo /opt/picsure/deploy-gateway.sh --stack_s3_bucket ${stack_s3_bucket} --target_stack ${target_stack}&quot;
         redeploy_command_json=$(jq -n --arg cmd &quot;$redeploy_command&quot; &apos;{commands: [$cmd]}&apos;)

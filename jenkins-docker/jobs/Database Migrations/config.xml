@@ -131,6 +131,11 @@ run_flyway_migration &quot;$picsure_sql_path&quot; &quot;conf/picsure_flyway.con
 
 # If we have dropped the AUTH_TABLES we will need to update the introspection token
 if [ &quot;$DROP_AUTH_TABLES&quot; = true ]; then
+    # A stack whose gateway keeps the old token 502s every authenticated route, so a
+    # failure here has to fail the build. Both legs are attempted before exiting: the
+    # one that failed may not be the one serving live traffic.
+    gateway_token_update_failed=0
+
 	# Update a stack&apos;s gateway introspection token and redeploy the gateway container
     tf_download_state &quot;a&quot; &quot;$stack_s3_bucket&quot;
     if [ -f &quot;terraform_a.tfstate&quot; ]; then
@@ -138,8 +143,9 @@ if [ &quot;$DROP_AUTH_TABLES&quot; = true ]; then
         echo &quot;A stack wildfly instance id: $wildfly_instance_id&quot;
         if [ -z &quot;$wildfly_instance_id&quot; ] || [ &quot;$wildfly_instance_id&quot; = &quot;null&quot; ]; then
             echo &quot;Error: WildFly instance ID for A stack not found&quot;
+            gateway_token_update_failed=1
         else
-            update_gateway_token &quot;$wildfly_instance_id&quot; &quot;$introspection_token&quot; &quot;a&quot; &quot;$stack_s3_bucket&quot;
+            update_gateway_token &quot;$wildfly_instance_id&quot; &quot;$introspection_token&quot; &quot;a&quot; &quot;$stack_s3_bucket&quot; || gateway_token_update_failed=1
         fi
     else
     	echo &quot;Terraform state file not found for A stack&quot;
@@ -152,8 +158,9 @@ if [ &quot;$DROP_AUTH_TABLES&quot; = true ]; then
         echo &quot;B stack wildfly instance id: $wildfly_instance_id&quot;
         if [ -z &quot;$wildfly_instance_id&quot; ] || [ &quot;$wildfly_instance_id&quot; = &quot;null&quot; ]; then
             echo &quot;Error: WildFly instance ID for B stack not found&quot;
+            gateway_token_update_failed=1
         else
-            update_gateway_token &quot;$wildfly_instance_id&quot; &quot;$introspection_token&quot; &quot;b&quot; &quot;$stack_s3_bucket&quot;
+            update_gateway_token &quot;$wildfly_instance_id&quot; &quot;$introspection_token&quot; &quot;b&quot; &quot;$stack_s3_bucket&quot; || gateway_token_update_failed=1
         fi
 	else
     	echo &quot;Terraform state file not found for B stack&quot;
@@ -165,7 +172,13 @@ rm -rf conf
 
 unset_shared_db_config
 reset_role
-            </command>
+
+# Deliberately after cleanup so the conf holding the DB password is still removed.
+if [ &quot;${gateway_token_update_failed:-0}&quot; -ne 0 ]; then
+    echo &quot;ERROR: at least one stack&apos;s gateway introspection token was not updated. The auth DB holds a new token that stack&apos;s gateway does not have; authenticated routes there will 502 until it is corrected.&quot;
+    exit 1
+fi
+</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
