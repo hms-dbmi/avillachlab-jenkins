@@ -21,7 +21,7 @@
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>COPY_APPLICATION_TOKEN_FROM_DB</name>
-          <description>The value must be the name of an auth database. For example auth2. This will copy the existing token from the auth2 database into the auth database. Additionally, the token will be compared to the current WildFly standalone.xml token. If it is different it will replace the token and restart the WildFly. It will do this for both stacks.</description>
+          <description>The value must be the name of an auth database. For example auth2. This will copy the existing token from the auth2 database into the auth database. Additionally, the token will be compared to the stack&apos;s gateway.env in S3. If it is different it will replace the token and redeploy the gateway container. It will do this for both stacks.</description>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
@@ -104,9 +104,7 @@ if [ &quot;$COPY_APPLICATION_TOKEN_FROM_DB&quot; ]; then
     introspection_token=$(get_token_by_uuid &quot;$application_id_for_base_query&quot; &quot;$COPY_APPLICATION_TOKEN_FROM_DB&quot;)
 else
     create_jwt_token &quot;$picsure_client_secret&quot; &quot;$pic_sure_introspection_token_repo&quot; &quot;PSAMA_APPLICATION|$application_id_for_base_query&quot; &quot;${duration_int:-365}&quot; &quot;${duration_unit:-day}&quot;
-    echo &quot;New JWT generated successfully.&quot;
-    echo &quot;Update the picsure_token_introspection_token configuration with the following:&quot;
-	echo &quot;$CREATE_JWT_TOKEN_OUTPUT&quot;
+    echo &quot;New JWT generated successfully (value not logged).&quot;
 	introspection_token=$CREATE_JWT_TOKEN_OUTPUT
 fi
 
@@ -133,38 +131,54 @@ run_flyway_migration &quot;$picsure_sql_path&quot; &quot;conf/picsure_flyway.con
 
 # If we have dropped the AUTH_TABLES we will need to update the introspection token
 if [ &quot;$DROP_AUTH_TABLES&quot; = true ]; then
-	# Update a stack&apos;s wildfly introspection token and restart the wildfly instance
+    # A stack whose gateway keeps the old token 502s every authenticated route, so a
+    # failure here has to fail the build. Both legs are attempted before exiting: the
+    # one that failed may not be the one serving live traffic.
+    gateway_token_update_failed=0
+
+	# Update a stack&apos;s gateway introspection token and redeploy the gateway container
     tf_download_state &quot;a&quot; &quot;$stack_s3_bucket&quot;
     if [ -f &quot;terraform_a.tfstate&quot; ]; then
         wildfly_instance_id=$(tf_extract_wildfly_instance_id &quot;a&quot;)
         echo &quot;A stack wildfly instance id: $wildfly_instance_id&quot;
         if [ -z &quot;$wildfly_instance_id&quot; ] || [ &quot;$wildfly_instance_id&quot; = &quot;null&quot; ]; then
             echo &quot;Error: WildFly instance ID for A stack not found&quot;
+            gateway_token_update_failed=1
         else
-            update_wildfly_token &quot;$wildfly_instance_id&quot; &quot;$introspection_token&quot;
+            update_gateway_token &quot;$wildfly_instance_id&quot; &quot;$introspection_token&quot; &quot;a&quot; &quot;$stack_s3_bucket&quot; || gateway_token_update_failed=1
         fi
     else
     	echo &quot;Terraform state file not found for A stack&quot;
     fi
 
-	# Update b stack&apos;s wildfly introspection token and restart the wildfly instance
+	# Update b stack&apos;s gateway introspection token and redeploy the gateway container
     tf_download_state &quot;b&quot; &quot;$stack_s3_bucket&quot;
     if [ -f &quot;terraform_b.tfstate&quot; ]; then
         wildfly_instance_id=$(tf_extract_wildfly_instance_id &quot;b&quot;)
         echo &quot;B stack wildfly instance id: $wildfly_instance_id&quot;
         if [ -z &quot;$wildfly_instance_id&quot; ] || [ &quot;$wildfly_instance_id&quot; = &quot;null&quot; ]; then
             echo &quot;Error: WildFly instance ID for B stack not found&quot;
+            gateway_token_update_failed=1
         else
-            update_wildfly_token &quot;$wildfly_instance_id&quot; &quot;$introspection_token&quot;
+            update_gateway_token &quot;$wildfly_instance_id&quot; &quot;$introspection_token&quot; &quot;b&quot; &quot;$stack_s3_bucket&quot; || gateway_token_update_failed=1
         fi
 	else
     	echo &quot;Terraform state file not found for B stack&quot;
     fi
 fi
 
+# flyway.conf files carry the DB password and the introspection-token placeholder.
+rm -rf conf
+
 unset_shared_db_config
 reset_role
-            </command>
+
+# Deliberately after cleanup so the conf holding the DB password is still removed.
+if [ &quot;${gateway_token_update_failed:-0}&quot; -ne 0 ]; then
+    echo &quot;ERROR: at least one stack&apos;s gateway introspection token was not updated. The auth DB holds a new token that stack&apos;s gateway does not have; authenticated routes there will 502 until it is corrected.&quot;
+    exit 1
+fi
+</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>

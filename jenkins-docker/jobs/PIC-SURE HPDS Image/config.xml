@@ -1,0 +1,87 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description>Packages the HPDS service and ETL images from the per-stack reactor lane; ships both tarballs to the stack&apos;s S3 prefix.</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>TARGET_STACK</name>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>S3_BUCKET_NAME</name>
+          <defaultValue>${stack_s3_bucket}</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>pipeline_build_id</name>
+          <defaultValue>MANUAL_RUN</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.scm.NullSCM"/>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <jdk>(System)</jdk>
+  <triggers/>
+  <concurrentBuild>true</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+set -euo pipefail
+
+: &quot;${TARGET_STACK:?TARGET_STACK is required}&quot;
+: &quot;${S3_BUCKET_NAME:?S3_BUCKET_NAME is required}&quot;
+
+MAVEN_WS=&quot;/var/jenkins_home/workspace/PIC-SURE Maven Build - ${TARGET_STACK}&quot;
+HPDS_DIR=&quot;$MAVEN_WS/services/pic-sure-hpds&quot;
+SERVICE_MODULE=&quot;services/pic-sure-hpds/service&quot;
+ETL_MODULE=&quot;services/pic-sure-hpds/etl&quot;
+SERVICE_STAMP=&quot;$MAVEN_WS/build-info/$(printf &apos;%s&apos; &quot;$SERVICE_MODULE&quot; | tr &apos;/&apos; &apos;_&apos;).txt&quot;
+ETL_STAMP=&quot;$MAVEN_WS/build-info/$(printf &apos;%s&apos; &quot;$ETL_MODULE&quot; | tr &apos;/&apos; &apos;_&apos;).txt&quot;
+
+# Guard: both images ship out of one build, so both modules need a stamp. The reactor
+# produces the service jar and the ETL fat-jars, which the etl module&apos;s assembly writes
+# into docker/pic-sure-hpds-etl/ and its clean fileset removes again.
+if [ ! -f &quot;$SERVICE_STAMP&quot; ] || [ ! -f &quot;$ETL_STAMP&quot; ] \
+   || ! ls &quot;$HPDS_DIR&quot;/service/target/service-*.jar &gt;/dev/null 2&gt;&amp;1 \
+   || ! ls &quot;$HPDS_DIR&quot;/docker/pic-sure-hpds-etl/*-jar-with-dependencies.jar &gt;/dev/null 2&gt;&amp;1; then
+  echo &quot;ERROR: no current artifacts for $SERVICE_MODULE and $ETL_MODULE on stack ${TARGET_STACK} -- run &apos;PIC-SURE Maven Build&apos; with MODULES=$SERVICE_MODULE,$ETL_MODULE first&quot;
+  exit 2
+fi
+# The two images carry one tag, so refuse a lane where the modules came from different runs.
+if ! cmp -s &quot;$SERVICE_STAMP&quot; &quot;$ETL_STAMP&quot;; then
+  echo &quot;ERROR: $SERVICE_MODULE and $ETL_MODULE were stamped by different builds; rebuild both together&quot;
+  exit 2
+fi
+. &quot;$SERVICE_STAMP&quot;
+
+docker build --load -f &quot;$HPDS_DIR/docker/pic-sure-hpds/Dockerfile&quot; \
+  -t &quot;hms-dbmi/pic-sure-hpds:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}&quot; &quot;$HPDS_DIR&quot;
+docker save &quot;hms-dbmi/pic-sure-hpds:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}&quot; | gzip &gt; pic-sure-hpds.tar.gz
+aws s3 --sse=AES256 cp pic-sure-hpds.tar.gz &quot;s3://$S3_BUCKET_NAME/$TARGET_STACK/containers/pic-sure-hpds.tar.gz&quot;
+
+docker build --load -f &quot;$HPDS_DIR/docker/pic-sure-hpds-etl/Dockerfile&quot; \
+  -t &quot;hms-dbmi/pic-sure-hpds-etl:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}&quot; &quot;$HPDS_DIR&quot;
+docker save &quot;hms-dbmi/pic-sure-hpds-etl:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}&quot; | gzip &gt; pic-sure-hpds-etl.tar.gz
+aws s3 --sse=AES256 cp pic-sure-hpds-etl.tar.gz &quot;s3://$S3_BUCKET_NAME/$TARGET_STACK/containers/pic-sure-hpds-etl.tar.gz&quot;
+</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.49">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
+</project>

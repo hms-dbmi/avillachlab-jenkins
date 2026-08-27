@@ -9,7 +9,6 @@
         <string>DESTIGMATIZED_DATASET_S3_OBJECT_KEY</string>
         <string>TARGET_STACK</string>
         <string>STACK_S3_BUCKET</string>
-        <string>GIT_HASH</string>
       </parameters>
       <options/>
     </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
@@ -35,13 +34,8 @@
           </choices>
         </hudson.model.ChoiceParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>GIT_HASH</name>
-          <description>If you want to a specific GIT_HASH. Leave blank to use the release control</description>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
           <name>STACK_S3_BUCKET</name>
-          <description>If you want to a specific GIT_HASH. Leave blank to use the release control</description>
+          <description>The bucket used for the environment. Set in the global parameters.</description>
           <defaultValue>${stack_s3_bucket}</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
@@ -55,13 +49,28 @@
   </properties>
   <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@4175.ve65b_fa_663eed">
     <script>import groovy.json.JsonSlurper;
+
+@NonCPS
+def parseBuildHashes(String text) {
+    def spec = new JsonSlurper().parseText(text)
+    def result = [:]
+    for (build in spec.application) {
+        result[build.project_job_git_key.toString()] = build.git_hash?.toString()
+    }
+    return result
+}
+
+@NonCPS
+def parseInfrastructureGitHash(String text) {
+    return new JsonSlurper().parseText(text).infrastructure_git_hash?.toString()
+}
 def bdc_ui_docker_tag;
 
 def retrieveBuildSpecId;
 def bdcUIBuildSpecId;
 def overrideUiBuildSpec;
 def pipelineBuildId;
-def build_hashes = {};
+def build_hashes = [:];
 def hasOverrideUI;
 def infrastructure_git_hash;
 def targetStack;
@@ -71,8 +80,7 @@ pipeline {
 
     parameters {
         choice(name: &apos;TARGET_STACK&apos;, choices: [&apos;staging&apos;,&apos;live&apos;], description: &apos;Based on selection we determine if is a or b stack.&apos;)
-        string(name: &apos;GIT_HASH&apos;, defaultValue: &apos;&apos;, description: &apos;If you want to a specific GIT_HASH. Leave blank to use the release control&apos;)
-        string(name: &apos;STACK_S3_BUCKET&apos;, defaultValue: &apos;${stack_s3_bucket}&apos;, description: &apos;If you want to a specific GIT_HASH. Leave blank to use the release control&apos;)
+        string(name: &apos;STACK_S3_BUCKET&apos;, defaultValue: &apos;${stack_s3_bucket}&apos;, description: &apos;The bucket used for the environment. Set in the global parameters.&apos;)
         string(name: &apos;DESTIGMATIZED_DATASET_S3_OBJECT_KEY&apos;, defaultValue: &apos;&apos;, description: &apos;Optional. Setting this value will update related files, folders, datasets, etc.&apos;)
     }
 
@@ -109,82 +117,46 @@ pipeline {
                 }
             }
         }
-        stage(&apos;Retrieve Build Spec&apos;) {
+        stage(&apos;Build and Deploy&apos;) {
             steps {
                 script {
-                    def result = build job: &apos;Retrieve Build Spec&apos;
-                    retrieveBuildSpecId = result.number
-                }
-                script {
-                    copyArtifacts filter: &apos;*&apos;, projectName: &apos;Retrieve Build Spec&apos;, selector: specific(&quot;&quot;+retrieveBuildSpecId)
-                    sh &apos;cat build-spec.json&apos;
-                    sh &apos;cat pipeline_git_commit.txt&apos;
-                    sh &apos;pwd&apos;
-                    def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/PIC-SURE HPDS Open Build and Deploy/build-spec.json&apos;))
-                    pipelineBuildId = new File(&apos;/var/jenkins_home/workspace/PIC-SURE HPDS Open Build and Deploy/pipeline_git_commit.txt&apos;).text.trim()
-                    for(def build : buildSpec.application){
-                        build_hashes[build.project_job_git_key] = build.git_hash
-                    }
-                    infrastructure_git_hash = buildSpec.infrastructure_git_hash
-                }
-            }
-        }
-        stage(&apos;Install Logging and Common Library&apos;) {
-          steps {
-            parallel (
-                logging: {
-                    script {
-                        try {
-                            build job: &apos;PIC-SURE Logging Client Install&apos;
-                        } catch (Exception e) {
-                            echo &quot;Logging client install failed (${e.message}). Downstream builds will proceed without it.&quot;
-                        }
-                    }
-                },
-                common: {
-                    script {
-                        def commonGithash = build_hashes[&apos;PSC&apos;]
-                        build job: &apos;PIC-SURE Common Build&apos;, parameters: [
-                          [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: commonGithash]
-                        ]
-                    }
-                }
-            )
-          }
-        }        
-        stage(&apos;PIC-SURE HPDS Build&apos;) {
-            steps {
-                script {
-                    def gitHash = GIT_HASH ? GIT_HASH : build_hashes[&apos;PSF&apos;]
-                    def result = build job: &apos;PIC-SURE HPDS Build&apos;,
-                        parameters: [
+                    lock(&quot;stack-${targetStack}&quot;) {
+                        def result = build job: &apos;Retrieve Build Spec&apos;
+                        retrieveBuildSpecId = result.number
+
+                        copyArtifacts filter: &apos;*&apos;, projectName: &apos;Retrieve Build Spec&apos;, selector: specific(&quot;&quot;+retrieveBuildSpecId)
+                        sh &apos;cat build-spec.json&apos;
+                        sh &apos;cat pipeline_git_commit.txt&apos;
+                        sh &apos;pwd&apos;
+                        build_hashes = parseBuildHashes(readFile(&apos;build-spec.json&apos;))
+                        pipelineBuildId = readFile(&apos;pipeline_git_commit.txt&apos;).trim()
+                        infrastructure_git_hash = parseInfrastructureGitHash(readFile(&apos;build-spec.json&apos;))
+
+                        build job: &apos;PIC-SURE Maven Build&apos;, parameters: [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSA&apos;]],
                             [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                            [$class: &apos;StringParameterValue&apos;, name: &apos;GIT_HASH&apos;, value: gitHash]
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;MODULES&apos;, value: &apos;services/pic-sure-hpds/service,services/pic-sure-hpds/etl&apos;]
                         ]
-                }
-            }
-        }
-        stage(&apos;Render HPDS Open Config&apos;) {
-            steps {
-                script {
-                    def infraHash = infrastructure_git_hash
-                    def result = build job: &apos;Render HPDS Config Templates&apos;, parameters: [
-                        [$class: &apos;StringParameterValue&apos;, name: &apos;INFRASTRUCTURE_GIT_HASH&apos;, value: infraHash],
-                        [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                        [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_AUTH_HPDS&apos;, value: false],
-                        [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPEN_HPDS&apos;, value: true]
-                    ]
-                }
-            }
-        }
-        stage(&apos;PIC-SURE HPDS Open Deploy&apos;) {
-            steps {
-                script {
-                    def result = build job: &apos;PIC-SURE HPDS Open Deploy&apos;, parameters: [
-                        [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                        [$class: &apos;StringParameterValue&apos;, name: &apos;STACK_S3_BUCKET&apos;, value: STACK_S3_BUCKET],
-                        [$class: &apos;StringParameterValue&apos;, name: &apos;DESTIGMATIZED_DATASET_S3_OBJECT_KEY&apos;, value: DESTIGMATIZED_DATASET_S3_OBJECT_KEY]
-                    ]
+
+                        build job: &apos;PIC-SURE HPDS Image&apos;, parameters: [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId]
+                        ]
+
+                        build job: &apos;Render HPDS Config Templates&apos;, parameters: [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;INFRASTRUCTURE_GIT_HASH&apos;, value: infrastructure_git_hash],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_AUTH_HPDS&apos;, value: false],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPEN_HPDS&apos;, value: true]
+                        ]
+
+                        build job: &apos;PIC-SURE HPDS Open Deploy&apos;, parameters: [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: STACK_S3_BUCKET],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;DESTIGMATIZED_DATASET_S3_OBJECT_KEY&apos;, value: DESTIGMATIZED_DATASET_S3_OBJECT_KEY]
+                        ]
+                    }
                 }
             }
         }

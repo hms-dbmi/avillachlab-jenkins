@@ -153,9 +153,8 @@ assume_role
 
 echo &quot;Database Secret Name: $database_app_user_secret_name&quot;
 
-# Getting a secret value by secret name
+# Getting a secret value by secret name. Never echo it: it is a live credential.
 db_app_user_json=$(fetch_secret &quot;$database_app_user_secret_name&quot;)
-echo &quot;Database JSON: $db_app_user_json&quot;
 
 # dbuser - seems to be the root user
 picsure_db_username=$(extract_field &quot;$db_app_user_json&quot; &quot;username&quot;)
@@ -168,23 +167,34 @@ if [ -z &quot;$picsure_db_username&quot; ] || [ -z &quot;$picsure_db_password&qu
   exit 1
 fi
 
-# Get introspection token from database.
+# Get introspection token from database. Never echo it: it is a live credential.
 initialize_shared_db_config &quot;${picsure_db_host%:3306}&quot; &quot;$picsure_db_username&quot; &quot;$picsure_db_password&quot;
 picsure_token_introspection_token=$(get_token_by_uuid &quot;$application_id_for_base_query&quot;)
-echo &quot;Introspection Token: $picsure_token_introspection_token&quot;
 unset_shared_db_config
 
 # The database password likely contains special characters that don&apos;t play well with XML.
 # We have a utility to replace the special characters so its XML safe.
 picsure_db_password=$(replace_xml_special_chars &quot;${picsure_db_password}&quot;)
 
-# Get logging API key from logging.env in S3
-logging_api_key=$(
-  aws s3 cp &quot;s3://$stack_s3_bucket/configs/pic-sure-logging/logging.env&quot; /tmp/logging.env &gt;/dev/null &amp;&amp;
-  grep -oP &apos;^LOGGING_API_KEY=\K.*&apos; /tmp/logging.env
-)
-rm -f /tmp/logging.env 2&gt;/dev/null || true
-logging_api_key=&quot;${logging_api_key:-disabled}&quot;
+# Get logging API key from logging.env in S3. The key is never echoed: it is a live credential.
+logging_env=$(mktemp &quot;${TMPDIR:-/tmp}/logging.env.XXXXXX&quot;)
+if ! aws s3 cp &quot;s3://$stack_s3_bucket/configs/pic-sure-logging/logging.env&quot; &quot;$logging_env&quot; &gt;/dev/null; then
+  rm -f &quot;$logging_env&quot; 2&gt;/dev/null || true
+  echo &quot;Error: could not read s3://$stack_s3_bucket/configs/pic-sure-logging/logging.env.&quot; &gt;&amp;2
+  echo &quot;That object is hand-maintained (there is no terraform template for it); confirm it exists, then re-run this job.&quot; &gt;&amp;2
+  exit 1
+fi
+logging_api_key=$(grep -oP &apos;^LOGGING_API_KEY=\K.*&apos; &quot;$logging_env&quot; || true)
+rm -f &quot;$logging_env&quot; 2&gt;/dev/null || true
+
+# Fail closed rather than defaulting to the literal string &quot;disabled&quot;, which rendered a
+# gateway.env whose audit events pic-sure-logging rejects with 401 -- silently, because the
+# logging client logs the failure and drops the event.
+if [ -z &quot;$logging_api_key&quot; ]; then
+  echo &quot;Error: logging.env defines no non-empty LOGGING_API_KEY.&quot; &gt;&amp;2
+  echo &quot;Rendering would ship a gateway.env whose audit events pic-sure-logging rejects with 401. Fix logging.env, then re-run this job.&quot; &gt;&amp;2
+  exit 1
+fi
 
 formatted_referer_allowed_domains=$(generate_domain_regex &quot;$referer_allowed_domains&quot;)
 
@@ -343,7 +353,7 @@ else
      -var=&quot;ras_session_logout_uri=${ras_session_logout_uri}&quot; \
      -var=&quot;login_redirect_uri=${login_redirect_uri}&quot; \
      -var=&quot;logging_service_url=http://pic-sure-logging&quot; \
-     -var=&quot;logging_api_key=${logging_api_key}&quot; || true
+     -var=&quot;logging_api_key=${logging_api_key}&quot; || apply_rc=$?
 
 
   reset_role
@@ -354,12 +364,21 @@ else
   # Will have to manually destroy and delete roles, ec2s, etc. in that scenario
   aws s3 cp terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate
 
+  # Fail the build on a failed apply -- but only after the state upload above, so the
+  # partially-created resources stay tracked for the next destroy.
+  if [ &quot;${apply_rc:-0}&quot; -ne 0 ]; then
+    echo &quot;ERROR: terraform apply failed (exit ${apply_rc}). State was uploaded; failing the build.&quot; &gt;&amp;2
+    exit &quot;${apply_rc}&quot;
+  fi
+
   # roles are now in the same state as their related resources..
   #aws s3 cp ../s3-deployment-roles/terraform.tfstate s3://$stack_s3_bucket/deployment_state_metadata/${target_stack}/terraform.tfstate_roles
 
   # Files that are needed, but are do not need to rendered by terraform.
   # Deploy Scripts
-  aws s3 --sse=AES256 cp scripts/deploy/deploy-wildfly.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-wildfly.sh
+  aws s3 --sse=AES256 cp scripts/deploy/deploy-gateway.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-gateway.sh
+  aws s3 --sse=AES256 cp scripts/deploy/deploy-operations.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-operations.sh
+  aws s3 --sse=AES256 cp scripts/deploy/deploy-query.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-query.sh
   aws s3 --sse=AES256 cp scripts/deploy/deploy-psama.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-psama.sh
   aws s3 --sse=AES256 cp scripts/deploy/deploy-dictionary.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-dictionary.sh
   aws s3 --sse=AES256 cp scripts/deploy/deploy-wildfly-stack.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-wildfly-stack.sh
@@ -378,8 +397,6 @@ else
   #  have terraform provision these to the ec2 and remove the aws cli stuff from the user-scripts and here
   aws s3 --sse=AES256 cp picsureui-settings.json s3://$stack_s3_bucket/$target_stack/configs/httpd/picsureui_settings.json
   aws s3 --sse=AES256 cp httpd-vhosts.conf s3://$stack_s3_bucket/$target_stack/configs/httpd/httpd-vhosts.conf
-  aws s3 --sse=AES256 cp standalone.xml s3://$stack_s3_bucket/$target_stack/configs/wildfly/standalone.xml
-  aws s3 --sse=AES256 cp aggregate-resource.properties s3://$stack_s3_bucket/$target_stack/configs/wildfly/aggregate-resource.properties
 
   # Because this file is not "rendered" it isn't placed in the root of the job workspace.
   aws s3 --sse=AES256 cp configs/banner_config.json s3://$stack_s3_bucket/$target_stack/configs/httpd/banner_config.json

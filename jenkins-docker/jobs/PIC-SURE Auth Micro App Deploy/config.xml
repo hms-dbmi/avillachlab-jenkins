@@ -45,7 +45,6 @@ D-Bus race conditions with other wildfly-host containers.</description>
           [$class: &apos;StringParameterValue&apos;, name: &apos;DATASET_S3_OBJECT_KEY&apos;, value: String.valueOf(params.DATASET_S3_OBJECT_KEY)],
           [$class: &apos;StringParameterValue&apos;, name: &apos;ENABLE_DEBUG&apos;, value: String.valueOf(params.ENABLE_DEBUG)],
           [$class: &apos;StringParameterValue&apos;, name: &apos;SPRING_PROFILE&apos;, value: String.valueOf(params.SPRING_PROFILE)],
-          [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_API&apos;, value: false],
           [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_PSAMA&apos;, value: true],
           [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_DICTIONARY&apos;, value: false]
         ]

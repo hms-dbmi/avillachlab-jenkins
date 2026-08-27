@@ -170,7 +170,8 @@ swap_stacks() {
   local live_tg_name=$2
   local staging_httpd_tags_file=&quot;$3&quot;
   local live_httpd_tags_file=&quot;$4&quot;
-  local fail_empty_stacks=&quot;${5,,:-&quot;false&quot;,,}&quot;  # Set to true for stable prod and release testing
+  local fail_empty_stacks=&quot;${5:-false}&quot;  # Set to true for stable prod and release testing
+  fail_empty_stacks=&quot;${fail_empty_stacks,,}&quot;  # normalize to lowercase
   echo &quot;staging_tg_name=$1&quot;
   echo &quot;live_tg_name=$2&quot;
   echo &quot;staging_httpd_tags_file=$3&quot;
@@ -186,6 +187,29 @@ swap_stacks() {
   # Get private IPs using the function with tags from files
   local local_staging_httpd_instance_prv_ips=($(get_private_ip_by_tags &quot;$staging_httpd_tags_file&quot;))
   local local_live_httpd_instance_prv_ips=($(get_private_ip_by_tags &quot;$live_httpd_tags_file&quot;))
+
+  # Both legs are validated before any target group is touched. Checking per-leg instead
+  # lets leg 1 repoint live traffic and leg 2 exit, which skips Write Stack State and
+  # leaves stacks.json naming the old stack while the ALB serves the new one.
+  if [ &quot;${fail_empty_stacks}&quot; = &quot;true&quot; ]; then
+    local empty_legs=&quot;&quot;
+    if [ -z &quot;${local_staging_httpd_instance_prv_ips}&quot; ]; then
+      empty_legs=&quot;staging&quot;
+    fi
+    if [ -z &quot;${local_live_httpd_instance_prv_ips}&quot; ]; then
+      if [ -n &quot;$empty_legs&quot; ]; then
+        empty_legs=&quot;$empty_legs and live&quot;
+      else
+        empty_legs=&quot;live&quot;
+      fi
+    fi
+    if [ -n &quot;$empty_legs&quot; ]; then
+      echo &quot;No IP addresses found for: $empty_legs&quot;
+      echo &quot;Ensure nodes have been created with proper tags for Node, Project, and Stack keys.&quot;
+      echo &quot;failing build before any target group is modified&quot;
+      exit 1
+    fi
+  fi
 
   # Promote Staging to Live (green to blue)
   echo &quot;Promote Staging to Live (green to blue)&quot;
@@ -418,44 +442,16 @@ create_jwt_token() {
   mvn clean install || { echo &quot;Maven build failed&quot;; exit 1; }
 
   cd target || { echo &quot;Target directory not found&quot;; exit 1; }
-  echo &quot;$secret&quot; &gt; secrets.txt
+  # secrets.txt holds the PSAMA signing secret. Write it 0600 and always remove it,
+  # even if the jar fails, so it never lingers in the browsable Jenkins workspace.
+  ( umask 077; echo &quot;$secret&quot; &gt; secrets.txt )
 
   # Assuming generateJwt.jar is built and exists
   export CREATE_JWT_TOKEN_OUTPUT=$(java -jar generateJwt.jar &quot;secrets.txt&quot; sub &quot;$subject&quot; &quot;$duration_int&quot; &quot;$duration_unit&quot; | grep -v &quot;Generating&quot;)
 
   # Cleanup
+  rm -f secrets.txt
   cd &quot;${WORKSPACE}&quot;
-}
-
-# Function to update the WildFly token in standalone.xml
-# -----------------------------------------------
-# Functionality:
-#   1. Updates the token introspection value in WildFly&apos;s standalone.xml using AWS SSM.
-#   2. Uses sed to find and replace the token value in the specified file.
-# Example Use:
-#   replace_wildfly_token &quot;$wildfly_instance_id&quot; &quot;$introspection_token&quot;
-# Result:
-#   The introspection token in WildFly&apos;s standalone.xml is updated.
-replace_wildfly_token() {
-    local wildfly_instance_id=$1
-    local introspection_token=$2
-    update_wildly_standalone_xml_token=&quot;sudo sed -i &apos;s#&lt;simple name=\&quot;java:global/token_introspection_token\&quot; value=\&quot;[^\&quot;]*\&quot;/&gt;#&lt;simple name=\&quot;java:global/token_introspection_token\&quot; value=\&quot;${introspection_token}\&quot;/&gt;#&apos; /opt/picsure/standalone.xml&quot;
-    replace_token_command_json=$(jq -n --arg cmd &quot;$update_wildly_standalone_xml_token&quot; &apos;{commands: [$cmd]}&apos;)
-    
-    echo &quot;${update_wildly_standalone_xml_token}&quot;
-    echo &quot;${replace_token_command_json}&quot;
-
-    # Execute command to update the token using AWS SSM
-    command_id=$(aws ssm send-command \
-    --instance-ids &quot;${wildfly_instance_id}&quot; \
-    --document-name &quot;AWS-RunShellScript&quot; \
-    --comment &quot;Update WildFly token&quot; \
-    --parameters &quot;$replace_token_command_json&quot; \
-    --query &quot;Command.CommandId&quot; \
-    --output text)
-
-    wait_for_command ${command_id} ${wildfly_instance_id}
-    echo &quot;Token update success&quot;
 }
 
 EOF</command>
@@ -494,6 +490,11 @@ create_flyway_conf() {
 
   # Ensure the conf directory exists
   mkdir -p conf
+
+  # flyway.conf carries the DB password and the introspection-token placeholder.
+  # Pre-create it 0600 so the secrets are not world-readable in the workspace; the
+  # subsequent truncating writes preserve the mode. The caller removes conf/ at end.
+  ( umask 077; : &gt; &quot;$CONF_FILE&quot; )
 
   # Create or overwrite the flyway.conf file with the new content
   echo &quot;flyway.url=jdbc:mysql://$2/$1&quot; &gt; $CONF_FILE
@@ -569,11 +570,11 @@ grant_user_permissions() {
   local grant_sql=&quot;GRANT SELECT, INSERT, UPDATE, DELETE ON ${database_name}.* TO &apos;${user_name}&apos;@&apos;%&apos;;&quot;
 
   # Execute the SQL command using Docker and MySQL client
-  docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+  docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
     -e &quot;$grant_sql&quot; &quot;mysql&quot;
 
   # Apply the changes
-  docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+  docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
     -e &quot;FLUSH PRIVILEGES;&quot; &quot;mysql&quot;
 }
 
@@ -582,10 +583,10 @@ create_database_if_not_exists() {
   # Parameters: $1 = DATABASE_NAME
 
   # Use printf to properly quote the password and the entire command
-  CMD=$(printf &quot;mysql -h%s -u%s -p&apos;%s&apos; -e &apos;CREATE DATABASE IF NOT EXISTS %s;&apos;&quot; &quot;$RDS_ENDPOINT&quot; &quot;$DATABASE_USER&quot; &quot;$DATABASE_PASSWORD&quot; &quot;$1&quot;)
+  CMD=$(printf &quot;mysql -h%s -u%s -e &apos;CREATE DATABASE IF NOT EXISTS %s;&apos;&quot; &quot;$RDS_ENDPOINT&quot; &quot;$DATABASE_USER&quot; &quot;$1&quot;)
 
   # Run the command in a Docker container
-  docker run --rm $MYSQL_IMAGE /bin/bash -c &quot;$CMD&quot;
+  docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE /bin/bash -c &quot;$CMD&quot;
 }
 
 # Function to drop all tables in a given database
@@ -600,7 +601,7 @@ drop_all_tables() {
     local schema_name=$1
 
     # Check if the schema exists
-    SCHEMA_EXISTS=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    SCHEMA_EXISTS=$(docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
         -sse &quot;SELECT SCHEMA_NAME FROM information_schema.schemata WHERE SCHEMA_NAME = &apos;$schema_name&apos;;&quot; 2&gt;/dev/null)
 
     if [ -z &quot;$SCHEMA_EXISTS&quot; ]; then
@@ -612,14 +613,14 @@ drop_all_tables() {
     echo &quot;Dropping all tables in schema: $schema_name...&quot;
 
     # Fetch list of tables in the schema
-    TABLES=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    TABLES=$(docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
         --database=$schema_name -Nse &quot;SHOW TABLES;&quot; 2&gt;/dev/null)
 
     # Drop each table
     for TABLE in $TABLES; do
         echo &quot;Dropping Table: $TABLE&quot;
         DROP_CMD=&quot;SET FOREIGN_KEY_CHECKS = 0; DROP TABLE IF EXISTS $TABLE; SET FOREIGN_KEY_CHECKS = 1;&quot;
-        docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+        docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
             --database=$schema_name -e &quot;$DROP_CMD&quot; 2&gt;/dev/null
     done
 
@@ -638,7 +639,7 @@ drop_schema() {
     local schema_name=$1
 
     # Check if the schema exists
-    SCHEMA_EXISTS=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    SCHEMA_EXISTS=$(docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
         -sse &quot;SELECT SCHEMA_NAME FROM information_schema.schemata WHERE SCHEMA_NAME = &apos;$schema_name&apos;;&quot; 2&gt;/dev/null)
 
     if [ -z &quot;$SCHEMA_EXISTS&quot; ]; then
@@ -650,7 +651,7 @@ drop_schema() {
     echo &quot;Dropping schema: $schema_name...&quot;
 
     DROP_SCHEMA_CMD=&quot;DROP SCHEMA IF EXISTS $schema_name;&quot;
-    docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
         -e &quot;$DROP_SCHEMA_CMD&quot; 2&gt;/dev/null
 
     echo &quot;Schema $schema_name dropped.&quot;
@@ -660,7 +661,7 @@ drop_schema() {
 
 # create_top_admin &quot;email&quot; &quot;connection_id&quot;
 create_top_admin() {
-  docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+  docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
   -e &quot;CALL CreateSuperUser(&apos;$1&apos;, &apos;$2&apos;);&quot; &quot;auth&quot;
 }
 
@@ -668,7 +669,7 @@ does_user_exists() {
 	# $1 email
     # $2 connection_id
 
-    local query_result=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    local query_result=$(docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
     -s -r -e &quot;select email from user where email = &apos;$1&apos; and connectionId = (select uuid from connection where id = &apos;$2&apos;);&quot; &quot;auth&quot;)
 
     echo &quot;$query_result&quot;
@@ -681,7 +682,7 @@ update_token_by_uuid() {
   local target_database=&quot;${3:-auth}&quot;
 
   # Perform the update operation
-  docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+  docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
     -e &quot;UPDATE application SET token=&apos;$new_token&apos; WHERE uuid=UNHEX(REPLACE(&apos;$uuid&apos;, &apos;-&apos;, &apos;&apos;));&quot; &quot;auth&quot;
 }
 
@@ -694,7 +695,7 @@ get_token_by_uuid() {
   local query=&quot;SELECT token FROM application WHERE uuid=UNHEX(REPLACE(&apos;$uuid&apos;, &apos;-&apos;, &apos;&apos;));&quot;
 
   # Execute the query using Docker and MySQL client
-  local token=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+  local token=$(docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
     -sse &quot;$query&quot; &quot;$schema&quot;)
 
   echo &quot;$token&quot;
@@ -713,8 +714,8 @@ run_sql_script() {
   fi
 
   # Run the SQL script in a Docker container
-  docker run --rm -v &quot;$1:/sql_script.sql:Z&quot; $MYSQL_IMAGE \
-    mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; &quot;$2&quot; &lt; /sql_script.sql
+  docker run --rm -v &quot;$1:/sql_script.sql:Z&quot; -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE \
+    mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; &quot;$2&quot; &lt; /sql_script.sql
 }
 
 # Function to back up a schema with a timestamp
@@ -757,7 +758,8 @@ restore_schema() {
     local s3_bucket=$stack_s3_bucket # The S3 bucket where the dump file is stored
 
     # Temporary local path to store the dump file
-    local temp_dump_file=&quot;/tmp/$backup_filename&quot;
+    local tmp_backup
+    tmp_backup=$(mktemp &quot;/tmp/${backup_filename}.XXXXXX&quot;)
 
     # Check if the S3 bucket and backup file are provided
     if [ -z &quot;$s3_bucket&quot; ] || [ -z &quot;$backup_filename&quot; ]; then
@@ -768,32 +770,32 @@ restore_schema() {
     echo &quot;Downloading the dump file $backup_filename from S3 bucket $s3_bucket...&quot;
 
     # Download the dump file from S3
-    aws s3 cp &quot;s3://$s3_bucket/database_backups/$backup_filename&quot; &quot;$temp_dump_file&quot; --sse AES256
+    aws s3 cp &quot;s3://$s3_bucket/database_backups/$backup_filename&quot; &quot;$tmp_backup&quot; --sse AES256
     if [ $? -ne 0 ]; then
         echo &quot;Failed to download the dump file from S3. Exiting.&quot;
         return 1
     fi
 
     # Check if the dump file was downloaded successfully
-    if [ ! -f &quot;$temp_dump_file&quot; ]; then
-        echo &quot;Dump file $temp_dump_file does not exist after download. Exiting.&quot;
+    if [ ! -f &quot;$tmp_backup&quot; ]; then
+        echo &quot;Dump file $tmp_backup does not exist after download. Exiting.&quot;
         return 1
     fi
 
-    echo &quot;Restoring schema: $schema_name from dump file: $temp_dump_file...&quot;
+    echo &quot;Restoring schema: $schema_name from dump file: $tmp_backup...&quot;
 
     # Drop the schema if it exists and recreate it
     DROP_SCHEMA_CMD=&quot;DROP SCHEMA IF EXISTS $schema_name; CREATE SCHEMA $schema_name;&quot;
-    docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
         -e &quot;$DROP_SCHEMA_CMD&quot; 2&gt;/dev/null
 
     # Restore the schema from the downloaded dump file
-    docker run --rm -i $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; &quot;$schema_name&quot; &lt; &quot;$temp_dump_file&quot; 2&gt;/dev/null
+    docker run --rm -i -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; &quot;$schema_name&quot; &lt; &quot;$tmp_backup&quot; 2&gt;/dev/null
 
     echo &quot;Schema $schema_name restored successfully from $backup_filename.&quot;
 
     # Cleanup: Remove the downloaded dump file
-    rm -f &quot;$temp_dump_file&quot;
+    rm -f &quot;$tmp_backup&quot;
 }
 
 
@@ -815,13 +817,13 @@ copy_database() {
     echo &quot;Starting database copy from $source_database to $target_database...&quot;
 
     # Step 1: Check if the target database exists
-    DATABASE_EXISTS=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    DATABASE_EXISTS=$(docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
         -sse &quot;SELECT SCHEMA_NAME FROM information_schema.schemata WHERE SCHEMA_NAME = &apos;$target_database&apos;;&quot;)
 
     if [ -z &quot;$DATABASE_EXISTS&quot; ]; then
         # If the target database doesn&apos;t exist, create it
         echo &quot;Target database $target_database does not exist. Creating database...&quot;
-        docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+        docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
             -e &quot;CREATE DATABASE IF NOT EXISTS $target_database;&quot;
 
         if [ $? -eq 0 ]; then
@@ -845,18 +847,18 @@ copy_database() {
     echo &quot;Copying all tables from $source_database to $target_database...&quot;
 
     # Get the list of tables from the source database and execute SQL commands to copy structure and data
-    TABLES=$(docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+    TABLES=$(docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
         --skip-column-names -e &quot;SELECT table_name FROM information_schema.tables WHERE table_schema = &apos;$source_database&apos;;&quot;)
 
     for TABLE in $TABLES; do
         # Create table in the target database
         echo &quot;Creating table $TABLE in $target_database...&quot;
-        docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+        docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
             -e &quot;CREATE TABLE $target_database.$TABLE LIKE $source_database.$TABLE;&quot;
 
         # Copy data from the source table to the target table
         echo &quot;Copying data from $source_database.$TABLE to $target_database.$TABLE...&quot;
-        docker run --rm $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; -p&quot;$DATABASE_PASSWORD&quot; \
+        docker run --rm -e MYSQL_PWD=&quot;$DATABASE_PASSWORD&quot; $MYSQL_IMAGE mysql -h&quot;$RDS_ENDPOINT&quot; -u&quot;$DATABASE_USER&quot; \
             -e &quot;INSERT INTO $target_database.$TABLE SELECT * FROM $source_database.$TABLE;&quot;
     done
 
@@ -968,42 +970,53 @@ get_stack() {
     local target_stack=$1
     local json_file=&quot;s3://${stack_s3_bucket}/deployment_state_metadata/stacks.json&quot;
 
-    # Fetch JSON content directly from S3 without downloading
+    # Fetch JSON content directly from S3 without downloading. Fail closed: an S3
+    # error must not be silently treated as an empty (and later &quot;null&quot;) stack name.
     local stacks_json
-    stacks_json=$(aws s3 cp &quot;$json_file&quot; - 2&gt;/dev/null)
+    if ! stacks_json=$(aws s3 cp &quot;$json_file&quot; -); then
+        echo &quot;ERROR: get_stack could not read $json_file&quot; &gt;&amp;2
+        return 1
+    fi
 
-    local staging_stack live_stack
+    local staging_stack live_stack resolved
     staging_stack=$(echo &quot;$stacks_json&quot; | jq -r &apos;.environments.next_prod&apos;)
     live_stack=$(echo &quot;$stacks_json&quot; | jq -r &apos;.environments.prod&apos;)
 
     if [[ &quot;$target_stack&quot; == &quot;live&quot; ]]; then
-        echo &quot;$live_stack&quot;
+        resolved=&quot;$live_stack&quot;
+    elif [[ &quot;$target_stack&quot; == &quot;staging&quot; ]]; then
+        resolved=&quot;$staging_stack&quot;
     else
-        echo &quot;$staging_stack&quot;
+        echo &quot;ERROR: get_stack expects &apos;live&apos; or &apos;staging&apos;, got: &apos;$target_stack&apos;&quot; &gt;&amp;2
+        return 1
     fi
+
+    if [[ -z &quot;$resolved&quot; || &quot;$resolved&quot; == &quot;null&quot; ]]; then
+        echo &quot;ERROR: get_stack resolved an empty/null stack for &apos;$target_stack&apos;&quot; &gt;&amp;2
+        return 1
+    fi
+    echo &quot;$resolved&quot;
 }
 EOF</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
     <hudson.tasks.Shell>
       <command>cat &lt;&lt;&apos;EOF&apos; &gt; application_functions.sh
-# Function to restart the WildFly container
+# Function to restart the gateway container
 # -----------------------------------------------
 # Functionality:
-#   1. Restarts the WildFly container via AWS SSM by executing a Docker restart command.
+#   1. Restarts the gateway container&apos;s systemd unit via AWS SSM.
 # Example Use:
-#   restart_wildfly &quot;$wildfly_instance_id&quot;
-# Result:
-#   The WildFly container is restarted successfully.
-restart_wildfly() {
+#   restart_gateway &quot;$wildfly_instance_id&quot;
+restart_gateway() {
     local wildfly_instance_id=$1
-    restart_command=&quot;sudo docker restart wildfly&quot;
+    restart_command=&quot;sudo systemctl restart container-gateway.service&quot;
     restart_command_json=$(jq -n --arg cmd &quot;$restart_command&quot; &apos;{commands: [$cmd]}&apos;)
 
     command_id=$(aws ssm send-command \
     --instance-ids &quot;${wildfly_instance_id}&quot; \
     --document-name &quot;AWS-RunShellScript&quot; \
-    --comment &quot;Restart WildFly container&quot; \
+    --comment &quot;Restart gateway container&quot; \
     --parameters &quot;$restart_command_json&quot; \
     --query &quot;Command.CommandId&quot; \
     --output text)
@@ -1011,72 +1024,48 @@ restart_wildfly() {
     wait_for_command ${command_id} ${wildfly_instance_id}
 }
 
-# Function to update the WildFly token in standalone.xml
+# Function to update the gateway introspection token
 # -----------------------------------------------
 # Functionality:
-#   1. Compares the existing token in WildFly&apos;s standalone.xml with the new introspection token.
-#   2. If the tokens are the same, no update is made.
-#   3. If the tokens are different, the new token is updated in the standalone.xml file using AWS SSM and the
-#	WildFly docker container is restarted.
+#   1. Downloads the stack&apos;s gateway.env from S3 and compares TOKEN_INTROSPECTION_TOKEN.
+#   2. If different, rewrites the line, uploads, and re-runs deploy-gateway.sh via SSM
+#      (podman bakes env at create time — a plain restart would not pick it up).
 # Example Use:
-#   update_wildfly_token &quot;$wildfly_instance_id&quot; &quot;$introspection_token&quot;
-# Result:
-#   The introspection token in WildFly&apos;s standalone.xml is updated only if it&apos;s different from the existing token.
-update_wildfly_token() {
+#   update_gateway_token &quot;$wildfly_instance_id&quot; &quot;$introspection_token&quot; &quot;a&quot; &quot;$stack_s3_bucket&quot;
+#   CAUTION: only valid for gateway-era stacks. While blue/green stacks are mixed (one still WildFly), do not rotate tokens / run DROP_AUTH_TABLES — the WildFly stack has no gateway.env and cannot receive the new token.
+update_gateway_token() {
     local wildfly_instance_id=$1
     local introspection_token=$2
+    local target_stack=$3
+    local stack_s3_bucket=$4
+    local env_s3_uri=&quot;s3://${stack_s3_bucket}/configs/gateway/${target_stack}/gateway.env&quot;
 
-    # Command to extract the current token from standalone.xml
-    get_current_token_command=&quot;grep &apos;&lt;simple name=\&quot;java:global/token_introspection_token\&quot;&apos; /opt/picsure/standalone.xml | sed -n &apos;s/.*value=\&quot;\\([^\&quot;]*\\)\&quot;.*/\\1/p&apos;&quot;
-    
-    # Format the command in JSON
-    get_token_command_json=$(jq -n --arg cmd &quot;$get_current_token_command&quot; &apos;{commands: [$cmd]}&apos;)
-    
-    # Execute the command using AWS SSM and wait for immediate response
-    command_id=$(aws ssm send-command \
-        --instance-ids &quot;${wildfly_instance_id}&quot; \
-        --document-name &quot;AWS-RunShellScript&quot; \
-        --parameters &quot;$get_token_command_json&quot; \
-        --query &quot;Command.CommandId&quot; \
-        --output text)
-    
-    # Immediately fetch the command output after execution
-    current_token=$(aws ssm get-command-invocation \
-        --command-id ${command_id} \
-        --instance-id ${wildfly_instance_id} \
-        --query &apos;StandardOutputContent&apos; \
-        --output text)
+    aws s3 cp &quot;$env_s3_uri&quot; gateway.env || { echo &quot;ERROR: could not fetch $env_s3_uri&quot;; return 1; }
+    grep -q &apos;^TOKEN_INTROSPECTION_TOKEN=&apos; gateway.env || { echo &quot;ERROR: $env_s3_uri has no TOKEN_INTROSPECTION_TOKEN line; the sed below would match nothing and redeploy the gateway with no token&quot;; rm -f gateway.env; return 1; }
+    current_token=$(grep &apos;^TOKEN_INTROSPECTION_TOKEN=&apos; gateway.env | cut -d &apos;=&apos; -f 2-)
 
-    echo &quot;Current token: $current_token&quot;
-    echo &quot;New token: $introspection_token&quot;
-
-    # Compare the current token with the new token
     if [ &quot;$current_token&quot; = &quot;$introspection_token&quot; ]; then
         echo &quot;Tokens are identical. No update required.&quot;
     else
-        echo &quot;Tokens differ. Updating token.&quot;
+        echo &quot;Tokens differ. Updating gateway.env and redeploying the gateway.&quot;
+        sed -i &quot;s|^TOKEN_INTROSPECTION_TOKEN=.*|TOKEN_INTROSPECTION_TOKEN=${introspection_token}|&quot; gateway.env
+        aws s3 --sse=AES256 cp gateway.env &quot;$env_s3_uri&quot; || { echo &quot;ERROR: could not upload $env_s3_uri. The DB now holds a token the gateway does not; NOT redeploying, since deploy-gateway.sh would re-pull the stale file and 502 every authenticated route.&quot;; rm -f gateway.env; return 1; }
 
-        # Update WildFly standalone.xml token
-        update_wildly_standalone_xml_token=&quot;sudo sed -i &apos;s#&lt;simple name=\&quot;java:global/token_introspection_token\&quot; value=\&quot;[^\&quot;]*\&quot;/&gt;#&lt;simple name=\&quot;java:global/token_introspection_token\&quot; value=\&quot;${introspection_token}\&quot;/&gt;#&apos; /opt/picsure/standalone.xml&quot;
-        replace_token_command_json=$(jq -n --arg cmd &quot;$update_wildly_standalone_xml_token&quot; &apos;{commands: [$cmd]}&apos;)
+        redeploy_command=&quot;sudo /opt/picsure/deploy-gateway.sh --stack_s3_bucket ${stack_s3_bucket} --target_stack ${target_stack}&quot;
+        redeploy_command_json=$(jq -n --arg cmd &quot;$redeploy_command&quot; &apos;{commands: [$cmd]}&apos;)
 
-        echo &quot;${update_wildly_standalone_xml_token}&quot;
-        echo &quot;${replace_token_command_json}&quot;
-
-        # Execute command to update the token using AWS SSM
         command_id=$(aws ssm send-command \
         --instance-ids &quot;${wildfly_instance_id}&quot; \
         --document-name &quot;AWS-RunShellScript&quot; \
-        --comment &quot;Update WildFly token&quot; \
-        --parameters &quot;$replace_token_command_json&quot; \
+        --comment &quot;Redeploy gateway with updated token&quot; \
+        --parameters &quot;$redeploy_command_json&quot; \
         --query &quot;Command.CommandId&quot; \
         --output text)
 
         wait_for_command ${command_id} ${wildfly_instance_id}
         echo &quot;Token update success&quot;
     fi
-    
-    restart_wildfly &quot;$wildfly_instance_id&quot;
+    rm -f gateway.env
 }
 
 # Function to monitor Docker logs via SSM to detect if Spring Boot has started

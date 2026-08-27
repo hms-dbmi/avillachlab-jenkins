@@ -79,13 +79,28 @@
   </properties>
   <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@4175.ve65b_fa_663eed">
     <script>import groovy.json.JsonSlurper;
+
+@NonCPS
+def parseBuildHashes(String text) {
+    def spec = new JsonSlurper().parseText(text)
+    def result = [:]
+    for (build in spec.application) {
+        result[build.project_job_git_key.toString()] = build.git_hash?.toString()
+    }
+    return result
+}
+
+@NonCPS
+def parseInfrastructureGitHash(String text) {
+    return new JsonSlurper().parseText(text).infrastructure_git_hash?.toString()
+}
 def bdc_ui_docker_tag;
 
 def retrieveBuildSpecId;
 def bdcUIBuildSpecId;
 def overrideUiBuildSpec;
 def pipelineBuildId;
-def build_hashes = {};
+def build_hashes = [:];
 def hasOverrideUI;
 def infrastructure_git_hash;
 def targetStack;
@@ -135,81 +150,57 @@ pipeline {
                 }
             }
         }
-        stage(&apos;Retrieve Build Spec&apos;) {
-            when {
-                    expression { return params.git_hash == &apos;&apos; }
-            }
+        stage(&apos;Build and Deploy&apos;) {
             steps {
                 script {
-                    def result = build job: &apos;Retrieve Build Spec&apos;
-                    retrieveBuildSpecId = result.number
-                }
-                script {
-                    copyArtifacts filter: &apos;*&apos;, projectName: &apos;Retrieve Build Spec&apos;, selector: specific(&quot;&quot;+retrieveBuildSpecId)
-                    sh &apos;cat build-spec.json&apos;
-                    sh &apos;cat pipeline_git_commit.txt&apos;
-                    sh &apos;pwd&apos;
-                    def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/PIC-SURE Auth Micro App Build and Deploy/build-spec.json&apos;))
-                    pipelineBuildId = new File(&apos;/var/jenkins_home/workspace/PIC-SURE Auth Micro App Build and Deploy/pipeline_git_commit.txt&apos;).text.trim()
-                    for(def build : buildSpec.application){
-                        build_hashes[build.project_job_git_key] = build.git_hash
+                    if (params.git_hash == &apos;&apos;) {
+                        def result = build job: &apos;Retrieve Build Spec&apos;
+                        retrieveBuildSpecId = result.number
+
+                        copyArtifacts filter: &apos;*&apos;, projectName: &apos;Retrieve Build Spec&apos;, selector: specific(&quot;&quot;+retrieveBuildSpecId)
+                        sh &apos;cat build-spec.json&apos;
+                        sh &apos;cat pipeline_git_commit.txt&apos;
+                        sh &apos;pwd&apos;
+                        build_hashes = parseBuildHashes(readFile(&apos;build-spec.json&apos;))
+                        pipelineBuildId = readFile(&apos;pipeline_git_commit.txt&apos;).trim()
+                        infrastructure_git_hash = parseInfrastructureGitHash(readFile(&apos;build-spec.json&apos;))
                     }
-                    infrastructure_git_hash = buildSpec.infrastructure_git_hash
-                }
-            }
-        }
-        stage(&apos;Install Logging and Common Library&apos;) {
-          steps {
-            parallel (
-                logging: {
-                    script {
-                        try {
-                            build job: &apos;PIC-SURE Logging Client Install&apos;
-                        } catch (Exception e) {
-                            echo &quot;Logging client install failed (${e.message}). Downstream builds will proceed without it.&quot;
+
+                    // infrastructure_git_hash only resolves via release control, which a
+                    // pinned git_hash skips. Passing null hands Database Migrations an empty
+                    // GitSCM branch spec and runs destructive migrations from whatever it
+                    // resolves to.
+                    if (params.RUN_DATABASE_MIGRATIONS &amp;&amp; !infrastructure_git_hash) {
+                        error(&quot;RUN_DATABASE_MIGRATIONS is set but no infrastructure_git_hash could be resolved. Either clear git_hash so release control supplies it, or uncheck RUN_DATABASE_MIGRATIONS.&quot;)
+                    }
+
+                    if (params.RUN_DATABASE_MIGRATIONS) {
+                        lock(&apos;shared-db&apos;) {
+                            build job: &apos;Database Migrations&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DROP_PICSURE_TABLES&apos;, value: params.DROP_PICSURE_TABLES],[$class: &apos;BooleanParameterValue&apos;, name: &apos;DROP_AUTH_TABLES&apos;, value: params.DROP_AUTH_TABLES]]
                         }
                     }
-                },
-                common: {
-                    script {
-                        def commonGithash = build_hashes[&apos;PSC&apos;]
-                        build job: &apos;PIC-SURE Common Build&apos;, parameters: [
-                          [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: commonGithash]
+
+                    lock(&quot;stack-${targetStack}&quot;) {
+                        build job: &apos;PIC-SURE Maven Build&apos;, parameters: [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: params.git_hash ?: build_hashes[&apos;PSA&apos;]],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId ?: &apos;MANUAL_RUN&apos;],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;MODULES&apos;, value: &apos;services/pic-sure-auth-microapp/pic-sure-auth-services&apos;]
                         ]
-                    }
-                }
-            )
-          }
-        }        
-        stage(&apos;PIC-SURE Auth Micro-App Build&apos;) {
-            steps {
-                script{
-                    def gitHash = git_hash ? git_hash : build_hashes[&apos;PSAMA&apos;]
-                    def result = build job: &apos;PIC-SURE Auth Micro App Build&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],[$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: gitHash]]
-                }
-            }
-        }
-        stage(&apos;Database Migrations&apos;) {
-            when {
-                expression { return params.RUN_DATABASE_MIGRATIONS }
-            }
-            steps {
-                script {
-                    def result = build job: &apos;Database Migrations&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash],
-                    [$class: &apos;BooleanParameterValue&apos;, name: &apos;DROP_PICSURE_TABLES&apos;, value: params.DROP_PICSURE_TABLES],[$class: &apos;BooleanParameterValue&apos;, name: &apos;DROP_AUTH_TABLES&apos;, value: params.DROP_AUTH_TABLES]]
-                }
-            }
-        }
-        stage(&apos;PIC-SURE Auth Micro App Deploy&apos;) {
-            steps {
-                script {
-                    def result = build job: &apos;PIC-SURE Auth Micro App Deploy&apos;, parameters:
-                        [
+
+                        build job: &apos;PIC-SURE Auth Micro App Image&apos;, parameters: [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId ?: &apos;MANUAL_RUN&apos;]
+                        ]
+
+                        build job: &apos;PIC-SURE Auth Micro App Deploy&apos;, parameters: [
                             [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
                             [$class: &apos;StringParameterValue&apos;, name: &apos;DATASET_S3_OBJECT_KEY&apos;, value: params.DATASET_S3_OBJECT_KEY],
                             [$class: &apos;StringParameterValue&apos;, name: &apos;SPRING_PROFILE&apos;, value: params.SPRING_PROFILE],
                             [$class: &apos;StringParameterValue&apos;, name: &apos;ENABLE_DEBUG&apos;, value: params.ENABLE_DEBUG]
                         ]
+                    }
                 }
             }
         }

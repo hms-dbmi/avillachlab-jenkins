@@ -58,10 +58,8 @@ if is_expiring_soon &quot;$expiry_date&quot;; then
     create_jwt_token &quot;$picsure_client_secret&quot; &quot;$pic_sure_introspection_token_repo&quot; &quot;PSAMA_APPLICATION|$application_id_for_base_query&quot; &quot;${duration_int:-365}&quot; &quot;${duration_unit:-day}&quot;
     
     if [ -n &quot;$CREATE_JWT_TOKEN_OUTPUT&quot; ]; then
-        echo &quot;New JWT generated successfully.&quot;
-        echo &quot;Update the picsure_token_introspection_token configuration with the following:&quot;
-        echo &quot;$CREATE_JWT_TOKEN_OUTPUT&quot;
-        
+        echo &quot;New JWT generated successfully (value not logged).&quot;
+
         # Update the db application with the new token
         update_token_by_uuid &quot;$application_id_for_base_query&quot; &quot;$CREATE_JWT_TOKEN_OUTPUT&quot;
     else

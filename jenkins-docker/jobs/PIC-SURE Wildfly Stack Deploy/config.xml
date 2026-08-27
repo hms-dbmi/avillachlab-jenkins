@@ -1,7 +1,7 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
   <actions/>
-  <description>Deploys wildfly-host containers (API, PSAMA, Dictionary, Visualization) sequentially via a single
+  <description>Deploys wildfly-host containers (Gateway, Operations Service, HPDS Query Service, PSAMA, Dictionary, Visualization) sequentially via a single
 SSM command to avoid systemd D-Bus race conditions, then waits for Spring Boot
 startup on all enabled containers in parallel.</description>
   <keepDependencies>false</keepDependencies>
@@ -22,8 +22,18 @@ startup on all enabled containers in parallel.</description>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
-          <name>DEPLOY_API</name>
-          <description>Deploy PIC-SURE API (Wildfly)</description>
+          <name>DEPLOY_GATEWAY</name>
+          <description>Deploy PIC-SURE Gateway</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>DEPLOY_OPERATIONS</name>
+          <description>Deploy PIC-SURE Operations Service</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>DEPLOY_QUERY</name>
+          <description>Deploy PIC-SURE HPDS Query Service</description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
@@ -126,8 +136,14 @@ echo &quot;WildFly Instance ID: ${wildfly_instance_id}&quot;
 # Build remote command flags
 # -----------------------------
 deploy_flags=&quot;&quot;
-if [[ &quot;${DEPLOY_API}&quot; == &quot;true&quot; ]]; then
-  deploy_flags=&quot;${deploy_flags} --deploy_wildfly&quot;
+if [[ &quot;${DEPLOY_GATEWAY}&quot; == &quot;true&quot; ]]; then
+  deploy_flags=&quot;${deploy_flags} --deploy_gateway&quot;
+fi
+if [[ &quot;${DEPLOY_OPERATIONS}&quot; == &quot;true&quot; ]]; then
+  deploy_flags=&quot;${deploy_flags} --deploy_operations&quot;
+fi
+if [[ &quot;${DEPLOY_QUERY}&quot; == &quot;true&quot; ]]; then
+  deploy_flags=&quot;${deploy_flags} --deploy_query&quot;
 fi
 if [[ &quot;${DEPLOY_PSAMA}&quot; == &quot;true&quot; ]]; then
   deploy_flags=&quot;${deploy_flags} --deploy_psama&quot;
@@ -162,7 +178,7 @@ command_id=&quot;$(
   aws ssm send-command \
     --instance-ids &quot;${wildfly_instance_id}&quot; \
     --document-name &quot;AWS-RunShellScript&quot; \
-    --comment &quot;Deploy Wildfly Stack (API+PSAMA+Dictionary+Visualization)&quot; \
+    --comment &quot;Deploy PIC-SURE Stack (Gateway+Operations+Query+PSAMA+Dictionary+Visualization)&quot; \
     --parameters &quot;${remote_cmd_json}&quot; \
     --timeout-seconds 600 \
     --query &quot;Command.CommandId&quot; \
@@ -176,8 +192,18 @@ wait_for_command &quot;${command_id}&quot; &quot;${wildfly_instance_id}&quot;
 # -----------------------------
 pids=()
 
-if [[ &quot;${DEPLOY_API}&quot; == &quot;true&quot; ]]; then
-  wait_for_spring_boot_ssm_logs &quot;${wildfly_instance_id}&quot; &quot;wildfly&quot; &quot;started in&quot; &amp;
+if [[ &quot;${DEPLOY_GATEWAY}&quot; == &quot;true&quot; ]]; then
+  wait_for_spring_boot_ssm_logs &quot;${wildfly_instance_id}&quot; &quot;gateway&quot; &amp;
+  pids+=($!)
+fi
+
+if [[ &quot;${DEPLOY_OPERATIONS}&quot; == &quot;true&quot; ]]; then
+  wait_for_spring_boot_ssm_logs &quot;${wildfly_instance_id}&quot; &quot;pic-sure-operations-service&quot; &amp;
+  pids+=($!)
+fi
+
+if [[ &quot;${DEPLOY_QUERY}&quot; == &quot;true&quot; ]]; then
+  wait_for_spring_boot_ssm_logs &quot;${wildfly_instance_id}&quot; &quot;pic-sure-hpds-query-service&quot; &amp;
   pids+=($!)
 fi
 

@@ -24,3 +24,4 @@ saml
 role-strategy
 uno-choice
 configuration-as-code
+lockable-resources

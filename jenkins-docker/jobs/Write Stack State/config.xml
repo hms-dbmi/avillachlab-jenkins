@@ -30,17 +30,23 @@
   <concurrentBuild>false</concurrentBuild>
   <builders>
     <hudson.tasks.Shell>
-      <command>echo &quot;$stacks_json&quot; &gt; stacks.json
-        
-aws s3api put-object-legal-hold \
-        --bucket $S3_BUCKET_NAME \
-        --key deployment_state_metadata/stacks.json \
-        --legal-hold Status=OFF
+      <command>#!/bin/bash
+set -euo pipefail
 
-aws s3 cp stacks.json s3://${stack_s3_bucket}/deployment_state_metadata/stacks.json
+# Validate before touching S3: a mangled stacks_json must not corrupt fleet state.
+# On any failure here we exit with the lock still held (safer than a divergent
+# write); recover with Unlock Deployment State.
+echo &quot;$stacks_json&quot; | jq -e . &gt; /dev/null || { echo &quot;ERROR: stacks_json is not valid JSON; refusing to write state.&quot; &gt;&amp;2; exit 1; }
+
+echo &quot;$stacks_json&quot; &gt; stacks.json
+
+# Write first, then release the legal-hold lock. The previous order released the
+# hold before the copy, leaving a window where a queued reader could acquire the
+# lock and read the pre-swap state. One bucket variable throughout.
+aws s3 cp stacks.json &quot;s3://${S3_BUCKET_NAME}/deployment_state_metadata/stacks.json&quot;
 
 aws s3api put-object-legal-hold \
-        --bucket $S3_BUCKET_NAME \
+        --bucket &quot;$S3_BUCKET_NAME&quot; \
         --key deployment_state_metadata/stacks.json \
         --legal-hold Status=OFF
 </command>

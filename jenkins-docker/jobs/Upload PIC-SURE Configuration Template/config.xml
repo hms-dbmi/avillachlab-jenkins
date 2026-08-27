@@ -1,0 +1,129 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description>Uploads one Terraform env template for the selected service. Leave TARGET_STACK empty for the shared template path or provide a stack identifier for a stack-specific override.</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.ChoiceParameterDefinition>
+          <name>SERVICE</name>
+          <description>Service whose Terraform env template should be uploaded.</description>
+          <choices>
+            <string>Gateway</string>
+            <string>Operations</string>
+            <string>Query</string>
+            <string>HPDS Auth</string>
+            <string>HPDS Open</string>
+            <string>Visualization</string>
+          </choices>
+        </hudson.model.ChoiceParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>TARGET_STACK</name>
+          <description>Optional target stack identifier (for example, a or b). Leave empty to upload to the shared template path.</description>
+          <defaultValue></defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.FileParameterDefinition>
+          <name>service.env.tftpl</name>
+          <description>Non-empty Terraform env template for the selected service. It is stored under that service&apos;s canonical filename.</description>
+        </hudson.model.FileParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.scm.NullSCM"/>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <jdk>(System)</jdk>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+set -euo pipefail
+
+source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+shopt -s nullglob
+for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+    chmod +x &quot;$script_file&quot;
+    if [[ -f &quot;$script_file&quot; &amp;&amp; -x &quot;$script_file&quot; ]]; then
+        echo &quot;sourcing $script_file&quot;
+        source &quot;$script_file&quot;
+    fi
+done
+shopt -u nullglob
+
+for fn in assume_role reset_role; do
+    if ! command -v &quot;$fn&quot; &gt;/dev/null 2&gt;&amp;1; then
+        echo &quot;Error: required function '$fn' was not loaded from $source_scripts_folder.&quot; &gt;&amp;2
+        exit 1
+    fi
+done
+
+: &quot;${SERVICE:?SERVICE is required}&quot;
+: &quot;${stack_s3_bucket:?stack_s3_bucket is required}&quot;
+
+case &quot;$SERVICE&quot; in
+    Gateway)
+        template_file=&quot;gateway.env.tftpl&quot;
+        template_prefix=&quot;configs/gateway/templates&quot;
+        ;;
+    Operations)
+        template_file=&quot;operations.env.tftpl&quot;
+        template_prefix=&quot;configs/operations/templates&quot;
+        ;;
+    Query)
+        template_file=&quot;query.env.tftpl&quot;
+        template_prefix=&quot;configs/query/templates&quot;
+        ;;
+    &quot;HPDS Auth&quot;)
+        template_file=&quot;hpds-auth.env.tftpl&quot;
+        template_prefix=&quot;configs/hpds/templates&quot;
+        ;;
+    &quot;HPDS Open&quot;)
+        template_file=&quot;hpds-open.env.tftpl&quot;
+        template_prefix=&quot;configs/hpds/templates&quot;
+        ;;
+    Visualization)
+        template_file=&quot;visualization.env.tftpl&quot;
+        template_prefix=&quot;configs/pic-sure-visualization/templates&quot;
+        ;;
+    *)
+        echo &quot;Error: unsupported SERVICE selection.&quot; &gt;&amp;2
+        exit 1
+        ;;
+esac
+
+upload_file=&quot;service.env.tftpl&quot;
+if [[ ! -f &quot;$upload_file&quot; || ! -s &quot;$upload_file&quot; ]]; then
+    echo &quot;Error: $upload_file is missing or empty; refusing to upload.&quot; &gt;&amp;2
+    exit 1
+fi
+
+TARGET_STACK=&quot;${TARGET_STACK:-}&quot;
+if [[ -n &quot;$TARGET_STACK&quot; ]]; then
+    destination=&quot;s3://$stack_s3_bucket/$template_prefix/$TARGET_STACK/$template_file&quot;
+    echo &quot;Uploading $template_file to the stack-specific template path.&quot;
+else
+    destination=&quot;s3://$stack_s3_bucket/$template_prefix/$template_file&quot;
+    echo &quot;Uploading $template_file to the shared template path.&quot;
+fi
+
+trap 'reset_role' EXIT
+assume_role
+aws s3 --sse=AES256 cp &quot;$upload_file&quot; &quot;$destination&quot;</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.46">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
+</project>

@@ -6,7 +6,7 @@
   </disabledAdministrativeMonitors>
   <version>2.204.2</version>
   <installStateName>RUNNING</installStateName>
-  <numExecutors>5</numExecutors>
+  <numExecutors>10</numExecutors>
   <mode>NORMAL</mode>
   <useSecurity>true</useSecurity>
   <authorizationStrategy class="hudson.security.AuthorizationStrategy$Unsecured"/>
@@ -52,6 +52,10 @@
         <string>Import_and_Rekey_HPDS_Data</string>
         <string>Import HPDS VCF Data</string>
         <string>PIC-SURE Pipeline</string>
+        <string>PIC-SURE Maven Build</string>
+        <string>PIC-SURE Gateway Image</string>
+        <string>PIC-SURE HPDS Query Service Image</string>
+        <string>PIC-SURE Operations Service Image</string>
       </jobNames>
       <jobFilters/>
       <columns>
@@ -130,12 +134,13 @@
         <string>Create stack_variables.tf Files</string>
         <string>Destroy Old Jenkins Server</string>
         <string>List Instance Profiles</string>
-        <string>PIC-SURE Auth Micro-App Build</string>
-        <string>PIC-SURE API Build</string>
-        <string>PIC-SURE API Deploy</string>
-        <string>PIC-SURE-HPDS Build</string>
-        <string>PIC-SURE-Frontend Build</string>
-        <string>PIC-SURE-VISUALIZATION Build</string>
+        <string>PIC-SURE Auth Micro App Image</string>
+        <string>PIC-SURE Gateway Deploy</string>
+        <string>PIC-SURE Operations Service Deploy</string>
+        <string>PIC-SURE HPDS Query Service Deploy</string>
+        <string>PIC-SURE HPDS Image</string>
+        <string>PIC-SURE Frontend Build</string>
+        <string>PIC-SURE Visualization Image</string>
         <string>Retrieve Build Spec</string>
         <string>Retrieve Deployment State</string>
         <string>Teardown and Rebuild Stage Environment</string>
@@ -175,11 +180,10 @@
       <jobNames>
         <comparator class="hudson.util.CaseInsensitiveComparator"/>
         <string>PIC-SURE Pipeline</string>
-        <string>PIC-SURE API Build</string>
-        <string>PIC-SURE Auth Micro App Build</string>
-        <string>PIC-SURE Dictionary Build</string>
+        <string>PIC-SURE Auth Micro App Image</string>
+        <string>PIC-SURE Dictionary Image</string>
         <string>PIC-SURE Frontend Build</string>
-        <string>PIC-SURE HPDS Build</string>
+        <string>PIC-SURE HPDS Image</string>
       </jobNames>
       <jobFilters/>
       <columns>
@@ -207,11 +211,13 @@
         <string>PIC-SURE HPDS Auth Build and Deploy</string>
         <string>PIC-SURE HPDS Open Build and Deploy</string>
         <string>PIC-SURE Pipeline Build and Deploy</string>
-        <string>PIC-SURE API Build and Deploy</string>
+        <string>PIC-SURE Gateway Build and Deploy</string>
+        <string>PIC-SURE Operations Service Build and Deploy</string>
+        <string>PIC-SURE HPDS Query Service Build and Deploy</string>
         <string>PIC-SURE Visualization Build and Deploy</string>
         <string>Render PIC-SURE Visualization Config Template</string>
-        <string>Upload PIC-SURE Visualization Template</string>
-        <string>Download PIC-SURE Visualization Template</string>
+        <string>Upload PIC-SURE Configuration Template</string>
+        <string>Download PIC-SURE Configuration Template</string>
       </jobNames>
       <jobFilters/>
       <columns>

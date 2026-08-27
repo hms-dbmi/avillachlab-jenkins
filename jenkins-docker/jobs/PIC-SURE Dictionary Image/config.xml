@@ -1,0 +1,93 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description>Packages the dictionary-api image from the per-stack reactor lane and ships the tarball to the stack&apos;s S3 prefix. Requires a prior successful &apos;PIC-SURE Maven Build&apos; for the same TARGET_STACK.</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>TARGET_STACK</name>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>S3_BUCKET_NAME</name>
+          <defaultValue>${stack_s3_bucket}</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>pipeline_build_id</name>
+          <defaultValue>MANUAL_RUN</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>DATASOURCE_URL</name>
+          <defaultValue>${database_psql_host_address}</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>DATASOURCE_USERNAME</name>
+          <defaultValue>${database_psql_app_user_secret_name}</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>SPRING_PROFILE</name>
+          <defaultValue>bdc</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.scm.NullSCM"/>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <jdk>(System)</jdk>
+  <triggers/>
+  <concurrentBuild>true</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+set -euo pipefail
+
+: &quot;${TARGET_STACK:?TARGET_STACK is required}&quot;
+: &quot;${S3_BUCKET_NAME:?S3_BUCKET_NAME is required}&quot;
+
+MAVEN_WS=&quot;/var/jenkins_home/workspace/PIC-SURE Maven Build - ${TARGET_STACK}&quot;
+DICT_DIR=&quot;$MAVEN_WS/services/picsure-dictionary&quot;
+MODULE=&quot;services/picsure-dictionary&quot;
+STAMP=&quot;$MAVEN_WS/build-info/$(printf &apos;%s&apos; &quot;$MODULE&quot; | tr &apos;/&apos; &apos;_&apos;).txt&quot;
+
+# Guard: this job does not compile. It needs this module&apos;s own jar plus the stamp written
+# for this module, so a lane whose last build targeted a different module cannot mislabel
+# this image with a commit that never built this jar.
+if [ ! -f &quot;$STAMP&quot; ] || ! ls &quot;$DICT_DIR&quot;/target/dictionary-*.jar &gt;/dev/null 2&gt;&amp;1; then
+  echo &quot;ERROR: no current artifacts for $MODULE on stack ${TARGET_STACK} -- run &apos;PIC-SURE Maven Build&apos; with MODULES=$MODULE first&quot;
+  exit 2
+fi
+. &quot;$STAMP&quot;
+
+docker build --load \
+  -f &quot;$DICT_DIR/bdc.Dockerfile&quot; \
+  --build-arg DATASOURCE_URL=&quot;${DATASOURCE_URL}&quot; \
+  --build-arg DATASOURCE_USERNAME=&quot;${DATASOURCE_USERNAME}&quot; \
+  --build-arg SPRING_PROFILE=&quot;${SPRING_PROFILE}&quot; \
+  -t &quot;avillach/dictionary-api:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}&quot; \
+  &quot;$DICT_DIR&quot;
+
+docker save &quot;avillach/dictionary-api:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}&quot; | gzip &gt; dictionary-api.tar.gz
+aws s3 --sse=AES256 cp dictionary-api.tar.gz &quot;s3://$S3_BUCKET_NAME/$TARGET_STACK/containers/dictionary-api.tar.gz&quot;</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.49">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
+</project>

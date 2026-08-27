@@ -32,7 +32,7 @@
         <hudson.model.BooleanParameterDefinition>
           <name>DROP_AUTH_TABLES</name>
           <description>Drop tables during migration</description>
-          <defaultValue>true</defaultValue>
+          <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>TARGET_STACK</name>
@@ -94,7 +94,10 @@ pipeline {
         stage(&apos;Database - Dump&apos;) {
             steps {
                 script {
-                    def result = build job: &apos;Database Copy&apos;, parameters:
+                    // Take a real off-box S3 backup of auth before any drop/migrate below.
+                    // (Previously called Database Copy, which only duplicated auth-&gt;auth2 and
+                    // took no dump the operator could restore from.)
+                    def result = build job: &apos;Database Backup&apos;, parameters:
                     [[$class: &apos;StringParameterValue&apos;, name: &apos;SOURCE_DATABASE&apos;, value: &quot;auth&quot;]]
                 }
             }

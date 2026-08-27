@@ -10,6 +10,7 @@ ARG PLUGINS_FILE
 ARG CONFIG_XML_FILE
 ARG CASC_FILE="jenkins.yaml"
 ARG SCRIPT_APPROVAL_FILE
+ARG INIT_GROOVY_DIR="init.groovy.d"
 ARG HUDSON_TASKS_FILE
 ARG JENKINS_JOBS_DIR
 ARG PKCS12_FILE
@@ -82,6 +83,9 @@ RUN /bin/jenkins-plugin-cli -f /usr/share/jenkins/ref/plugins.txt || echo "Some 
 COPY $CONFIG_XML_FILE /var/jenkins_home/config.xml
 COPY $CASC_FILE /var/jenkins_home/casc_configs/jenkins.yaml
 COPY $SCRIPT_APPROVAL_FILE /var/jenkins_home/scriptApproval.xml
+# Startup hook that auto-approves the baked jobs' scripts (keeps script-security
+# from blocking freshly deployed controllers when a job's script text changed).
+COPY $INIT_GROOVY_DIR /var/jenkins_home/init.groovy.d
 COPY $HUDSON_TASKS_FILE /var/jenkins_home/hudson.tasks.Maven.xml
 COPY $JENKINS_JOBS_DIR /var/jenkins_home/jobs
 COPY $PKCS12_FILE /var/jenkins_home/$PKCS12_FILE

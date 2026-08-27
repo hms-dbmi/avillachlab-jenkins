@@ -82,7 +82,19 @@ for output_name in $output_names; do
   echo &quot;Instance-id is $INSTANCE_ID&quot;
 
   aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot;
-  while [ $(aws --region=us-east-1 ec2 describe-tags --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; | grep InitComplete | wc -l ) -eq 0 ]; do
+  # Gate on the tag VALUE: user-data tags InitComplete=true on success and
+  # InitComplete=failed on any error. Presence alone is not success.
+  while true; do
+    init_value=$(aws --region=us-east-1 ec2 describe-tags \
+      --filters &quot;Name=resource-id,Values=${INSTANCE_ID}&quot; &quot;Name=key,Values=InitComplete&quot; \
+      --query &apos;Tags[0].Value&apos; --output text || echo &quot;None&quot;)
+    if [ &quot;$init_value&quot; = &quot;true&quot; ]; then
+      break
+    elif [ &quot;$init_value&quot; = &quot;failed&quot; ]; then
+      echo &quot;ERROR: ${output_name} tagged InitComplete=failed -- user-data did not complete.&quot; &gt;&amp;2
+      echo &quot;Check /var/log/cloud-init-output.log on ${INSTANCE_ID}.&quot; &gt;&amp;2
+      exit 1
+    fi
     # avoid role timeout by assuming role continously
     reset_role
     assume_role

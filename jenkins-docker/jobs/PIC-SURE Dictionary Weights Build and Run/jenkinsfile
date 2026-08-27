@@ -87,7 +87,7 @@ pipeline {
                         userRemoteConfigs: [[url: "${params.GIT_REPO_URL}"]],
                         extensions: [
                             [$class: 'SparseCheckoutPaths', sparseCheckoutPaths: [
-                                [path: 'dictionaryweights']
+                                [path: 'services/picsure-dictionary/dictionaryweights']
                             ]],
                             [$class: 'CheckoutOption', timeout: 10],
                             [$class: 'CloneOption', depth: 1, noTags: false, shallow: true]
@@ -99,7 +99,7 @@ pipeline {
 
         stage('Build Dictionary Docker Image') {
             steps {
-                dir('dictionaryweights') {
+                dir('services/picsure-dictionary/dictionaryweights') {
                     script {
                         def buildArgs = " --build-arg DATASOURCE_URL=${params.DATASOURCE_URL} " +
                                         " --build-arg DATASOURCE_USERNAME=${params.DATASOURCE_USERNAME} " +

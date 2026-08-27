@@ -1,7 +1,7 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
   <actions/>
-  <description>Renders the PIC-SURE Visualization configuration template with environment-specific values and uploads to S3.</description>
+  <description>Renders the PIC-SURE Visualization configuration template with environment-specific values and uploads to S3. The template resolves from the stack-specific S3 override, shared S3 override, or infrastructure repository fallback.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
@@ -60,13 +60,70 @@ done
 cd app-infrastructure/template-renderer
 
 echo &quot;Attempting to download visualization template from S3...&quot;
-aws s3 cp &quot;s3://${stack_s3_bucket}/configs/pic-sure-visualization/templates/${TARGET_STACK}/visualization.env.tftpl&quot; \
-  templates/visualization.env.tftpl \
-  &amp;&amp; echo &quot;Using stack-specific S3 template for visualization.env.tftpl&quot; \
-  || { aws s3 cp &quot;s3://${stack_s3_bucket}/configs/pic-sure-visualization/templates/visualization.env.tftpl&quot; \
-    templates/visualization.env.tftpl \
-    &amp;&amp; echo &quot;Using shared S3 template for visualization.env.tftpl&quot; \
-    || echo &quot;No S3 template found, using repo version of visualization.env.tftpl&quot;; }
+
+download_s3_template() {
+  local object_key=$1
+  local destination=$2
+  local aws_error
+  local candidate
+
+  if ! candidate=$(mktemp &quot;$(dirname &quot;$destination&quot;)/.template-download.XXXXXX&quot;); then
+    echo &quot;Error: could not create a temporary template file.&quot; &gt;&amp;2
+    return 2
+  fi
+  if aws_error=$(aws s3 cp &quot;s3://${stack_s3_bucket}/${object_key}&quot; &quot;$candidate&quot; 2&gt;&amp;1 &gt;/dev/null); then
+    if [ ! -s &quot;$candidate&quot; ]; then
+      rm -f &quot;$candidate&quot;
+      echo &quot;Error: s3://${stack_s3_bucket}/${object_key} is empty; refusing to use it.&quot; &gt;&amp;2
+      return 2
+    fi
+    if ! mv &quot;$candidate&quot; &quot;$destination&quot; &gt;/dev/null 2&gt;&amp;1; then
+      rm -f &quot;$candidate&quot;
+      echo &quot;Error: could not promote downloaded template to $destination.&quot; &gt;&amp;2
+      return 2
+    fi
+    return 0
+  fi
+
+  rm -f &quot;$candidate&quot;
+  case &quot;$aws_error&quot; in
+    *&quot;An error occurred (404)&quot;*|*&quot;An error occurred (NoSuchKey)&quot;*|*&quot;An error occurred (NotFound)&quot;*)
+      return 1
+      ;;
+  esac
+
+  echo &quot;Error: could not read s3://${stack_s3_bucket}/${object_key}; refusing to fall back after a non-missing-object AWS error.&quot; &gt;&amp;2
+  return 2
+}
+
+resolve_template() {
+  local template_file=$1
+  local download_status
+
+  if download_s3_template &quot;configs/pic-sure-visualization/templates/${TARGET_STACK}/${template_file}&quot; &quot;templates/${template_file}&quot;; then
+    echo &quot;Using stack-specific S3 template for ${template_file}&quot;
+    return 0
+  else
+    download_status=$?
+    if [ &quot;$download_status&quot; -ne 1 ]; then
+      return &quot;$download_status&quot;
+    fi
+  fi
+
+  if download_s3_template &quot;configs/pic-sure-visualization/templates/${template_file}&quot; &quot;templates/${template_file}&quot;; then
+    echo &quot;Using shared S3 template for ${template_file}&quot;
+    return 0
+  else
+    download_status=$?
+    if [ &quot;$download_status&quot; -ne 1 ]; then
+      return &quot;$download_status&quot;
+    fi
+  fi
+
+  echo &quot;No S3 template found, using repo version of ${template_file}&quot;
+}
+
+resolve_template &quot;visualization.env.tftpl&quot;
 
 terraform init -input=false
 
