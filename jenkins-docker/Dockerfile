@@ -88,6 +88,7 @@ COPY $SCRIPT_APPROVAL_FILE /var/jenkins_home/scriptApproval.xml
 COPY $INIT_GROOVY_DIR /var/jenkins_home/init.groovy.d
 COPY $HUDSON_TASKS_FILE /var/jenkins_home/hudson.tasks.Maven.xml
 COPY $JENKINS_JOBS_DIR /var/jenkins_home/jobs
+COPY scripts/validate-banner-rollout.py /var/jenkins_home/banner-rollout/validate-banner-rollout.py
 COPY $PKCS12_FILE /var/jenkins_home/$PKCS12_FILE
 
 # Render SCM credentialsId placeholder per environment at image build time.

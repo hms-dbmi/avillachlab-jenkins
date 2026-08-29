@@ -16,6 +16,14 @@ D-Bus race conditions with other wildfly-host containers.</description>
           <name>TARGET_STACK</name>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>BANNER_ROLLOUT</name>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>BANNER_ROLLOUT_TUPLE_SHA256</name>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -28,7 +36,9 @@ D-Bus race conditions with other wildfly-host containers.</description>
         build job: &apos;PIC-SURE Wildfly Stack Deploy&apos;, parameters: [
           [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: params.S3_BUCKET_NAME],
           [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: params.TARGET_STACK],
-          [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_GATEWAY&apos;, value: true]
+          [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_GATEWAY&apos;, value: true],
+          [$class: &apos;BooleanParameterValue&apos;, name: &apos;BANNER_ROLLOUT&apos;, value: params.BANNER_ROLLOUT],
+          [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_TUPLE_SHA256&apos;, value: params.BANNER_ROLLOUT_TUPLE_SHA256]
         ]
       }
     }

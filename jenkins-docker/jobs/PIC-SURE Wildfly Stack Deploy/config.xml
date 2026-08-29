@@ -61,6 +61,16 @@ startup on all enabled containers in parallel.</description>
           <defaultValue>prod</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>BANNER_ROLLOUT</name>
+          <description>Set only by the combined pipeline after validating the banner release tuple.</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>BANNER_ROLLOUT_TUPLE_SHA256</name>
+          <description>Canonical digest emitted by the banner rollout validator.</description>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -76,6 +86,17 @@ startup on all enabled containers in parallel.</description>
     <hudson.tasks.Shell>
       <command>#!/usr/bin/env bash
 set -euo pipefail
+
+if [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; ]]; then
+  if [[ ! &quot;${BANNER_ROLLOUT_TUPLE_SHA256:-}&quot; =~ ^[0-9a-f]{64}$ ]]; then
+    echo &quot;ERROR: banner rollout requires an exact validated tuple SHA-256.&quot; &gt;&amp;2
+    exit 2
+  fi
+  if [[ &quot;${DEPLOY_OPERATIONS:-false}&quot; != &quot;true&quot; || &quot;${DEPLOY_PSAMA:-false}&quot; != &quot;true&quot; || &quot;${DEPLOY_GATEWAY:-false}&quot; != &quot;true&quot; ]]; then
+    echo &quot;ERROR: banner rollout requires Operations, PSAMA, and Gateway in one backend deployment.&quot; &gt;&amp;2
+    exit 2
+  fi
+fi
 
 # -----------------------------
 # Load shared bash functions

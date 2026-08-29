@@ -15,6 +15,21 @@
           <name>TARGET_STACK</name>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>BANNER_ROLLOUT</name>
+          <description>Set only by the combined pipeline after validating the banner release tuple.</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>BANNER_ROLLOUT_TUPLE_SHA256</name>
+          <description>Canonical digest emitted by the banner rollout validator.</description>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>BANNER_BACKEND_HEALTH_ATTESTATION</name>
+          <description>Set by the combined pipeline only after the backend deployment job returns healthy.</description>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -28,26 +43,52 @@
   <concurrentBuild>true</concurrentBuild>
   <builders>
     <hudson.tasks.Shell>
-      <command>#!/bin/bash
+      <command>#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; ]]; then
+  if [[ ! &quot;${BANNER_ROLLOUT_TUPLE_SHA256:-}&quot; =~ ^[0-9a-f]{64}$ ]]; then
+    echo &quot;ERROR: banner rollout requires an exact validated tuple SHA-256.&quot; &gt;&amp;2
+    exit 2
+  fi
+  if [[ &quot;${BANNER_BACKEND_HEALTH_ATTESTATION:-}&quot; != &quot;OPERATIONS_GATEWAY_PSAMA_HEALTHY&quot; ]]; then
+    echo &quot;ERROR: banner frontend publication requires verified Operations, Gateway, and PSAMA health.&quot; &gt;&amp;2
+    exit 2
+  fi
+fi
+
+: &quot;${TARGET_STACK:?TARGET_STACK is required}&quot;
+: &quot;${S3_BUCKET_NAME:?S3_BUCKET_NAME is required}&quot;
+stack_s3_bucket=&quot;${S3_BUCKET_NAME}&quot;
 
 # Source folder containing the scripts
 source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
 
 
 # Iterate through the files in the folder and source them
+shopt -s nullglob
 for script_file in &quot;$source_scripts_folder&quot;*.sh; do
     chmod +x &quot;$script_file&quot;
     if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
         echo &quot;sourcing $script_file&quot;
+        # shellcheck source=/dev/null
         source &quot;$script_file&quot;
     fi
+done
+shopt -u nullglob
+
+for fn in assume_role wait_for_command reset_role; do
+  if ! command -v &quot;${fn}&quot; &gt;/dev/null 2&gt;&amp;1; then
+    echo &quot;ERROR: required function &apos;${fn}&apos; is not loaded from ${source_scripts_folder}&quot; &gt;&amp;2
+    exit 1
+  fi
 done
 
 assume_role
 
 # Download the terraform state file
 echo &quot;Download terraform.tfstate file for $TARGET_STACK stack&quot;
-aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/$TARGET_STACK/terraform.tfstate terraform.tfstate
+aws s3 cp &quot;s3://${stack_s3_bucket}/deployment_state_metadata/${TARGET_STACK}/terraform.tfstate&quot; terraform.tfstate
 
 # Extract the Wildfly EC2 instance ID
 echo &quot;Extract HTTPD instance ID for $TARGET_STACK stack&quot;
@@ -68,7 +109,7 @@ command_id=$(aws ssm send-command \
   --query &quot;Command.CommandId&quot; \
   --output text)
 
-wait_for_command ${command_id} ${httpd_instance_id}
+wait_for_command &quot;${command_id}&quot; &quot;${httpd_instance_id}&quot;
 
 reset_role
 </command>
