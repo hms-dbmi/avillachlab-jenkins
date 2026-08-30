@@ -44,6 +44,21 @@
             </a>
           </choices>
         </hudson.model.ChoiceParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>BANNER_MANUAL_OPERATOR_MODE</name>
+          <description>Enable only for an operator-started forward banner run with one Jenkins UserIdCause.</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>BANNER_EXPECTED_DEPLOYMENT</name>
+          <description>Deployment expected in the exact release input. Required for forward banner runs.</description>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>BANNER_EXPECTED_TUPLE_SHA256</name>
+          <description>Tuple expected in the exact release input. Required for forward banner runs.</description>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>STACK_S3_BUCKET</name>
           <description>Exact artifact bucket propagated to every banner build and deploy leaf.</description>
@@ -61,6 +76,7 @@ def parseBuildSpec(String text) {
     return [
         infrastructureGitHash: spec.infrastructure_git_hash?.toString(),
         bannerDeployment: spec.banner_rollout?.deployment?.toString(),
+        bannerTupleSha256: spec.banner_rollout?.tupleSha256?.toString(),
         bannerRolloutPresent: spec.banner_rollout != null
     ]
 }
@@ -72,6 +88,7 @@ def target_stack
 def live_stack
 def infrastructure_git_hash
 def banner_deployment
+def banner_tuple_sha256
 def banner_rollout_present = false
 def banner_forward = false
 def release_control_commit
@@ -98,6 +115,7 @@ pipeline {
                     def parsedBuildSpec = parseBuildSpec(readFile(&apos;build-spec.json&apos;))
                     infrastructure_git_hash = parsedBuildSpec.infrastructureGitHash
                     banner_deployment = parsedBuildSpec.bannerDeployment
+                    banner_tuple_sha256 = parsedBuildSpec.bannerTupleSha256
                     banner_rollout_present = parsedBuildSpec.bannerRolloutPresent
                     release_control_commit = readFile(&apos;pipeline_git_commit.txt&apos;).trim()
                 }
@@ -110,6 +128,18 @@ pipeline {
                         error(&apos;BANNER_ROLLOUT must match the exact retrieved release input&apos;)
                     }
                     if (banner_rollout_present) {
+                        if (params.BANNER_EXPECTED_DEPLOYMENT != banner_deployment || params.BANNER_EXPECTED_TUPLE_SHA256 != banner_tuple_sha256) {
+                            error(&apos;Banner operator context must match the exact retrieved deployment and tuple&apos;)
+                        }
+                        def buildCauses = currentBuild.getBuildCauses()
+                        def manualUserCauses = currentBuild.getBuildCauses(&apos;hudson.model.Cause$UserIdCause&apos;)
+                        if (params.BANNER_MANUAL_OPERATOR_MODE) {
+                            if (params.BANNER_ROLLOUT_OPERATION != &apos;FORWARD&apos; || buildCauses.size() != 1 || manualUserCauses.size() != 1 || !manualUserCauses[0].userId) {
+                                error(&apos;Manual banner mode requires one identified Jenkins operator cause&apos;)
+                            }
+                        } else if (!buildCauses.isEmpty()) {
+                            error(&apos;Automated banner mode requires the action-only Check For Updates caller&apos;)
+                        }
                         if (!(banner_deployment in [&apos;BDC&apos;, &apos;AIM-AHEAD&apos;])) {
                             error(&quot;Unsupported banner rollout deployment: ${banner_deployment}&quot;)
                         }
@@ -205,7 +235,7 @@ pipeline {
         stage(&apos;Await Initialization&apos;) {
             steps {
                 script {
-                    def result = build job: &apos;Await Initialization&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack], [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: infrastructure_git_hash], [$class: &apos;StringParameterValue&apos;, name: &apos;deployment_git_hash&apos;, value: params.deployment_git_hash], [$class: &apos;BooleanParameterValue&apos;, name: &apos;WAIT_FOR_TARGET_GROUP_HEALTH&apos;, value: !banner_forward], [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_VALIDATED_UPSTREAM_RUN_ID&apos;, value: banner_forward ? &quot;deployment-${env.BUILD_NUMBER}&quot; : &apos;&apos;], [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_VALIDATED_INFRASTRUCTURE_COMMIT&apos;, value: banner_forward ? infrastructure_git_hash : &apos;&apos;]]
+                    def result = build job: &apos;Await Initialization&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack], [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: infrastructure_git_hash], [$class: &apos;StringParameterValue&apos;, name: &apos;deployment_git_hash&apos;, value: params.deployment_git_hash], [$class: &apos;BooleanParameterValue&apos;, name: &apos;WAIT_FOR_TARGET_GROUP_HEALTH&apos;, value: !banner_forward], [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_VALIDATED_UPSTREAM_RUN_ID&apos;, value: banner_forward ? &quot;deployment-${env.BUILD_NUMBER}&quot; : &apos;&apos;], [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_VALIDATED_INFRASTRUCTURE_COMMIT&apos;, value: banner_forward ? infrastructure_git_hash : &apos;&apos;], [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_VALIDATED_DEPLOYMENT&apos;, value: banner_forward ? banner_deployment : &apos;&apos;], [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_VALIDATED_TUPLE_SHA256&apos;, value: banner_forward ? banner_tuple_sha256 : &apos;&apos;]]
                 }
             }
         }

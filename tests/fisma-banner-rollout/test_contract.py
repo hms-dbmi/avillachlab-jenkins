@@ -26,6 +26,7 @@ FRONTEND = ROOT / "jenkins-docker/jobs/PIC-SURE Frontend Deploy/config.xml"
 QUERY_IMAGE = ROOT / "jenkins-docker/jobs/PIC-SURE HPDS Query Service Image/config.xml"
 VALIDATOR = ROOT / "jenkins-docker/scripts/validate-banner-rollout.py"
 CONTRACT = ROOT / "jenkins-docker/scripts/banner-rollout-contract.json"
+GROOVY_GUARD_RUNNER = ROOT / "tests/fisma-banner-rollout/run_system_groovy_guard.groovy"
 
 
 def current_jenkins_commit() -> str:
@@ -66,6 +67,31 @@ def xml_system_scripts(path: Path) -> list[str]:
         for node in root.findall(".//hudson.plugins.groovy.SystemGroovy/source/script/script")
         if node.text
     ]
+
+
+def run_system_groovy_guard(guard: str, fixture: dict) -> subprocess.CompletedProcess[str]:
+    groovy_jar = Path(os.environ["JENKINS_GROOVY_JAR"])
+    with tempfile.TemporaryDirectory() as temp:
+        temp_path = Path(temp)
+        guard_path = temp_path / "guard.groovy"
+        fixture_path = temp_path / "fixture.json"
+        guard_path.write_text(guard, encoding="utf-8")
+        fixture_path.write_text(json.dumps(fixture), encoding="utf-8")
+        return subprocess.run(
+            [
+                "java",
+                "-cp",
+                str(groovy_jar),
+                "groovy.ui.GroovyMain",
+                str(GROOVY_GUARD_RUNNER),
+                str(fixture_path),
+                str(guard_path),
+            ],
+            text=True,
+            capture_output=True,
+            timeout=20,
+            check=False,
+        )
 
 
 def run_shell_guard(
@@ -137,9 +163,6 @@ class JenkinsOrderTest(unittest.TestCase):
         self.assertIn("parentCauseTree.isEmpty()", guard)
 
     def test_ssm_only_guard_jenkins_shaped_cause_fixtures(self):
-        upstream_class = "hudson.model.Cause$UpstreamCause"
-        replay_class = "org.jenkinsci.plugins.workflow.cps.replay.ReplayCause"
-
         _, check_for_updates = xml_system_scripts(CHECK_FOR_UPDATES)
         deployment_call = check_for_updates[
             check_for_updates.index('getItemByFullName("Deployment Pipeline")') :
@@ -147,98 +170,241 @@ class JenkinsOrderTest(unittest.TestCase):
         ]
         self.assertIn(".scheduleBuild2(0, new ParametersAction([", deployment_call)
         self.assertNotIn("CauseAction", deployment_call)
-        normal_parent_causes = []
 
         def upstream(build=41, nested=None):
             return {
-                "_class": upstream_class,
+                "type": "upstream",
                 "upstreamProject": "Deployment Pipeline",
                 "upstreamBuild": build,
                 "upstreamCauses": [] if nested is None else nested,
             }
 
-        def collect_cause_tree(causes):
-            collected = []
-            for cause in causes:
-                collected.append(cause.get("_class"))
-                if cause.get("_class") == upstream_class:
-                    collected.extend(collect_cause_tree(cause.get("upstreamCauses", [])))
-            return collected
+        def user(user_id="synthetic-operator"):
+            return {"type": "user", "userId": user_id}
 
-        def accepted(downstream_causes, parent):
-            if len(downstream_causes) != 1 or downstream_causes[0].get("_class") != upstream_class:
-                return False
-            cause = downstream_causes[0]
-            if cause["upstreamProject"] != "Deployment Pipeline":
-                return False
-            if collect_cause_tree(cause.get("upstreamCauses", [])):
-                return False
-            if parent is None or not parent["building"] or parent["number"] != cause["upstreamBuild"]:
-                return False
-            if collect_cause_tree(parent.get("causes", [])):
-                return False
-            return parent["banner"] and parent["operation"] == "FORWARD" and parent["contextMatches"]
+        def cause(cause_type):
+            return {"type": cause_type}
 
+        downstream_parameters = {
+            "WAIT_FOR_TARGET_GROUP_HEALTH": False,
+            "BANNER_VALIDATED_UPSTREAM_RUN_ID": "deployment-41",
+            "deployment_git_hash": "a" * 40,
+            "git_hash": "b" * 40,
+            "BANNER_VALIDATED_INFRASTRUCTURE_COMMIT": "b" * 40,
+            "BANNER_VALIDATED_DEPLOYMENT": "BDC",
+            "BANNER_VALIDATED_TUPLE_SHA256": "c" * 64,
+        }
         valid_parent = {
             "number": 41,
             "building": True,
-            "causes": normal_parent_causes,
-            "banner": True,
-            "operation": "FORWARD",
-            "contextMatches": True,
+            "causes": [],
+            "parameters": {
+                "BANNER_ROLLOUT": True,
+                "BANNER_ROLLOUT_OPERATION": "FORWARD",
+                "deployment_git_hash": "a" * 40,
+                "BANNER_MANUAL_OPERATOR_MODE": False,
+                "BANNER_EXPECTED_DEPLOYMENT": "BDC",
+                "BANNER_EXPECTED_TUPLE_SHA256": "c" * 64,
+            },
         }
         fixtures = {
-            "direct": ([], valid_parent, False),
-            "normal_upstream": ([upstream()], valid_parent, True),
-            "nested_replay": (
-                [upstream(nested=[{"_class": replay_class}])],
+            "automated_action_only": ([upstream()], valid_parent, "ACCEPT"),
+            "manual_operator": (
+                [upstream(nested=[user()])],
+                {
+                    **valid_parent,
+                    "causes": [user()],
+                    "parameters": {
+                        **valid_parent["parameters"],
+                        "BANNER_MANUAL_OPERATOR_MODE": True,
+                    },
+                },
+                "ACCEPT",
+            ),
+            "direct": ([], valid_parent, "REJECT"),
+            "nested_replay": ([upstream(nested=[cause("replay")])], valid_parent, "REJECT"),
+            "deeply_nested_replay": (
+                [upstream(nested=[upstream(nested=[cause("replay")])])],
                 valid_parent,
-                False,
+                "REJECT",
             ),
             "replayed_parent": (
-                [upstream()],
-                {**valid_parent, "causes": [{"_class": replay_class}]},
-                False,
+                [upstream(nested=[cause("replay")])],
+                {**valid_parent, "causes": [cause("replay")]},
+                "REJECT",
             ),
-            "nested_other_cause": (
-                [upstream(nested=[{"_class": "hudson.model.Cause$UserIdCause"}])],
-                valid_parent,
-                False,
+            "manual_mixed_replay": (
+                [upstream(nested=[user(), cause("replay")])],
+                {
+                    **valid_parent,
+                    "causes": [user(), cause("replay")],
+                    "parameters": {
+                        **valid_parent["parameters"],
+                        "BANNER_MANUAL_OPERATOR_MODE": True,
+                    },
+                },
+                "REJECT",
             ),
-            "parent_nested_other_cause": (
+            "manual_user_mismatch": (
+                [upstream(nested=[user("copied-operator")])],
+                {
+                    **valid_parent,
+                    "causes": [user("live-operator")],
+                    "parameters": {
+                        **valid_parent["parameters"],
+                        "BANNER_MANUAL_OPERATOR_MODE": True,
+                    },
+                },
+                "REJECT",
+            ),
+            "manual_missing_user": (
+                [upstream(nested=[user(None)])],
+                {
+                    **valid_parent,
+                    "causes": [user(None)],
+                    "parameters": {
+                        **valid_parent["parameters"],
+                        "BANNER_MANUAL_OPERATOR_MODE": True,
+                    },
+                },
+                "REJECT",
+            ),
+            "unexpected_timer": (
+                [upstream(nested=[cause("timer")])],
+                {**valid_parent, "causes": [cause("timer")]},
+                "REJECT",
+            ),
+            "unexpected_remote": (
+                [upstream(nested=[cause("remote")])],
+                {**valid_parent, "causes": [cause("remote")]},
+                "REJECT",
+            ),
+            "unexpected_rebuild": (
+                [upstream(nested=[cause("rebuild")])],
+                {**valid_parent, "causes": [cause("rebuild")]},
+                "REJECT",
+            ),
+            "manual_flag_without_user": (
                 [upstream()],
                 {
                     **valid_parent,
-                    "causes": [
-                        upstream(nested=[{"_class": "hudson.model.Cause$UserIdCause"}])
-                    ],
+                    "parameters": {
+                        **valid_parent["parameters"],
+                        "BANNER_MANUAL_OPERATOR_MODE": True,
+                    },
                 },
-                False,
+                "REJECT",
             ),
-            "multiple_nesting": (
-                [upstream(nested=[upstream(nested=[{"_class": replay_class}])])],
+            "mixed_top_level": ([upstream(), user()], valid_parent, "REJECT"),
+            "other_parent_job": (
+                [
+                    {
+                        **upstream(),
+                        "upstreamProject": "Other Pipeline",
+                    }
+                ],
                 valid_parent,
-                False,
+                "REJECT",
             ),
-            "parent_multiple_nesting": (
+            "deleted_parent": ([upstream()], None, "REJECT"),
+            "stale_parent": ([upstream()], {**valid_parent, "number": 40}, "REJECT"),
+            "completed_parent": ([upstream()], {**valid_parent, "building": False}, "REJECT"),
+            "mismatched_run": (
+                [upstream()],
+                valid_parent,
+                "REJECT",
+                {"BANNER_VALIDATED_UPSTREAM_RUN_ID": "deployment-40"},
+            ),
+            "mismatched_release_input": (
+                [upstream()],
+                valid_parent,
+                "REJECT",
+                {"deployment_git_hash": "d" * 40},
+            ),
+            "mismatched_infrastructure": (
+                [upstream()],
+                valid_parent,
+                "REJECT",
+                {"git_hash": "d" * 40},
+            ),
+            "mismatched_deployment": (
                 [upstream()],
                 {
                     **valid_parent,
-                    "causes": [
-                        upstream(nested=[upstream(nested=[{"_class": replay_class}])])
-                    ],
+                    "parameters": {
+                        **valid_parent["parameters"],
+                        "BANNER_EXPECTED_DEPLOYMENT": "AIM-AHEAD",
+                    },
                 },
-                False,
+                "REJECT",
             ),
-            "deleted_parent": ([upstream()], None, False),
-            "stale_parent": ([upstream()], {**valid_parent, "number": 40}, False),
-            "completed_parent": ([upstream()], {**valid_parent, "building": False}, False),
-            "mismatched_context": ([upstream()], {**valid_parent, "contextMatches": False}, False),
-            "matching_valid_parent": ([upstream()], valid_parent, True),
+            "mismatched_tuple": (
+                [upstream()],
+                {
+                    **valid_parent,
+                    "parameters": {
+                        **valid_parent["parameters"],
+                        "BANNER_EXPECTED_TUPLE_SHA256": "d" * 64,
+                    },
+                },
+                "REJECT",
+            ),
         }
-        for scenario, (downstream_causes, parent, expected) in fixtures.items():
+        for scenario, fixture_values in fixtures.items():
             with self.subTest(scenario=scenario):
-                self.assertEqual(expected, accepted(downstream_causes, parent))
+                downstream_causes, parent, expected, *parameter_overrides = fixture_values
+                result = run_system_groovy_guard(
+                    xml_system_scripts(AWAIT_INITIALIZATION)[0],
+                    {
+                        "downstream": {
+                            "causes": downstream_causes,
+                            "parameters": {
+                                **downstream_parameters,
+                                **(parameter_overrides[0] if parameter_overrides else {}),
+                            },
+                        },
+                        "parent": parent,
+                    },
+                )
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertEqual(expected, result.stdout.strip(), result.stderr)
+
+    def test_ssm_only_guard_fixtures_detect_polarity_and_control_flow_mutations(self):
+        guard = xml_system_scripts(AWAIT_INITIALIZATION)[0]
+        invalid_direct_fixture = {
+            "downstream": {
+                "causes": [],
+                "parameters": {"WAIT_FOR_TARGET_GROUP_HEALTH": False},
+            },
+            "parent": None,
+        }
+        result = run_system_groovy_guard(guard, invalid_direct_fixture)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual("REJECT", result.stdout.strip(), result.stderr)
+
+        polarity_mutation = guard.replace(
+            "!waitForTargetHealth.toString().toBoolean()",
+            "waitForTargetHealth.toString().toBoolean()",
+            1,
+        )
+        self.assertNotEqual(guard, polarity_mutation)
+        polarity_result = run_system_groovy_guard(polarity_mutation, invalid_direct_fixture)
+        self.assertEqual(0, polarity_result.returncode, polarity_result.stdout + polarity_result.stderr)
+        self.assertEqual("ACCEPT", polarity_result.stdout.strip(), polarity_result.stderr)
+
+        control_flow_mutation = guard.replace(
+            'throw new hudson.AbortException("SSM-only readiness requires the active validated forward Deployment Pipeline run")',
+            "return",
+            1,
+        )
+        self.assertNotEqual(guard, control_flow_mutation)
+        control_flow_result = run_system_groovy_guard(control_flow_mutation, invalid_direct_fixture)
+        self.assertEqual(
+            0,
+            control_flow_result.returncode,
+            control_flow_result.stdout + control_flow_result.stderr,
+        )
+        self.assertEqual("ACCEPT", control_flow_result.stdout.strip(), control_flow_result.stderr)
 
     def test_ssm_only_await_requires_exact_validated_deployment_upstream(self):
         deployment = xml_script(DEPLOYMENT_PIPELINE)
@@ -249,6 +415,8 @@ class JenkinsOrderTest(unittest.TestCase):
             "BANNER_VALIDATED_UPSTREAM_RUN_ID",
             "deployment_git_hash",
             "BANNER_VALIDATED_INFRASTRUCTURE_COMMIT",
+            "BANNER_VALIDATED_DEPLOYMENT",
+            "BANNER_VALIDATED_TUPLE_SHA256",
         ):
             with self.subTest(parameter=parameter):
                 self.assertIn(parameter, deployment)
@@ -272,6 +440,12 @@ class JenkinsOrderTest(unittest.TestCase):
         self.assertIn('getParameter("git_hash")', guard)
         self.assertIn("deploymentInput", guard)
         self.assertIn("validatedInfrastructureCommit", guard)
+        self.assertIn("BANNER_MANUAL_OPERATOR_MODE", guard)
+        self.assertIn("BANNER_EXPECTED_DEPLOYMENT", guard)
+        self.assertIn("BANNER_EXPECTED_TUPLE_SHA256", guard)
+        self.assertIn("automatedCauseContext", guard)
+        self.assertIn("manualCauseContext", guard)
+        self.assertIn("Cause.UserIdCause", guard)
         self.assertIn("AbortException", guard)
         rejection_checks = {
             "direct": "cause == null",
@@ -481,6 +655,9 @@ class JenkinsOrderTest(unittest.TestCase):
         self.assertNotIn('getItemByFullName("PIC-SURE Pipeline Build and Deploy")', final_script)
         self.assertIn("BANNER_ROLLOUT", final_script[deployment:])
         self.assertIn("BANNER_ROLLOUT_OPERATION", final_script[deployment:])
+        self.assertIn('new BooleanParameterValue("BANNER_MANUAL_OPERATOR_MODE", false)', final_script)
+        self.assertIn("BANNER_EXPECTED_DEPLOYMENT", final_script[deployment:])
+        self.assertIn("BANNER_EXPECTED_TUPLE_SHA256", final_script[deployment:])
         for required in (
             "deployment_git_hash",
             "dataset_s3_object_key",
@@ -499,6 +676,12 @@ class JenkinsOrderTest(unittest.TestCase):
         hardened = script.index("build job: 'PIC-SURE Pipeline Build and Deploy'")
         sensor = script.index("stage('Falcon Sensor Check')")
         self.assertLess(validation, backup)
+        self.assertLess(script.index("currentBuild.getBuildCauses()"), backup)
+        self.assertLess(script.index("Banner operator context must match"), backup)
+        self.assertIn("BANNER_MANUAL_OPERATOR_MODE", script[validation:backup])
+        self.assertIn("hudson.model.Cause$UserIdCause", script[validation:backup])
+        self.assertIn("buildCauses.size() != 1", script[validation:backup])
+        self.assertIn("manualUserCauses.size() != 1", script[validation:backup])
         validation_body = script[validation:backup]
         self.assertIn("banner_rollout_present != params.BANNER_ROLLOUT", validation_body)
         self.assertIn("if (banner_rollout_present)", validation_body)

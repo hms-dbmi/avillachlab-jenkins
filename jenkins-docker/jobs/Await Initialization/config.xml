@@ -34,6 +34,16 @@
           <description>Infrastructure commit validated by the trusted upstream banner run.</description>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>BANNER_VALIDATED_DEPLOYMENT</name>
+          <description>Deployment validated from the exact upstream release input.</description>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>BANNER_VALIDATED_TUPLE_SHA256</name>
+          <description>Tuple validated from the exact upstream release input.</description>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -85,21 +95,36 @@ if (waitForTargetHealth != null &amp;&amp; !waitForTargetHealth.toString().toBoo
     def deploymentInput = parameters?.getParameter(&quot;deployment_git_hash&quot;)?.value?.toString()
     def gitHash = parameters?.getParameter(&quot;git_hash&quot;)?.value?.toString()
     def validatedInfrastructureCommit = parameters?.getParameter(&quot;BANNER_VALIDATED_INFRASTRUCTURE_COMMIT&quot;)?.value?.toString()
+    def validatedDeployment = parameters?.getParameter(&quot;BANNER_VALIDATED_DEPLOYMENT&quot;)?.value?.toString()
+    def validatedTupleSha256 = parameters?.getParameter(&quot;BANNER_VALIDATED_TUPLE_SHA256&quot;)?.value?.toString()
     def upstreamBuild = cause == null ? null : jenkins.model.Jenkins.instance.getItemByFullName(cause.upstreamProject)?.getBuildByNumber(cause.upstreamBuild)
     def upstreamParameters = upstreamBuild?.getAction(hudson.model.ParametersAction)
     def upstreamBanner = upstreamParameters?.getParameter(&quot;BANNER_ROLLOUT&quot;)?.value
     def upstreamOperation = upstreamParameters?.getParameter(&quot;BANNER_ROLLOUT_OPERATION&quot;)?.value?.toString()
     def upstreamDeploymentCommit = upstreamParameters?.getParameter(&quot;deployment_git_hash&quot;)?.value?.toString()
+    def upstreamManualOperatorValue = upstreamParameters?.getParameter(&quot;BANNER_MANUAL_OPERATOR_MODE&quot;)?.value
+    def upstreamManualOperatorMode = upstreamManualOperatorValue != null &amp;&amp; upstreamManualOperatorValue.toString().toBoolean()
+    def upstreamExpectedDeployment = upstreamParameters?.getParameter(&quot;BANNER_EXPECTED_DEPLOYMENT&quot;)?.value?.toString()
+    def upstreamExpectedTupleSha256 = upstreamParameters?.getParameter(&quot;BANNER_EXPECTED_TUPLE_SHA256&quot;)?.value?.toString()
     def upstreamBannerForward = upstreamBanner != null &amp;&amp; upstreamBanner.toString().toBoolean() &amp;&amp; upstreamOperation == &quot;FORWARD&quot;
     def copiedCauseTree = cause == null ? [] : collectCauseTree(cause.upstreamCauses)
     def parentCauseTree = upstreamBuild == null ? [] : collectCauseTree(upstreamBuild.getCauses())
+    def copiedManualCauses = copiedCauseTree.findAll { it instanceof hudson.model.Cause.UserIdCause }
+    def parentManualCauses = parentCauseTree.findAll { it instanceof hudson.model.Cause.UserIdCause }
+    def automatedCauseContext = !upstreamManualOperatorMode &amp;&amp; copiedCauseTree.isEmpty() &amp;&amp; parentCauseTree.isEmpty()
+    def manualCauseContext = upstreamManualOperatorMode &amp;&amp;
+        copiedCauseTree.size() == 1 &amp;&amp; copiedManualCauses.size() == 1 &amp;&amp;
+        parentCauseTree.size() == 1 &amp;&amp; parentManualCauses.size() == 1 &amp;&amp;
+        copiedManualCauses[0].userId &amp;&amp; copiedManualCauses[0].userId == parentManualCauses[0].userId
     if (causes.size() != 1 || !(causes[0] instanceof hudson.model.Cause.UpstreamCause) ||
         cause == null || cause.upstreamProject != &quot;Deployment Pipeline&quot; ||
         validatedRunId != &quot;deployment-${cause.upstreamBuild}&quot; ||
         upstreamBuild == null || !upstreamBuild.isBuilding() || !upstreamBannerForward ||
-        !copiedCauseTree.isEmpty() || !parentCauseTree.isEmpty() ||
+        (!automatedCauseContext &amp;&amp; !manualCauseContext) ||
         !deploymentInput || deploymentInput != upstreamDeploymentCommit ||
-        !gitHash || gitHash != validatedInfrastructureCommit) {
+        !gitHash || gitHash != validatedInfrastructureCommit ||
+        !validatedDeployment || validatedDeployment != upstreamExpectedDeployment ||
+        !validatedTupleSha256 || validatedTupleSha256 != upstreamExpectedTupleSha256) {
         throw new hudson.AbortException(&quot;SSM-only readiness requires the active validated forward Deployment Pipeline run&quot;)
     }
 }</script>
