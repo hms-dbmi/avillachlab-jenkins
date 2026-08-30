@@ -43,6 +43,11 @@
           <name>isDestroyOnly</name>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>BOOTSTRAP_STANDARD_CRITICAL_ARTIFACTS</name>
+          <description>Leave enabled for ordinary rebuilds. Banner Deployment Pipeline runs disable it so EC2 user-data cannot start standard Gateway, Operations, Query, PSAMA, or frontend artifacts.</description>
+          <defaultValue>true</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -222,6 +227,7 @@ if $isDestroyOnly; then
      -var=&quot;env_is_open_access=${env_is_open_access}&quot; \
      -var=&quot;include_auth_hpds=${include_auth_hpds}&quot; \
      -var=&quot;include_open_hpds=${include_open_hpds}&quot; \
+     -var=&quot;bootstrap_standard_critical_artifacts=${BOOTSTRAP_STANDARD_CRITICAL_ARTIFACTS}&quot; \
      -var=&quot;environment_name=${environment_name}&quot; \
      -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
      -var=&quot;application_id_for_base_query=${application_id_for_base_query}&quot; \
@@ -276,6 +282,7 @@ else
      -var=&quot;env_is_open_access=${env_is_open_access}&quot; \
      -var=&quot;include_auth_hpds=${include_auth_hpds}&quot; \
      -var=&quot;include_open_hpds=${include_open_hpds}&quot; \
+     -var=&quot;bootstrap_standard_critical_artifacts=${BOOTSTRAP_STANDARD_CRITICAL_ARTIFACTS}&quot; \
      -var=&quot;environment_name=${environment_name}&quot; \
      -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
      -var=&quot;application_id_for_base_query=${application_id_for_base_query}&quot; \
@@ -324,6 +331,7 @@ else
      -var=&quot;env_is_open_access=${env_is_open_access}&quot; \
      -var=&quot;include_auth_hpds=${include_auth_hpds}&quot; \
      -var=&quot;include_open_hpds=${include_open_hpds}&quot; \
+     -var=&quot;bootstrap_standard_critical_artifacts=${BOOTSTRAP_STANDARD_CRITICAL_ARTIFACTS}&quot; \
      -var=&quot;environment_name=${environment_name}&quot; \
      -var=&quot;env_staging_subdomain=${env_staging_subdomain}&quot; \
      -var=&quot;application_id_for_base_query=${application_id_for_base_query}&quot; \

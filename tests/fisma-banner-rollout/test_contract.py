@@ -2,6 +2,7 @@
 import json
 import hashlib
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -15,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PIPELINE = ROOT / "jenkins-docker/jobs/PIC-SURE Pipeline Build and Deploy/config.xml"
 LEGACY_PIPELINE = ROOT / "jenkins-docker/jobs/PIC-SURE Pipeline/config.xml"
 DEPLOYMENT_PIPELINE = ROOT / "jenkins-docker/jobs/Deployment Pipeline/config.xml"
+TEARDOWN_REBUILD = ROOT / "jenkins-docker/jobs/Teardown and Rebuild Stage Environment/config.xml"
 CHECK_FOR_UPDATES = ROOT / "jenkins-docker/jobs/Check For Updates/config.xml"
 RETRIEVE_BUILD_SPEC = ROOT / "jenkins-docker/jobs/Retrieve Build Spec/config.xml"
 FRONTEND_BUILD = ROOT / "jenkins-docker/jobs/PIC-SURE Frontend Build/config.xml"
@@ -116,6 +118,63 @@ def run_shell_guard(
 
 
 class JenkinsOrderTest(unittest.TestCase):
+    def test_intervening_standard_writer_cannot_reach_banner_bootstrap(self):
+        legacy = xml_script(LEGACY_PIPELINE)
+        deployment = xml_script(DEPLOYMENT_PIPELINE)
+        teardown = TEARDOWN_REBUILD.read_text(encoding="utf-8")
+        infrastructure = Path(os.environ["BDC_INFRASTRUCTURE_ROOT"])
+        variables = (infrastructure / "app-infrastructure/variables.tf").read_text(encoding="utf-8")
+        wildfly_instance = (infrastructure / "app-infrastructure/wildfly-instance.tf").read_text(encoding="utf-8")
+        httpd_instance = (infrastructure / "app-infrastructure/httpd-instance.tf").read_text(encoding="utf-8")
+        wildfly_user_data = (
+            infrastructure / "app-infrastructure/scripts/wildfly-user_data.sh"
+        ).read_text(encoding="utf-8")
+        httpd_user_data = (
+            infrastructure / "app-infrastructure/scripts/httpd-user_data.sh"
+        ).read_text(encoding="utf-8")
+
+        for writer in ("gateway", "operations", "query", "psama", "frontend"):
+            with self.subTest(writer=writer):
+                self.assertIn(f"branches['{writer}']", legacy)
+
+        bootstrap_parameter = "BOOTSTRAP_STANDARD_CRITICAL_ARTIFACTS"
+        self.assertIn(
+            f"name: '{bootstrap_parameter}', value: !params.BANNER_ROLLOUT",
+            deployment,
+        )
+        self.assertIn(f"<name>{bootstrap_parameter}</name>", teardown)
+        self.assertEqual(3, teardown.count("bootstrap_standard_critical_artifacts="))
+        self.assertIn('variable "bootstrap_standard_critical_artifacts"', variables)
+        self.assertIn("default     = true", variables)
+        for instance in (wildfly_instance, httpd_instance):
+            self.assertIn(
+                "bootstrap_standard_critical_artifacts = tostring(var.bootstrap_standard_critical_artifacts)",
+                instance,
+            )
+
+        guard = re.compile(
+            r'if \[\[ "\$bootstrap_standard_critical_artifacts" == "true" \]\]; then\n.*?\nfi',
+            re.DOTALL,
+        )
+        wildfly_guards = guard.findall(wildfly_user_data)
+        self.assertEqual(2, len(wildfly_guards))
+        guarded_wildfly = "\n".join(wildfly_guards)
+        unguarded_wildfly = guard.sub("", wildfly_user_data)
+        for script in ("operations", "query", "psama", "gateway"):
+            command = f"sudo /opt/picsure/deploy-{script}.sh"
+            with self.subTest(critical_bootstrap=script):
+                self.assertIn(command, guarded_wildfly)
+                self.assertNotIn(command, unguarded_wildfly)
+        for script in ("dictionary", "logging", "visualization"):
+            with self.subTest(unrelated_bootstrap=script):
+                self.assertIn(f"sudo /opt/picsure/deploy-{script}.sh", unguarded_wildfly)
+
+        httpd_guards = guard.findall(httpd_user_data)
+        self.assertEqual(1, len(httpd_guards))
+        self.assertIn("sudo /opt/picsure/deploy-httpd.sh", httpd_guards[0])
+        self.assertIn("confirming gateway resolvable", httpd_guards[0])
+        self.assertNotIn("sudo /opt/picsure/deploy-httpd.sh", guard.sub("", httpd_user_data))
+
     def test_banner_bootstrap_withholds_critical_images_and_uses_one_release_input(self):
         first_script, final_script = xml_system_scripts(CHECK_FOR_UPDATES)
         legacy = xml_script(LEGACY_PIPELINE)
