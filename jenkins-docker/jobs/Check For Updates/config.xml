@@ -48,7 +48,9 @@ Jenkins.instance.getItemByFullName(&quot;Bash_Functions&quot;)
 
 
 def run = Jenkins.instance.getItemByFullName(&quot;PIC-SURE Pipeline&quot;)
-    .scheduleBuild2(0).get()
+    .scheduleBuild2(0, new ParametersAction([
+        new StringParameterValue(&quot;RELEASE_CONTROL_BRANCH&quot;, envVars[&quot;GIT_COMMIT&quot;].trim())
+    ])).get()
 
 if (run.getResult() != Result.SUCCESS) {
     throw new AbortException(&quot;PIC-SURE Pipeline failed&quot;)

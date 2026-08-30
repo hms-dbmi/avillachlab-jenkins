@@ -13,6 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PIPELINE = ROOT / "jenkins-docker/jobs/PIC-SURE Pipeline Build and Deploy/config.xml"
+LEGACY_PIPELINE = ROOT / "jenkins-docker/jobs/PIC-SURE Pipeline/config.xml"
 DEPLOYMENT_PIPELINE = ROOT / "jenkins-docker/jobs/Deployment Pipeline/config.xml"
 CHECK_FOR_UPDATES = ROOT / "jenkins-docker/jobs/Check For Updates/config.xml"
 RETRIEVE_BUILD_SPEC = ROOT / "jenkins-docker/jobs/Retrieve Build Spec/config.xml"
@@ -115,13 +116,67 @@ def run_shell_guard(
 
 
 class JenkinsOrderTest(unittest.TestCase):
+    def test_banner_bootstrap_withholds_critical_images_and_uses_one_release_input(self):
+        first_script, final_script = xml_system_scripts(CHECK_FOR_UPDATES)
+        legacy = xml_script(LEGACY_PIPELINE)
+        deployment = xml_script(DEPLOYMENT_PIPELINE)
+        infrastructure = Path(os.environ["BDC_INFRASTRUCTURE_ROOT"])
+        wildfly_user_data = (
+            infrastructure / "app-infrastructure/scripts/wildfly-user_data.sh"
+        ).read_text(encoding="utf-8")
+        httpd_user_data = (
+            infrastructure / "app-infrastructure/scripts/httpd-user_data.sh"
+        ).read_text(encoding="utf-8")
+
+        exact_input = 'new StringParameterValue("RELEASE_CONTROL_BRANCH", envVars["GIT_COMMIT"].trim())'
+        self.assertIn(exact_input, first_script)
+        self.assertIn("name: 'RELEASE_CONTROL_BRANCH', value: params.RELEASE_CONTROL_BRANCH", legacy)
+        self.assertIn("pipelineBuildId != params.RELEASE_CONTROL_BRANCH", legacy)
+
+        banner_filter = legacy.index("if (!bannerRolloutPresent)")
+        unrelated_wave = legacy.index("branches['hpds']")
+        parallel_call = legacy.index("parallel branches")
+        self.assertLess(banner_filter, unrelated_wave)
+        self.assertLess(unrelated_wave, parallel_call)
+        for critical in ("gateway", "operations", "query", "psama", "frontend"):
+            with self.subTest(critical=critical):
+                self.assertIn(f"branches['{critical}']", legacy[banner_filter:unrelated_wave])
+        for unrelated in ("hpds", "logging", "visualization", "dictionary"):
+            with self.subTest(unrelated=unrelated):
+                self.assertIn(f"branches['{unrelated}']", legacy[unrelated_wave:parallel_call])
+
+        rebuild = deployment.index("stage('Teardown and Rebuild Stage Environment')")
+        immutable = deployment.index("build job: 'PIC-SURE Pipeline Build and Deploy'")
+        self.assertLess(rebuild, immutable)
+        for deploy_script in (
+            "deploy-operations.sh",
+            "deploy-query.sh",
+            "deploy-psama.sh",
+            "deploy-gateway.sh",
+        ):
+            with self.subTest(deploy_script=deploy_script):
+                self.assertIn(deploy_script, wildfly_user_data)
+        self.assertIn("deploy-httpd.sh", httpd_user_data)
+
+        combined = xml_script(PIPELINE)
+        backend = combined.index("build job: 'PIC-SURE Wildfly Stack Deploy'")
+        frontend = combined.index("build job: 'PIC-SURE Frontend Deploy'")
+        self.assertLess(backend, frontend)
+        self.assertIn("BANNER_BACKEND_HEALTH_RECEIPT", combined[frontend:])
+        self.assertIn(exact_input, first_script)
+        self.assertIn(
+            'new StringParameterValue("deployment_git_hash", envVars["GIT_COMMIT"].trim())',
+            final_script,
+        )
+
     def test_normal_path_routes_banner_input_through_deployment_pipeline(self):
         first_script, final_script = xml_system_scripts(CHECK_FOR_UPDATES)
         guard = first_script.index("buildSpec.banner_rollout")
         old_pipeline = first_script.index('getItemByFullName("PIC-SURE Pipeline")')
         self.assertLess(guard, old_pipeline)
         self.assertNotIn("if (!bannerRollout)", first_script)
-        self.assertIn("scheduleBuild2(0).get()", first_script[old_pipeline:])
+        self.assertIn("scheduleBuild2(0, new ParametersAction([", first_script[old_pipeline:])
+        self.assertIn("])).get()", first_script[old_pipeline:])
         deployment = final_script.index('getItemByFullName("Deployment Pipeline")')
         self.assertNotIn('getItemByFullName("PIC-SURE Pipeline Build and Deploy")', final_script)
         self.assertIn("BANNER_ROLLOUT", final_script[deployment:])
