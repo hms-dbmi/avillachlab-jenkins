@@ -51,7 +51,7 @@
   </builders>
   <publishers>
     <hudson.tasks.ArtifactArchiver>
-      <artifacts>build-spec.json, pipeline_git_commit.txt</artifacts>
+      <artifacts>build-spec.json, pipeline_git_commit.txt, banner-rollout-attestation.json</artifacts>
       <allowEmptyArchive>false</allowEmptyArchive>
       <onlyIfSuccessful>false</onlyIfSuccessful>
       <fingerprint>false</fingerprint>

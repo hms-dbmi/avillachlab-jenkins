@@ -38,6 +38,16 @@ D-Bus race conditions with other wildfly-host containers.</description>
           <name>BANNER_ROLLOUT_TUPLE_SHA256</name>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>BANNER_ROLLBACK</name>
+          <description>Recreate PSAMA only after a PSAMA_ALLOWED rollback attestation.</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>BANNER_ROLLBACK_ATTESTATION_JSON</name>
+          <description>Machine-checkable rollback state. Do not include secrets.</description>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -56,7 +66,9 @@ D-Bus race conditions with other wildfly-host containers.</description>
           [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_PSAMA&apos;, value: true],
           [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_DICTIONARY&apos;, value: false],
           [$class: &apos;BooleanParameterValue&apos;, name: &apos;BANNER_ROLLOUT&apos;, value: params.BANNER_ROLLOUT],
-          [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_TUPLE_SHA256&apos;, value: params.BANNER_ROLLOUT_TUPLE_SHA256]
+          [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_TUPLE_SHA256&apos;, value: params.BANNER_ROLLOUT_TUPLE_SHA256],
+          [$class: &apos;BooleanParameterValue&apos;, name: &apos;BANNER_ROLLBACK&apos;, value: params.BANNER_ROLLBACK],
+          [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLBACK_ATTESTATION_JSON&apos;, value: params.BANNER_ROLLBACK_ATTESTATION_JSON]
         ]
       }
     }

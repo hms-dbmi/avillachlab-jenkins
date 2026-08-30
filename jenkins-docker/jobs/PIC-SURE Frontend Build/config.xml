@@ -59,17 +59,18 @@ set -euo pipefail
 : &quot;${TARGET_STACK:?TARGET_STACK is required}&quot;
 : &quot;${S3_BUCKET_NAME:?S3_BUCKET_NAME is required}&quot;
 
-GIT_BRANCH_SHORT=`echo ${GIT_BRANCH} | cut -d &quot;/&quot; -f 2` 
-GIT_COMMIT_SHORT=`echo ${GIT_COMMIT} | cut -c1-7`
+GIT_BRANCH_SHORT=$(echo &quot;${GIT_BRANCH}&quot; | awk -F/ &apos;{print $NF}&apos;)
+GIT_COMMIT_SHORT=$(echo &quot;${GIT_COMMIT}&quot; | cut -c1-7)
 
-aws s3api get-object --bucket $stack_s3_bucket --key &quot;configs/pic-sure-frontend/bdc.env&quot; .env
-aws s3api get-object --bucket $stack_s3_bucket --key &quot;configs/pic-sure-frontend/configuration.json&quot; configuration.json
+aws s3api get-object --bucket &quot;${S3_BUCKET_NAME}&quot; --key &quot;configs/pic-sure-frontend/bdc.env&quot; .env
+aws s3api get-object --bucket &quot;${S3_BUCKET_NAME}&quot; --key &quot;configs/pic-sure-frontend/configuration.json&quot; configuration.json
 
 cp -f configuration.json ./src/lib/assets/configuration.json
 
-docker build --no-cache --load -f Dockerfile --build-arg THEME=${THEME} -t hms-dbmi/pic-sure-frontend:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}_${TARGET_STACK} .
-docker save hms-dbmi/pic-sure-frontend:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}_${TARGET_STACK} | gzip &gt; pic-sure-frontend.tar.gz
-aws s3 --sse=AES256 cp pic-sure-frontend.tar.gz s3://$S3_BUCKET_NAME/$TARGET_STACK/containers/pic-sure-frontend.tar.gz
+frontend_image=&quot;hms-dbmi/pic-sure-frontend:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}_${TARGET_STACK}&quot;
+docker build --no-cache --load -f Dockerfile --build-arg THEME=&quot;${THEME}&quot; -t &quot;${frontend_image}&quot; .
+docker save &quot;${frontend_image}&quot; | gzip &gt; pic-sure-frontend.tar.gz
+aws s3 --sse=AES256 cp pic-sure-frontend.tar.gz &quot;s3://${S3_BUCKET_NAME}/${TARGET_STACK}/containers/pic-sure-frontend.tar.gz&quot; --metadata &quot;git-commit=${GIT_COMMIT}&quot;
 </command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>

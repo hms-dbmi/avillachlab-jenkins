@@ -26,9 +26,24 @@
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
-          <name>BANNER_BACKEND_HEALTH_ATTESTATION</name>
-          <description>Set by the combined pipeline only after the backend deployment job returns healthy.</description>
+          <name>BANNER_ROLLOUT_DEPLOYMENT</name>
+          <description>Deployment whose exact tuple was validated by the combined pipeline.</description>
           <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>BANNER_BACKEND_HEALTH_RECEIPT</name>
+          <description>Set by the combined pipeline after the backend aggregate health probe passes.</description>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>BANNER_ROLLBACK</name>
+          <description>Use only for the frontend-first rollback path with a validated FRONTEND_ALLOWED attestation.</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>BANNER_ROLLBACK_ATTESTATION_JSON</name>
+          <description>Machine-checkable rollback state. Do not include secrets.</description>
+          <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
@@ -46,15 +61,33 @@
       <command>#!/usr/bin/env bash
 set -euo pipefail
 
+if [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; &amp;&amp; &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot; ]]; then
+  echo &quot;ERROR: forward rollout and rollback modes are mutually exclusive.&quot; &gt;&amp;2
+  exit 2
+fi
+if [[ &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot; ]]; then
+  if [[ -z &quot;${BANNER_ROLLBACK_ATTESTATION_JSON:-}&quot; ]]; then
+    echo &quot;ERROR: frontend rollback requires a FRONTEND_ALLOWED attestation.&quot; &gt;&amp;2
+    exit 2
+  fi
+  rollback_attestation=$(mktemp)
+  trap &apos;rm -f &quot;${rollback_attestation}&quot;&apos; EXIT
+  printf &apos;%s&apos; &quot;${BANNER_ROLLBACK_ATTESTATION_JSON}&quot; &gt; &quot;${rollback_attestation}&quot;
+  python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; \
+    --rollback-attestation &quot;${rollback_attestation}&quot; \
+    --jenkins-source-commit &quot;${JENKINS_SOURCE_COMMIT}&quot; \
+    --required-rollback-stage FRONTEND_ALLOWED
+fi
+
 if [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; ]]; then
-  if [[ ! &quot;${BANNER_ROLLOUT_TUPLE_SHA256:-}&quot; =~ ^[0-9a-f]{64}$ ]]; then
-    echo &quot;ERROR: banner rollout requires an exact validated tuple SHA-256.&quot; &gt;&amp;2
+  if [[ &quot;${BANNER_BACKEND_HEALTH_RECEIPT:-}&quot; != &quot;BACKEND_AGGREGATE_HEALTH_VERIFIED&quot; ]]; then
+    echo &quot;ERROR: banner frontend publication requires the backend health receipt.&quot; &gt;&amp;2
     exit 2
   fi
-  if [[ &quot;${BANNER_BACKEND_HEALTH_ATTESTATION:-}&quot; != &quot;OPERATIONS_GATEWAY_PSAMA_HEALTHY&quot; ]]; then
-    echo &quot;ERROR: banner frontend publication requires verified Operations, Gateway, and PSAMA health.&quot; &gt;&amp;2
-    exit 2
-  fi
+  python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; \
+    --deployment &quot;${BANNER_ROLLOUT_DEPLOYMENT}&quot; \
+    --tuple-sha256 &quot;${BANNER_ROLLOUT_TUPLE_SHA256}&quot; \
+    --jenkins-source-commit &quot;${JENKINS_SOURCE_COMMIT}&quot;
 fi
 
 : &quot;${TARGET_STACK:?TARGET_STACK is required}&quot;
@@ -68,8 +101,8 @@ source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
 # Iterate through the files in the folder and source them
 shopt -s nullglob
 for script_file in &quot;$source_scripts_folder&quot;*.sh; do
-    chmod +x &quot;$script_file&quot;
-    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+    if [ -f &quot;$script_file&quot; ]; then
+        chmod +x &quot;$script_file&quot;
         echo &quot;sourcing $script_file&quot;
         # shellcheck source=/dev/null
         source &quot;$script_file&quot;
@@ -85,6 +118,20 @@ for fn in assume_role wait_for_command reset_role; do
 done
 
 assume_role
+
+frontend_commit=$(aws s3api head-object \
+  --bucket &quot;${stack_s3_bucket}&quot; \
+  --key &quot;${TARGET_STACK}/containers/pic-sure-frontend.tar.gz&quot; \
+  --query &apos;Metadata.&quot;git-commit&quot;&apos; \
+  --output text)
+if [[ &quot;${frontend_commit}&quot; == &quot;7b69aa960ff98f97c1a2d026b7137b0e3dcdf603&quot; &amp;&amp; &quot;${BANNER_ROLLOUT:-false}&quot; != &quot;true&quot; ]]; then
+  echo &quot;ERROR: reviewed banner frontend artifact requires the combined banner pipeline.&quot; &gt;&amp;2
+  exit 2
+fi
+if [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; &amp;&amp; &quot;${frontend_commit}&quot; != &quot;7b69aa960ff98f97c1a2d026b7137b0e3dcdf603&quot; ]]; then
+  echo &quot;ERROR: frontend artifact does not match the reviewed banner commit.&quot; &gt;&amp;2
+  exit 2
+fi
 
 # Download the terraform state file
 echo &quot;Download terraform.tfstate file for $TARGET_STACK stack&quot;

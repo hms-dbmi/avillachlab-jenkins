@@ -2,6 +2,8 @@ provisioning_private_key
 provisioning_private_key.pem
 provisioning-private-key
 provisioning-private-key.pem
+__pycache__/
+*.py[cod]
 .terraform/
 .project
 terraform.tfstate.backup

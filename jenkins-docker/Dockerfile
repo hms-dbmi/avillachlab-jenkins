@@ -16,6 +16,7 @@ ARG JENKINS_JOBS_DIR
 ARG PKCS12_FILE
 ARG PKCS12_PASS
 ARG GIT_CREDENTIALS_ID=""
+ARG JENKINS_SOURCE_COMMIT
 ARG JENKINS_HTTP_PORT=-1
 ARG JENKINS_HTTPS_PORT=8443
 
@@ -89,6 +90,7 @@ COPY $INIT_GROOVY_DIR /var/jenkins_home/init.groovy.d
 COPY $HUDSON_TASKS_FILE /var/jenkins_home/hudson.tasks.Maven.xml
 COPY $JENKINS_JOBS_DIR /var/jenkins_home/jobs
 COPY scripts/validate-banner-rollout.py /var/jenkins_home/banner-rollout/validate-banner-rollout.py
+COPY scripts/banner-rollout-contract.json /var/jenkins_home/banner-rollout/banner-rollout-contract.json
 COPY $PKCS12_FILE /var/jenkins_home/$PKCS12_FILE
 
 # Render SCM credentialsId placeholder per environment at image build time.
@@ -98,3 +100,4 @@ RUN find /var/jenkins_home/jobs -type f -name config.xml -print0 | \
 # Should set env var at runtime using an entrypoint.
 ENV JENKINS_OPTS="--httpPort=$JENKINS_HTTP_PORT --httpsPort=$JENKINS_HTTPS_PORT --httpsKeyStore=/var/jenkins_home/$PKCS12_FILE --httpsKeyStorePassword=$PKCS12_PASS"
 ENV CASC_JENKINS_CONFIG=/var/jenkins_home/casc_configs/jenkins.yaml
+ENV JENKINS_SOURCE_COMMIT=$JENKINS_SOURCE_COMMIT

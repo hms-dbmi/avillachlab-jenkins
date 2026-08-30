@@ -71,6 +71,21 @@ startup on all enabled containers in parallel.</description>
           <description>Canonical digest emitted by the banner rollout validator.</description>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>BANNER_ROLLOUT_DEPLOYMENT</name>
+          <description>Deployment whose exact tuple was validated by the combined pipeline.</description>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>BANNER_ROLLBACK</name>
+          <description>Use for attested backend or PSAMA rollback stages.</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>BANNER_ROLLBACK_ATTESTATION_JSON</name>
+          <description>Machine-checkable rollback state. Do not include secrets.</description>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -87,15 +102,41 @@ startup on all enabled containers in parallel.</description>
       <command>#!/usr/bin/env bash
 set -euo pipefail
 
-if [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; ]]; then
-  if [[ ! &quot;${BANNER_ROLLOUT_TUPLE_SHA256:-}&quot; =~ ^[0-9a-f]{64}$ ]]; then
-    echo &quot;ERROR: banner rollout requires an exact validated tuple SHA-256.&quot; &gt;&amp;2
+if [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; &amp;&amp; &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot; ]]; then
+  echo &quot;ERROR: forward rollout and rollback modes are mutually exclusive.&quot; &gt;&amp;2
+  exit 2
+fi
+if [[ &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot; ]]; then
+  if [[ -z &quot;${BANNER_ROLLBACK_ATTESTATION_JSON:-}&quot; ]]; then
+    echo &quot;ERROR: banner rollback requires an operator attestation.&quot; &gt;&amp;2
     exit 2
   fi
+  if [[ &quot;${DEPLOY_OPERATIONS:-false}&quot; == &quot;true&quot; &amp;&amp; &quot;${DEPLOY_GATEWAY:-false}&quot; == &quot;true&quot; &amp;&amp; &quot;${DEPLOY_PSAMA:-false}&quot; != &quot;true&quot; ]]; then
+    required_rollback_stage=BACKEND_ALLOWED
+  elif [[ &quot;${DEPLOY_OPERATIONS:-false}&quot; != &quot;true&quot; &amp;&amp; &quot;${DEPLOY_GATEWAY:-false}&quot; != &quot;true&quot; &amp;&amp; &quot;${DEPLOY_PSAMA:-false}&quot; == &quot;true&quot; ]]; then
+    required_rollback_stage=PSAMA_ALLOWED
+  else
+    echo &quot;ERROR: rollback must deploy Operations and Gateway together, or recreate PSAMA alone afterward.&quot; &gt;&amp;2
+    exit 2
+  fi
+  rollback_attestation=$(mktemp)
+  trap &apos;rm -f &quot;${rollback_attestation}&quot;&apos; EXIT
+  printf &apos;%s&apos; &quot;${BANNER_ROLLBACK_ATTESTATION_JSON}&quot; &gt; &quot;${rollback_attestation}&quot;
+  python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; \
+    --rollback-attestation &quot;${rollback_attestation}&quot; \
+    --jenkins-source-commit &quot;${JENKINS_SOURCE_COMMIT}&quot; \
+    --required-rollback-stage &quot;${required_rollback_stage}&quot;
+fi
+
+if [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; ]]; then
   if [[ &quot;${DEPLOY_OPERATIONS:-false}&quot; != &quot;true&quot; || &quot;${DEPLOY_PSAMA:-false}&quot; != &quot;true&quot; || &quot;${DEPLOY_GATEWAY:-false}&quot; != &quot;true&quot; ]]; then
     echo &quot;ERROR: banner rollout requires Operations, PSAMA, and Gateway in one backend deployment.&quot; &gt;&amp;2
     exit 2
   fi
+  python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; \
+    --deployment &quot;${BANNER_ROLLOUT_DEPLOYMENT}&quot; \
+    --tuple-sha256 &quot;${BANNER_ROLLOUT_TUPLE_SHA256}&quot; \
+    --jenkins-source-commit &quot;${JENKINS_SOURCE_COMMIT}&quot;
 fi
 
 # -----------------------------
@@ -133,6 +174,33 @@ ENABLE_DEBUG=&quot;${ENABLE_DEBUG:-false}&quot;
 SPRING_PROFILE=&quot;${SPRING_PROFILE:-prod}&quot;
 
 assume_role
+
+banner_backend_seen=false
+for artifact in \
+  &quot;${DEPLOY_OPERATIONS}:pic-sure-operations-service.tar.gz&quot; \
+  &quot;${DEPLOY_PSAMA}:psama.tar.gz&quot; \
+  &quot;${DEPLOY_GATEWAY}:pic-sure-gateway.tar.gz&quot;; do
+  selected=&quot;${artifact%%:*}&quot;
+  object_name=&quot;${artifact#*:}&quot;
+  if [[ &quot;${selected}&quot; != &quot;true&quot; ]]; then
+    continue
+  fi
+  artifact_commit=$(aws s3api head-object \
+    --bucket &quot;${S3_BUCKET_NAME}&quot; \
+    --key &quot;${TARGET_STACK}/containers/${object_name}&quot; \
+    --query &apos;Metadata.&quot;git-commit&quot;&apos; \
+    --output text)
+  if [[ &quot;${artifact_commit}&quot; == &quot;0178bbd2d1753e07dcead77a6d0e8ca37bf76dd8&quot; ]]; then
+    banner_backend_seen=true
+  elif [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; ]]; then
+    echo &quot;ERROR: ${object_name} does not match the reviewed banner backend commit.&quot; &gt;&amp;2
+    exit 2
+  fi
+done
+if [[ &quot;${banner_backend_seen}&quot; == &quot;true&quot; &amp;&amp; &quot;${BANNER_ROLLOUT:-false}&quot; != &quot;true&quot; ]]; then
+  echo &quot;ERROR: reviewed banner backend artifacts require the combined banner pipeline.&quot; &gt;&amp;2
+  exit 2
+fi
 
 # -----------------------------
 # Download terraform state
@@ -253,6 +321,22 @@ done
 if [[ &quot;${failed}&quot; == &quot;true&quot; ]]; then
   echo &quot;ERROR: One or more Spring Boot applications failed to start.&quot;
   exit 1
+fi
+
+if [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; ]]; then
+  # The command substitution runs on the target host through SSM.
+  # shellcheck disable=SC2016
+  health_command=&apos;test &quot;$(curl --fail --silent --show-error http://localhost:8080/system/status)&quot; = &quot;RUNNING&quot;&apos;
+  health_command_json=$(jq -n --arg cmd &quot;${health_command}&quot; &apos;{commands: [$cmd]}&apos;)
+  health_command_id=$(aws ssm send-command \
+    --instance-ids &quot;${wildfly_instance_id}&quot; \
+    --document-name &quot;AWS-RunShellScript&quot; \
+    --comment &quot;Verify Gateway and downstream aggregate health&quot; \
+    --parameters &quot;${health_command_json}&quot; \
+    --timeout-seconds 60 \
+    --query &quot;Command.CommandId&quot; \
+    --output text)
+  wait_for_command &quot;${health_command_id}&quot; &quot;${wildfly_instance_id}&quot;
 fi
 
 echo &quot;All wildfly-host containers started successfully.&quot;

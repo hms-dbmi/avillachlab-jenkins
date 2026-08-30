@@ -122,6 +122,7 @@ docker run --rm \
 {
   echo &quot;GIT_BRANCH_SHORT=$GIT_BRANCH_SHORT&quot;
   echo &quot;GIT_COMMIT_SHORT=$GIT_COMMIT_SHORT&quot;
+  echo &quot;GIT_COMMIT_FULL=$GIT_COMMIT&quot;
 } &gt; build-info.txt
 cat build-info.txt
 
@@ -130,6 +131,7 @@ for m in &quot;${stamp_modules[@]}&quot;; do
   {
     echo &quot;GIT_BRANCH_SHORT=$GIT_BRANCH_SHORT&quot;
     echo &quot;GIT_COMMIT_SHORT=$GIT_COMMIT_SHORT&quot;
+    echo &quot;GIT_COMMIT_FULL=$GIT_COMMIT&quot;
   } &gt; &quot;$(stamp_path &quot;$m&quot;)&quot;
 done
 echo &quot;stamped ${#stamp_modules[@]} module(s) at ${GIT_COMMIT_SHORT}:&quot;

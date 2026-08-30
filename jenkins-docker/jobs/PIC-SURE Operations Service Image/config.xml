@@ -50,6 +50,7 @@ if [ ! -f &quot;$STAMP&quot; ] || ! ls &quot;$MAVEN_WS/$MODULE&quot;/target/pic-
   echo &quot;ERROR: no current artifacts for $MODULE on stack ${TARGET_STACK} -- run &apos;PIC-SURE Maven Build&apos; with MODULES=$MODULE first&quot;
   exit 2
 fi
+# shellcheck source=/dev/null
 . &quot;$STAMP&quot;
 
 docker build --load \
@@ -57,7 +58,7 @@ docker build --load \
   &quot;$MAVEN_WS/services/pic-sure-operations-service/&quot;
 
 docker save &quot;hms-dbmi/pic-sure-operations-service:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}&quot; | gzip &gt; pic-sure-operations-service.tar.gz
-aws s3 --sse=AES256 cp pic-sure-operations-service.tar.gz &quot;s3://$S3_BUCKET_NAME/$TARGET_STACK/containers/pic-sure-operations-service.tar.gz&quot;</command>
+aws s3 --sse=AES256 cp pic-sure-operations-service.tar.gz &quot;s3://$S3_BUCKET_NAME/$TARGET_STACK/containers/pic-sure-operations-service.tar.gz&quot; --metadata &quot;git-commit=${GIT_COMMIT_FULL}&quot;</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>

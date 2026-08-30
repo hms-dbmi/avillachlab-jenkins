@@ -39,6 +39,7 @@ import hudson.model.*
 import groovy.json.JsonSlurper;
 
 def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/Check For Updates/build-spec.json&apos;));
+def bannerRollout = buildSpec.banner_rollout != null
 
 def envVars= Hudson.instance.getItem(&quot;Check For Updates&quot;).lastBuild.properties.get(&quot;envVars&quot;);
 
@@ -46,11 +47,13 @@ Jenkins.instance.getItemByFullName(&quot;Bash_Functions&quot;)
 .scheduleBuild2(0).get()
 
 
-def run = Jenkins.instance.getItemByFullName(&quot;PIC-SURE Pipeline&quot;)
-.scheduleBuild2(0).get()
+if (!bannerRollout) {
+    def run = Jenkins.instance.getItemByFullName(&quot;PIC-SURE Pipeline&quot;)
+        .scheduleBuild2(0).get()
 
-if (run.getResult() != Result.SUCCESS) {
-    throw new AbortException(&quot;PIC-SURE Pipeline failed&quot;)
+    if (run.getResult() != Result.SUCCESS) {
+        throw new AbortException(&quot;PIC-SURE Pipeline failed&quot;)
+    }
 }
 
 </script>
@@ -101,6 +104,7 @@ import hudson.model.*
 import groovy.json.JsonSlurper;
 
 def buildSpec = new JsonSlurper().parse(new File(&quot;/var/jenkins_home/workspace/Check For Updates/build-spec.json&quot;));
+def bannerRollout = buildSpec.banner_rollout != null
 
 def envVars= Hudson.instance.getItem(&quot;Check For Updates&quot;).lastBuild.properties.get(&quot;envVars&quot;);
 
@@ -136,13 +140,31 @@ if(new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_to
 
 genomic_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/genomicDatasetKey.txt&quot;).text
 
-Jenkins.instance.getItemByFullName(&quot;Deployment Pipeline&quot;)
-    .scheduleBuild2(0, new ParametersAction([
-        new StringParameterValue(&quot;deployment_git_hash&quot;, envVars[&quot;GIT_COMMIT&quot;].trim()),
-        new StringParameterValue(&quot;dataset_s3_object_key&quot;, dataset_s3_object_key.trim()),
-        new StringParameterValue(&quot;destigmatized_dataset_s3_object_key&quot;, destigmatized_dataset_s3_object_key.trim()),
-        new StringParameterValue(&quot;genomic_dataset_s3_object_key&quot;, genomic_s3_object_key.trim()),
-])).get()
+if (bannerRollout) {
+    def run = Jenkins.instance.getItemByFullName(&quot;PIC-SURE Pipeline Build and Deploy&quot;)
+        .scheduleBuild2(0, new ParametersAction([
+            new StringParameterValue(&quot;RELEASE_CONTROL_BRANCH&quot;, envVars[&quot;GIT_COMMIT&quot;].trim()),
+            new StringParameterValue(&quot;TARGET_STACK&quot;, &quot;staging&quot;),
+            new StringParameterValue(&quot;DATASET_S3_OBJECT_KEY&quot;, dataset_s3_object_key.trim()),
+            new StringParameterValue(&quot;DESTIGMATIZED_DATASET_S3_OBJECT_KEY&quot;, destigmatized_dataset_s3_object_key.trim()),
+            new StringParameterValue(&quot;GENOMIC_DATASET_S3_OBJECT_KEY&quot;, genomic_s3_object_key.trim()),
+            new BooleanParameterValue(&quot;RUN_DATABASE_MIGRATIONS&quot;, true),
+            new BooleanParameterValue(&quot;INCLUDE_PIC_SURE_API&quot;, true),
+            new BooleanParameterValue(&quot;INCLUDE_PIC_SURE_AUTH_MICRO_APP&quot;, true),
+            new BooleanParameterValue(&quot;INCLUDE_PIC_SURE_FRONTEND&quot;, true)
+        ])).get()
+    if (run.getResult() != Result.SUCCESS) {
+        throw new AbortException(&quot;PIC-SURE Pipeline Build and Deploy failed&quot;)
+    }
+} else {
+    Jenkins.instance.getItemByFullName(&quot;Deployment Pipeline&quot;)
+        .scheduleBuild2(0, new ParametersAction([
+            new StringParameterValue(&quot;deployment_git_hash&quot;, envVars[&quot;GIT_COMMIT&quot;].trim()),
+            new StringParameterValue(&quot;dataset_s3_object_key&quot;, dataset_s3_object_key.trim()),
+            new StringParameterValue(&quot;destigmatized_dataset_s3_object_key&quot;, destigmatized_dataset_s3_object_key.trim()),
+            new StringParameterValue(&quot;genomic_dataset_s3_object_key&quot;, genomic_s3_object_key.trim())
+        ])).get()
+}
 
 
 </script>
