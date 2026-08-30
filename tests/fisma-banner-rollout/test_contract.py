@@ -124,6 +124,113 @@ def run_shell_guard(
 
 
 class JenkinsOrderTest(unittest.TestCase):
+    def test_ssm_only_guard_recursively_rejects_copied_and_parent_cause_trees(self):
+        guard = xml_system_scripts(AWAIT_INITIALIZATION)[0]
+
+        self.assertIn("collectCauseTree", guard)
+        self.assertIn("collected << nestedCause", guard)
+        self.assertIn("nestedCause instanceof hudson.model.Cause.UpstreamCause", guard)
+        self.assertIn("collected.addAll(collectCauseTree", guard)
+        self.assertIn("cause.upstreamCauses", guard)
+        self.assertIn("upstreamBuild.getCauses()", guard)
+        self.assertIn("copiedCauseTree.isEmpty()", guard)
+        self.assertIn("parentCauseTree.isEmpty()", guard)
+
+    def test_ssm_only_guard_jenkins_shaped_cause_fixtures(self):
+        upstream_class = "hudson.model.Cause$UpstreamCause"
+        replay_class = "org.jenkinsci.plugins.workflow.cps.replay.ReplayCause"
+
+        def upstream(build=41, nested=None):
+            return {
+                "_class": upstream_class,
+                "upstreamProject": "Deployment Pipeline",
+                "upstreamBuild": build,
+                "upstreamCauses": [] if nested is None else nested,
+            }
+
+        def collect_cause_tree(causes):
+            collected = []
+            for cause in causes:
+                collected.append(cause.get("_class"))
+                if cause.get("_class") == upstream_class:
+                    collected.extend(collect_cause_tree(cause.get("upstreamCauses", [])))
+            return collected
+
+        def accepted(downstream_causes, parent):
+            if len(downstream_causes) != 1 or downstream_causes[0].get("_class") != upstream_class:
+                return False
+            cause = downstream_causes[0]
+            if cause["upstreamProject"] != "Deployment Pipeline":
+                return False
+            if collect_cause_tree(cause.get("upstreamCauses", [])):
+                return False
+            if parent is None or not parent["building"] or parent["number"] != cause["upstreamBuild"]:
+                return False
+            if collect_cause_tree(parent.get("causes", [])):
+                return False
+            return parent["banner"] and parent["operation"] == "FORWARD" and parent["contextMatches"]
+
+        valid_parent = {
+            "number": 41,
+            "building": True,
+            "causes": [],
+            "banner": True,
+            "operation": "FORWARD",
+            "contextMatches": True,
+        }
+        fixtures = {
+            "direct": ([], valid_parent, False),
+            "normal_upstream": ([upstream()], valid_parent, True),
+            "nested_replay": (
+                [upstream(nested=[{"_class": replay_class}])],
+                valid_parent,
+                False,
+            ),
+            "replayed_parent": (
+                [upstream()],
+                {**valid_parent, "causes": [{"_class": replay_class}]},
+                False,
+            ),
+            "nested_other_cause": (
+                [upstream(nested=[{"_class": "hudson.model.Cause$UserIdCause"}])],
+                valid_parent,
+                False,
+            ),
+            "parent_nested_other_cause": (
+                [upstream()],
+                {
+                    **valid_parent,
+                    "causes": [
+                        upstream(nested=[{"_class": "hudson.model.Cause$UserIdCause"}])
+                    ],
+                },
+                False,
+            ),
+            "multiple_nesting": (
+                [upstream(nested=[upstream(nested=[{"_class": replay_class}])])],
+                valid_parent,
+                False,
+            ),
+            "parent_multiple_nesting": (
+                [upstream()],
+                {
+                    **valid_parent,
+                    "causes": [
+                        upstream(nested=[upstream(nested=[{"_class": replay_class}])])
+                    ],
+                },
+                False,
+            ),
+            "deleted_parent": ([upstream()], None, False),
+            "stale_parent": ([upstream()], {**valid_parent, "number": 40}, False),
+            "completed_parent": ([upstream()], {**valid_parent, "building": False}, False),
+            "mismatched_context": ([upstream()], {**valid_parent, "contextMatches": False}, False),
+            "matching_valid_parent": ([upstream()], valid_parent, True),
+        }
+        for scenario, (downstream_causes, parent, expected) in fixtures.items():
+            with self.subTest(scenario=scenario):
+                self.assertEqual(expected, accepted(downstream_causes, parent))
+
     def test_ssm_only_await_requires_exact_validated_deployment_upstream(self):
         deployment = xml_script(DEPLOYMENT_PIPELINE)
         await_job = AWAIT_INITIALIZATION.read_text(encoding="utf-8")

@@ -68,6 +68,17 @@
 def parameters = build.getAction(hudson.model.ParametersAction)
 def waitForTargetHealth = parameters?.getParameter(&quot;WAIT_FOR_TARGET_GROUP_HEALTH&quot;)?.value
 if (waitForTargetHealth != null &amp;&amp; !waitForTargetHealth.toString().toBoolean()) {
+    def collectCauseTree
+    collectCauseTree = { causeList -&gt;
+        def collected = []
+        (causeList ?: []).each { nestedCause -&gt;
+            collected &lt;&lt; nestedCause
+            if (nestedCause instanceof hudson.model.Cause.UpstreamCause) {
+                collected.addAll(collectCauseTree(nestedCause.upstreamCauses))
+            }
+        }
+        return collected
+    }
     def causes = build.getCauses()
     def cause = build.getCause(hudson.model.Cause.UpstreamCause)
     def validatedRunId = parameters?.getParameter(&quot;BANNER_VALIDATED_UPSTREAM_RUN_ID&quot;)?.value?.toString()
@@ -80,10 +91,13 @@ if (waitForTargetHealth != null &amp;&amp; !waitForTargetHealth.toString().toBoo
     def upstreamOperation = upstreamParameters?.getParameter(&quot;BANNER_ROLLOUT_OPERATION&quot;)?.value?.toString()
     def upstreamDeploymentCommit = upstreamParameters?.getParameter(&quot;deployment_git_hash&quot;)?.value?.toString()
     def upstreamBannerForward = upstreamBanner != null &amp;&amp; upstreamBanner.toString().toBoolean() &amp;&amp; upstreamOperation == &quot;FORWARD&quot;
+    def copiedCauseTree = cause == null ? [] : collectCauseTree(cause.upstreamCauses)
+    def parentCauseTree = upstreamBuild == null ? [] : collectCauseTree(upstreamBuild.getCauses())
     if (causes.size() != 1 || !(causes[0] instanceof hudson.model.Cause.UpstreamCause) ||
         cause == null || cause.upstreamProject != &quot;Deployment Pipeline&quot; ||
         validatedRunId != &quot;deployment-${cause.upstreamBuild}&quot; ||
         upstreamBuild == null || !upstreamBuild.isBuilding() || !upstreamBannerForward ||
+        !copiedCauseTree.isEmpty() || !parentCauseTree.isEmpty() ||
         !deploymentInput || deploymentInput != upstreamDeploymentCommit ||
         !gitHash || gitHash != validatedInfrastructureCommit) {
         throw new hudson.AbortException(&quot;SSM-only readiness requires the active validated forward Deployment Pipeline run&quot;)
