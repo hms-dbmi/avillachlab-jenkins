@@ -28,6 +28,7 @@ VALIDATOR = ROOT / "jenkins-docker/scripts/validate-banner-rollout.py"
 CONTRACT = ROOT / "jenkins-docker/scripts/banner-rollout-contract.json"
 GROOVY_GUARD_RUNNER = ROOT / "tests/fisma-banner-rollout/run_system_groovy_guard.groovy"
 CHECK_FOR_UPDATES_RUNNER = ROOT / "tests/fisma-banner-rollout/run_check_for_updates_wait.groovy"
+PIPELINE_VALIDATION_RUNNER = ROOT / "tests/fisma-banner-rollout/run_pipeline_validation.groovy"
 CRITICAL_IMAGE_JOBS = (
     ROOT / "jenkins-docker/jobs/PIC-SURE Gateway Image/config.xml",
     ROOT / "jenkins-docker/jobs/PIC-SURE Operations Service Image/config.xml",
@@ -106,8 +107,9 @@ def run_check_for_updates_wait(
     script: str, banner_rollout: bool, child_result: str
 ) -> subprocess.CompletedProcess[str]:
     groovy_jar = Path(os.environ["JENKINS_GROOVY_JAR"])
+    setup_end = script.index("def buildSpec")
     start = script.index("def deploymentFuture")
-    deployment_script = "\n".join(script.splitlines()[:5]) + "\n" + script[start:]
+    deployment_script = script[:setup_end] + script[start:]
     with tempfile.TemporaryDirectory() as temp:
         script_path = Path(temp) / "check-for-updates.groovy"
         script_path.write_text(deployment_script, encoding="utf-8")
@@ -127,6 +129,142 @@ def run_check_for_updates_wait(
             timeout=20,
             check=False,
         )
+
+
+def pipeline_validation_snippet(path: Path, pipeline: str) -> str:
+    script = xml_script(path)
+    if pipeline == "parent":
+        start = script.index("if (banner_rollout_present != params.BANNER_ROLLOUT)")
+        end_marker = (
+            "banner_forward = banner_rollout_present && "
+            "params.BANNER_ROLLOUT_OPERATION == 'FORWARD'"
+        )
+        end = script.index(end_marker, start) + len(end_marker)
+        return script[start:end]
+    if pipeline == "child":
+        start = script.index("if (bannerRolloutPresent) {")
+        stage_marker = "\n    stage('Retrieve Stack')"
+        stage = script.index(stage_marker, start)
+        end = script.rindex("\n          }", start, stage) + len("\n          }")
+        return script[start:end]
+    raise AssertionError(f"Unknown pipeline validation snippet: {pipeline}")
+
+
+def run_pipeline_validation(snippet: str, fixture: dict) -> dict:
+    groovy_jar = Path(os.environ["JENKINS_GROOVY_JAR"])
+    with tempfile.TemporaryDirectory() as temp:
+        workspace = Path(temp)
+        home = workspace / "jenkins-home"
+        banner_home = home / "banner-rollout"
+        banner_home.mkdir(parents=True)
+        shutil.copy2(VALIDATOR, banner_home / "validate-banner-rollout.py")
+        shutil.copy2(CONTRACT, banner_home / "banner-rollout-contract.json")
+        shutil.copy2(Path(fixture["buildSpec"]), workspace / "build-spec.json")
+        runtime_path = banner_home / "aim-ahead-operator-attestation.json"
+        if "runtimeOriginal" in fixture:
+            runtime_path.write_text(fixture["runtimeOriginal"], encoding="utf-8")
+        snippet_path = workspace / "validation.groovy"
+        fixture_path = workspace / "fixture.json"
+        snippet_path.write_text(snippet, encoding="utf-8")
+        runner_fixture = {
+            **fixture,
+            "workspace": str(workspace),
+            "jenkinsHome": str(home),
+            "runtimePath": str(runtime_path),
+        }
+        fixture_path.write_text(json.dumps(runner_fixture), encoding="utf-8")
+        result = subprocess.run(
+            [
+                "java",
+                "-cp",
+                str(groovy_jar),
+                "groovy.ui.GroovyMain",
+                str(PIPELINE_VALIDATION_RUNNER),
+                str(fixture_path),
+                str(snippet_path),
+            ],
+            cwd=workspace,
+            text=True,
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise AssertionError(result.stdout + result.stderr)
+        output = json.loads(result.stdout)
+        output["maliciousEffect"] = bool(
+            fixture.get("maliciousEffect")
+            and Path(fixture["maliciousEffect"]).exists()
+        )
+        return output
+
+
+def banner_validation_fixture(
+    pipeline: str,
+    deployment: str,
+    bucket: str,
+    attestation_json: str = "",
+) -> dict:
+    release_control = Path(os.environ["BDC_RELEASE_CONTROL_ROOT"])
+    infrastructure = Path(os.environ["BDC_INFRASTRUCTURE_ROOT"])
+    if deployment == "BDC":
+        spec_path = release_control / "build-spec.json"
+        release_commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=release_control,
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+        controller = "bdc"
+    else:
+        spec_path = infrastructure / "tests/fisma-banner-rollout/aim-ahead-required-release-input.json"
+        release_commit = "a" * 40
+        controller = "aim-ahead"
+    spec = json.loads(spec_path.read_text(encoding="utf-8"))
+    parent = pipeline == "parent"
+    params = {
+        "BANNER_ROLLOUT": True,
+        "BANNER_EXPECTED_DEPLOYMENT": deployment,
+        "BANNER_EXPECTED_TUPLE_SHA256": spec["banner_rollout"]["tupleSha256"],
+        "BANNER_MANUAL_OPERATOR_MODE": False,
+        "BANNER_ROLLOUT_OPERATION": "FORWARD" if parent else "NON_BANNER_COMPONENTS",
+        "STACK_S3_BUCKET": bucket,
+        "MIGRATIONS_COMPLETED_UPSTREAM": False,
+        "RUN_DATABASE_MIGRATIONS": False,
+        "INCLUDE_PIC_SURE_API": False,
+        "INCLUDE_PIC_SURE_AUTH_MICRO_APP": False,
+        "INCLUDE_PIC_SURE_FRONTEND": False,
+        "BANNER_AIM_ATTESTATION_JSON": attestation_json,
+    }
+    return {
+        "buildSpec": str(spec_path),
+        "bannerRolloutPresent": True,
+        "bannerDeployment": deployment,
+        "bannerTupleSha256": spec["banner_rollout"]["tupleSha256"],
+        "releaseControlCommit": release_commit,
+        "params": params,
+        "env": {
+            "JENKINS_SOURCE_COMMIT": current_jenkins_commit(),
+            "BANNER_CONTROLLER_DEPLOYMENT": controller,
+            "stack_s3_bucket": bucket,
+        },
+        "causes": [],
+    }
+
+
+def fresh_aim_attestation_json() -> str:
+    infrastructure = Path(os.environ["BDC_INFRASTRUCTURE_ROOT"])
+    attestation = json.loads(
+        (
+            infrastructure
+            / "tests/fisma-banner-rollout/fixtures/aim-ahead-completed-attestation.synthetic.json"
+        ).read_text(encoding="utf-8")
+    )
+    attestation["attestedAtUtc"] = datetime.now(timezone.utc).isoformat().replace(
+        "+00:00", "Z"
+    )
+    return json.dumps(attestation, sort_keys=True, separators=(",", ":"))
 
 
 def run_standard_writer(
@@ -746,6 +884,21 @@ class JenkinsOrderTest(unittest.TestCase):
         rejected = run_system_groovy_guard(teardown_guard, direct_teardown)
         self.assertEqual(0, rejected.returncode, rejected.stdout + rejected.stderr)
         self.assertEqual("REJECT", rejected.stdout.strip(), rejected.stderr)
+        wrong_parent_teardown = json.loads(json.dumps(valid_teardown))
+        wrong_parent_teardown["downstream"]["causes"][0]["upstreamProject"] = "Other Pipeline"
+        wrong_parent_teardown["resolveAnyParentProject"] = True
+        rejected = run_system_groovy_guard(teardown_guard, wrong_parent_teardown)
+        self.assertEqual(0, rejected.returncode, rejected.stdout + rejected.stderr)
+        self.assertEqual("REJECT", rejected.stdout.strip(), rejected.stderr)
+        project_comparison = teardown_guard.replace(
+            'cause.upstreamProject != "Deployment Pipeline" ||',
+            "false ||",
+            1,
+        )
+        self.assertNotEqual(teardown_guard, project_comparison)
+        mutated = run_system_groovy_guard(project_comparison, wrong_parent_teardown)
+        self.assertEqual(0, mutated.returncode, mutated.stdout + mutated.stderr)
+        self.assertEqual("ACCEPT", mutated.stdout.strip(), mutated.stderr)
         polarity = teardown_guard.replace(
             "!bootstrapStandard.toString().toBoolean()",
             "bootstrapStandard.toString().toBoolean()",
@@ -1106,6 +1259,129 @@ if (deploymentRun.getResult() != Result.SUCCESS) {
             with self.subTest(stage=stage):
                 self.assertLess(bucket_check, script.index(stage))
 
+    def test_bucket_blocks_execute_before_shell_or_disruptive_effects(self):
+        snippets = {
+            "parent": pipeline_validation_snippet(DEPLOYMENT_PIPELINE, "parent"),
+            "child": pipeline_validation_snippet(PIPELINE, "child"),
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            for pipeline, snippet in snippets.items():
+                with self.subTest(pipeline=pipeline):
+                    effect = Path(temp) / f"{pipeline}-disruptive"
+                    fixture = banner_validation_fixture(pipeline, "BDC", "caller-bucket")
+                    fixture["env"]["stack_s3_bucket"] = "controller-bucket"
+                    fixture["disruptiveEffect"] = str(effect)
+                    result = run_pipeline_validation(snippet, fixture)
+                    self.assertEqual("REJECT", result["status"], result)
+                    self.assertEqual([], result["shellCalls"], result)
+                    self.assertFalse(effect.exists())
+
+    def test_bucket_values_never_enter_parent_or_child_shell_source(self):
+        snippets = {
+            "parent": pipeline_validation_snippet(DEPLOYMENT_PIPELINE, "parent"),
+            "child": pipeline_validation_snippet(PIPELINE, "child"),
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            for pipeline, snippet in snippets.items():
+                with self.subTest(pipeline=pipeline):
+                    malicious_effect = Path(temp) / f"{pipeline}-injected"
+                    hostile = f"synthetic' ; touch '{malicious_effect}' ; #"
+                    fixture = banner_validation_fixture(pipeline, "BDC", hostile)
+                    fixture["maliciousEffect"] = str(malicious_effect)
+                    result = run_pipeline_validation(snippet, fixture)
+                    self.assertEqual("ACCEPT", result["status"], result)
+                    self.assertFalse(result["maliciousEffect"], result)
+                    self.assertEqual(1, len(result["shellCalls"]), result)
+                    shell_call = result["shellCalls"][0]
+                    self.assertNotIn(hostile, shell_call["script"])
+                    self.assertEqual(hostile, shell_call["environment"]["BANNER_ARTIFACT_BUCKET"])
+                    self.assertEqual(
+                        hostile,
+                        shell_call["environment"]["BANNER_CONTROLLER_ARTIFACT_BUCKET"],
+                    )
+
+    def test_aim_runtime_attestation_is_read_once_and_propagated_byte_for_byte(self):
+        parent_snippet = pipeline_validation_snippet(DEPLOYMENT_PIPELINE, "parent")
+        child_snippet = pipeline_validation_snippet(PIPELINE, "child")
+        original = fresh_aim_attestation_json()
+        replacement = '{"replacement":true}'
+
+        parent_fixture = banner_validation_fixture("parent", "AIM-AHEAD", "synthetic-bucket")
+        parent_fixture["runtimeOriginal"] = original
+        parent_fixture["runtimeReplacement"] = replacement
+        parent = run_pipeline_validation(parent_snippet, parent_fixture)
+        self.assertEqual("ACCEPT", parent["status"], parent)
+        self.assertEqual(1, len(parent["reads"]), parent)
+        self.assertEqual(original, parent["propagatedAttestation"])
+        self.assertEqual(original, parent["writes"]["aim-ahead-operator-attestation.json"])
+
+        child_fixture = banner_validation_fixture(
+            "child", "AIM-AHEAD", "synthetic-bucket", parent["propagatedAttestation"]
+        )
+        child_fixture["params"].update(
+            {
+                "BANNER_ROLLOUT_OPERATION": "FORWARD",
+                "MIGRATIONS_COMPLETED_UPSTREAM": True,
+                "RUN_DATABASE_MIGRATIONS": True,
+                "INCLUDE_PIC_SURE_API": True,
+                "INCLUDE_PIC_SURE_AUTH_MICRO_APP": True,
+                "INCLUDE_PIC_SURE_FRONTEND": True,
+            }
+        )
+        child_fixture["causes"] = [{"upstreamProject": "Deployment Pipeline"}]
+        child_fixture["runtimeOriginal"] = replacement
+        child = run_pipeline_validation(child_snippet, child_fixture)
+        self.assertEqual("ACCEPT", child["status"], child)
+        self.assertEqual([], child["reads"], child)
+        self.assertEqual(original, child["writes"]["aim-ahead-operator-attestation.json"])
+
+        reread_parent = parent_snippet.replace(
+            "aim_attestation_json = readFile(runtime_attestation)",
+            "aim_attestation_json = readFile(runtime_attestation)\n"
+            "                            aim_attestation_json = readFile(runtime_attestation)",
+            1,
+        )
+        self.assertNotEqual(parent_snippet, reread_parent)
+        mutated_parent = run_pipeline_validation(reread_parent, parent_fixture)
+        self.assertEqual("REJECT", mutated_parent["status"], mutated_parent)
+        self.assertEqual(2, len(mutated_parent["reads"]), mutated_parent)
+
+        runtime_reread = child_snippet.replace(
+            "writeFile file: 'aim-ahead-operator-attestation.json', text: params.BANNER_AIM_ATTESTATION_JSON",
+            "writeFile file: 'aim-ahead-operator-attestation.json', "
+            'text: readFile("${env.JENKINS_HOME}/banner-rollout/aim-ahead-operator-attestation.json")',
+            1,
+        )
+        self.assertNotEqual(child_snippet, runtime_reread)
+        mutated_child = run_pipeline_validation(runtime_reread, child_fixture)
+        self.assertEqual("REJECT", mutated_child["status"], mutated_child)
+        self.assertEqual(1, len(mutated_child["reads"]), mutated_child)
+
+    def test_standalone_aim_non_banner_operation_uses_explicit_snapshot_parameter(self):
+        child_snippet = pipeline_validation_snippet(PIPELINE, "child")
+        attestation = fresh_aim_attestation_json()
+        fixture = banner_validation_fixture(
+            "child", "AIM-AHEAD", "synthetic-bucket", attestation
+        )
+        result = run_pipeline_validation(child_snippet, fixture)
+        self.assertEqual("ACCEPT", result["status"], result)
+        self.assertEqual([], result["reads"], result)
+        self.assertEqual(attestation, result["writes"]["aim-ahead-operator-attestation.json"])
+
+        missing = banner_validation_fixture(
+            "child", "AIM-AHEAD", "synthetic-bucket", ""
+        )
+        rejected = run_pipeline_validation(child_snippet, missing)
+        self.assertEqual("REJECT", rejected["status"], rejected)
+        self.assertEqual([], rejected["reads"], rejected)
+        self.assertEqual([], rejected["shellCalls"], rejected)
+
+        combined = PIPELINE.read_text(encoding="utf-8")
+        parameter = combined.index("<name>BANNER_AIM_ATTESTATION_JSON</name>")
+        description = combined[parameter : parameter + 700]
+        self.assertIn("standalone AIM-AHEAD NON_BANNER_COMPONENTS", description)
+        self.assertIn("Deployment Pipeline snapshot", description)
+
     def test_backend_runs_real_aggregate_health_probe(self):
         shell = xml_shell(WILDFLY)
         logs = shell.index("wait_for_spring_boot_ssm_logs")
@@ -1140,9 +1416,9 @@ class FailClosedStandaloneTest(unittest.TestCase):
         backend_commit = component_commit("backend")
         frontend_commit = component_commit("frontend")
         for job in CRITICAL_IMAGE_JOBS:
-            component_commit = frontend_commit if job == FRONTEND_BUILD else backend_commit
+            reviewed_commit = frontend_commit if job == FRONTEND_BUILD else backend_commit
             with self.subTest(job=job.name):
-                result, effects = run_standard_writer(job, component_commit)
+                result, effects = run_standard_writer(job, reviewed_commit)
                 self.assertEqual(2, result.returncode, result.stdout + result.stderr)
                 self.assertIn("immutable banner rollout namespace", result.stderr)
                 self.assertEqual("", effects)
@@ -1152,7 +1428,7 @@ class FailClosedStandaloneTest(unittest.TestCase):
                     '"${reviewed_component_commit}"', '"not-${reviewed_component_commit}"', 1
                 )
                 self.assertNotEqual(shell, mutation)
-                mutated, mutated_effects = run_standard_writer(job, component_commit, mutation)
+                mutated, mutated_effects = run_standard_writer(job, reviewed_commit, mutation)
                 self.assertNotEqual("", mutated_effects, mutated.stdout + mutated.stderr)
 
     def test_service_wrappers_propagate_banner_mode_to_fail_closed_backend(self):
@@ -1752,21 +2028,46 @@ class ExecutableContractTest(unittest.TestCase):
         self.assertIn("artifact bucket", result.stderr)
 
     def test_explicit_false_is_not_treated_as_an_omitted_incompatible_flag(self):
-        component = subprocess.run(
+        for option in (
+            "--run-database-migrations",
+            "--include-api",
+            "--include-psama",
+            "--include-frontend",
+        ):
+            for spelling in ([option, "false"], [f"{option}=false"]):
+                with self.subTest(option=option, spelling=spelling):
+                    component = subprocess.run(
+                        [
+                            "python3",
+                            str(VALIDATOR),
+                            "--component-commit",
+                            "backend",
+                            *spelling,
+                        ],
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                    )
+                    self.assertEqual(
+                        2, component.returncode, component.stdout + component.stderr
+                    )
+                    self.assertIn("cannot be combined", component.stderr)
+
+        abbreviation = subprocess.run(
             [
                 "python3",
                 str(VALIDATOR),
                 "--component-commit",
                 "backend",
-                "--run-database-migrations",
+                "--include-a",
                 "false",
             ],
             text=True,
             capture_output=True,
             check=False,
         )
-        self.assertEqual(2, component.returncode, component.stdout + component.stderr)
-        self.assertIn("cannot be combined", component.stderr)
+        self.assertEqual(2, abbreviation.returncode, abbreviation.stdout + abbreviation.stderr)
+        self.assertIn("unrecognized arguments", abbreviation.stderr)
 
         tuple_digest = self.bdc_tuple()
         tuple_result = subprocess.run(
@@ -1779,8 +2080,7 @@ class ExecutableContractTest(unittest.TestCase):
                 "BDC",
                 "--jenkins-source-commit",
                 self.current_jenkins_commit(),
-                "--include-frontend",
-                "false",
+                "--include-frontend=false",
             ],
             text=True,
             capture_output=True,

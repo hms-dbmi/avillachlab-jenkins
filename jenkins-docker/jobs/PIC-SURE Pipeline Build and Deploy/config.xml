@@ -121,7 +121,7 @@
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>BANNER_AIM_ATTESTATION_JSON</name>
-          <description>Exact runtime AIM-AHEAD operator attestation propagated by Deployment Pipeline.</description>
+          <description>Exact runtime AIM-AHEAD operator attestation. Parented forward runs accept the Deployment Pipeline snapshot. A standalone AIM-AHEAD NON_BANNER_COMPONENTS run supplies the operator snapshot explicitly and never rereads the runtime file.</description>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
@@ -201,6 +201,11 @@ pipeline {
             if (!(bannerDeployment in [&apos;BDC&apos;, &apos;AIM-AHEAD&apos;])) {
               error(&quot;Unsupported banner rollout deployment: ${bannerDeployment}&quot;)
             }
+            String requestedArtifactBucket = params.STACK_S3_BUCKET?.toString()?.trim()
+            String controllerArtifactBucket = env.stack_s3_bucket?.toString()?.trim()
+            if (!requestedArtifactBucket || !controllerArtifactBucket || requestedArtifactBucket != controllerArtifactBucket) {
+              error(&apos;Artifact bucket must match the controller-bound artifact bucket&apos;)
+            }
             if (params.BANNER_ROLLOUT_OPERATION == &apos;FORWARD&apos;) {
               def upstreamCauses = currentBuild.getBuildCauses(&apos;hudson.model.Cause$UpstreamCause&apos;)
               if (!params.MIGRATIONS_COMPLETED_UPSTREAM || upstreamCauses.size() != 1 || upstreamCauses[0].upstreamProject != &apos;Deployment Pipeline&apos;) {
@@ -215,23 +220,28 @@ pipeline {
               writeFile file: &apos;aim-ahead-operator-attestation.json&apos;, text: params.BANNER_AIM_ATTESTATION_JSON
               aimAttestation = &apos;--attestation aim-ahead-operator-attestation.json&apos;
             }
-            bannerRolloutTupleSha = sh(
-              script: &quot;&quot;&quot;python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; \
-                --deployment &apos;${bannerDeployment}&apos; \
-                --operation &apos;${params.BANNER_ROLLOUT_OPERATION}&apos; \
-                --build-spec build-spec.json \
-                --jenkins-source-commit &apos;${env.JENKINS_SOURCE_COMMIT}&apos; \
-                --release-control-commit &apos;${pipelineBuildId}&apos; \
-                --controller-deployment &apos;${env.BANNER_CONTROLLER_DEPLOYMENT}&apos; \
-                --artifact-bucket &apos;${params.STACK_S3_BUCKET}&apos; \
-                --controller-artifact-bucket &apos;${env.stack_s3_bucket}&apos; \
-                ${aimAttestation} \
-                --run-database-migrations &apos;${params.RUN_DATABASE_MIGRATIONS}&apos; \
-                --include-api &apos;${params.INCLUDE_PIC_SURE_API}&apos; \
-                --include-psama &apos;${params.INCLUDE_PIC_SURE_AUTH_MICRO_APP}&apos; \
-                --include-frontend &apos;${params.INCLUDE_PIC_SURE_FRONTEND}&apos;&quot;&quot;&quot;,
-              returnStdout: true
-            ).trim()
+            withEnv([
+              &quot;BANNER_ARTIFACT_BUCKET=${requestedArtifactBucket}&quot;,
+              &quot;BANNER_CONTROLLER_ARTIFACT_BUCKET=${controllerArtifactBucket}&quot;
+            ]) {
+              bannerRolloutTupleSha = sh(
+                script: &quot;&quot;&quot;python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; \
+                  --deployment &apos;${bannerDeployment}&apos; \
+                  --operation &apos;${params.BANNER_ROLLOUT_OPERATION}&apos; \
+                  --build-spec build-spec.json \
+                  --jenkins-source-commit &apos;${env.JENKINS_SOURCE_COMMIT}&apos; \
+                  --release-control-commit &apos;${pipelineBuildId}&apos; \
+                  --controller-deployment &apos;${env.BANNER_CONTROLLER_DEPLOYMENT}&apos; \
+                  --artifact-bucket &quot;\${BANNER_ARTIFACT_BUCKET}&quot; \
+                  --controller-artifact-bucket &quot;\${BANNER_CONTROLLER_ARTIFACT_BUCKET}&quot; \
+                  ${aimAttestation} \
+                  --run-database-migrations &apos;${params.RUN_DATABASE_MIGRATIONS}&apos; \
+                  --include-api &apos;${params.INCLUDE_PIC_SURE_API}&apos; \
+                  --include-psama &apos;${params.INCLUDE_PIC_SURE_AUTH_MICRO_APP}&apos; \
+                  --include-frontend &apos;${params.INCLUDE_PIC_SURE_FRONTEND}&apos;&quot;&quot;&quot;,
+                returnStdout: true
+              ).trim()
+            }
           }
         }
       }

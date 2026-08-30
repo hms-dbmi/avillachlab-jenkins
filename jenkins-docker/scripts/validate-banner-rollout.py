@@ -377,7 +377,8 @@ def validate_rollback_attestation(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(allow_abbrev=False)
+    option_not_supplied = object()
     parser.add_argument("--build-spec", type=Path)
     parser.add_argument("--attestation", type=Path)
     parser.add_argument("--rollback-attestation", type=Path)
@@ -392,19 +393,22 @@ def main() -> int:
     parser.add_argument("--artifact-bucket")
     parser.add_argument("--controller-artifact-bucket")
     parser.add_argument("--target-stack")
-    parser.add_argument("--run-database-migrations", type=parse_bool)
-    parser.add_argument("--include-api", type=parse_bool)
-    parser.add_argument("--include-psama", type=parse_bool)
-    parser.add_argument("--include-frontend", type=parse_bool)
+    parser.add_argument(
+        "--run-database-migrations", type=parse_bool, default=option_not_supplied
+    )
+    parser.add_argument("--include-api", type=parse_bool, default=option_not_supplied)
+    parser.add_argument("--include-psama", type=parse_bool, default=option_not_supplied)
+    parser.add_argument("--include-frontend", type=parse_bool, default=option_not_supplied)
     args = parser.parse_args()
-    provided_options = {value for value in sys.argv[1:] if value.startswith("--")}
-    selection_options = {
-        "--run-database-migrations",
-        "--include-api",
-        "--include-psama",
-        "--include-frontend",
-    }
-    selections_provided = bool(provided_options & selection_options)
+    selections_provided = any(
+        value is not option_not_supplied
+        for value in (
+            args.run_database_migrations,
+            args.include_api,
+            args.include_psama,
+            args.include_frontend,
+        )
+    )
     try:
         if args.component_commit:
             if any(
@@ -497,7 +501,7 @@ def main() -> int:
             "--include-psama": args.include_psama,
             "--include-frontend": args.include_frontend,
         }
-        if any(value is None for value in selections.values()):
+        if any(value is option_not_supplied for value in selections.values()):
             raise ContractError("all four service-selection options are required")
         digest = validate_release_input(
             read_json(args.build_spec),

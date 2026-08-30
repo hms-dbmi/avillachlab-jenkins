@@ -122,7 +122,9 @@ job.getBuildByNumber = { int number ->
     fixture.parent != null && fixture.parent.number as int == number ? upstreamBuild : null
 }
 def jenkins = new Expando()
-jenkins.getItemByFullName = { String name -> name == 'Deployment Pipeline' ? job : null }
+jenkins.getItemByFullName = { String name ->
+    name == 'Deployment Pipeline' || fixture.resolveAnyParentProject ? job : null
+}
 jenkinsClass.instance = jenkins
 Thread.metaClass.getExecutable = { -> downstreamBuild }
 
