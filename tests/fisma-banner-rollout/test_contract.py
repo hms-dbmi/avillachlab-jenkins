@@ -73,8 +73,10 @@ def xml_shells(path: Path) -> list[str]:
 
 
 def run_render_service_config(
-    infrastructure: Path, operations_override: str
-) -> tuple[subprocess.CompletedProcess[str], list[str], str]:
+    infrastructure: Path,
+    operations_override: str,
+    fail_validation_sed: bool = False,
+) -> tuple[subprocess.CompletedProcess[str], list[str], str, list[str]]:
     secret = "synthetic-render-logging-key"
     with tempfile.TemporaryDirectory() as temp:
         root = Path(temp)
@@ -122,11 +124,20 @@ def run_render_service_config(
         grep = fake_bin / "grep"
         grep.write_text(
             "#!/usr/bin/env bash\n"
-            "if [[ \"${1:-}\" == -oP ]]; then sed -n 's/^LOGGING_API_KEY=//p' \"$3\"; exit 0; fi\n"
+            "if [[ \"${1:-}\" == -oP ]]; then /usr/bin/sed -n 's/^LOGGING_API_KEY=//p' \"$3\"; exit 0; fi\n"
             "exec /usr/bin/grep \"$@\"\n",
             encoding="utf-8",
         )
         grep.chmod(0o755)
+        sed = fake_bin / "sed"
+        sed.write_text(
+            "#!/usr/bin/env bash\n"
+            "if [[ \"${FAKE_VALIDATION_SED_FAILURE:-false}\" == true "
+            "&& \"$*\" == *'s/^LOGGING_API_KEY=//p'* ]]; then exit 79; fi\n"
+            "exec /usr/bin/sed \"$@\"\n",
+            encoding="utf-8",
+        )
+        sed.chmod(0o755)
         terraform = fake_bin / "terraform"
         terraform.write_text(
             "#!/usr/bin/env bash\n"
@@ -164,6 +175,7 @@ def run_render_service_config(
             "env_private_dns_name": "synthetic.invalid",
             "include_open_hpds": "false",
             "TMPDIR": str(root),
+            "FAKE_VALIDATION_SED_FAILURE": str(fail_validation_sed).lower(),
         }
         result = subprocess.run(
             ["bash", "-c", shell],
@@ -175,7 +187,8 @@ def run_render_service_config(
             check=False,
         )
         recorded = effects.read_text(encoding="utf-8").splitlines() if effects.exists() else []
-        return result, recorded, secret
+        remaining_operations_temps = sorted(path.name for path in root.glob("operations.env.*"))
+        return result, recorded, secret, remaining_operations_temps
 
 
 def xml_system_scripts(path: Path) -> list[str]:
@@ -2272,10 +2285,20 @@ class ExecutableContractTest(unittest.TestCase):
                 "LOGGING_SERVICE_URL=http://pic-sure-logging\n"
                 "LOGGING_API_KEY=wrong-key\n"
             ),
+            "good then wrong URL": (
+                "LOGGING_SERVICE_URL=http://pic-sure-logging\n"
+                "LOGGING_SERVICE_URL=http://wrong-logging\n"
+                "LOGGING_API_KEY=${logging_api_key}\n"
+            ),
+            "wrong then good URL": (
+                "LOGGING_SERVICE_URL=http://wrong-logging\n"
+                "LOGGING_SERVICE_URL=http://pic-sure-logging\n"
+                "LOGGING_API_KEY=${logging_api_key}\n"
+            ),
         }
         for label, override in hostile_overrides.items():
             with self.subTest(label=label):
-                result, effects, secret = run_render_service_config(
+                result, effects, secret, remaining_temps = run_render_service_config(
                     self.infrastructure,
                     override,
                 )
@@ -2286,9 +2309,10 @@ class ExecutableContractTest(unittest.TestCase):
                 self.assertNotIn("success", effects)
                 self.assertNotIn(secret, result.stdout)
                 self.assertNotIn(secret, result.stderr)
+                self.assertEqual([], remaining_temps)
 
     def test_render_accepts_exact_operations_logging_values_without_printing_secret(self):
-        result, effects, secret = run_render_service_config(
+        result, effects, secret, remaining_temps = run_render_service_config(
             self.infrastructure,
             "LOGGING_SERVICE_URL=http://pic-sure-logging\n"
             "LOGGING_API_KEY=${logging_api_key}\n",
@@ -2299,6 +2323,23 @@ class ExecutableContractTest(unittest.TestCase):
         self.assertLess(effects.index("reset-role"), effects.index("success"))
         self.assertNotIn(secret, result.stdout)
         self.assertNotIn(secret, result.stderr)
+        self.assertEqual([], remaining_temps)
+
+    def test_render_validation_abort_removes_the_sensitive_temporary_env(self):
+        result, effects, secret, remaining_temps = run_render_service_config(
+            self.infrastructure,
+            "LOGGING_SERVICE_URL=http://pic-sure-logging\n"
+            "LOGGING_API_KEY=${logging_api_key}\n",
+            fail_validation_sed=True,
+        )
+
+        self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertIn("terraform-apply", effects)
+        self.assertNotIn("reset-role", effects)
+        self.assertNotIn("success", effects)
+        self.assertNotIn(secret, result.stdout)
+        self.assertNotIn(secret, result.stderr)
+        self.assertEqual([], remaining_temps)
 
     def required_selections(self):
         return (

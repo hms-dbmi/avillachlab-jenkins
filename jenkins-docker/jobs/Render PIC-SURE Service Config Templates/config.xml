@@ -183,7 +183,15 @@ resolve_template &quot;configs/query/templates&quot; &quot;query.env.tftpl&quot;
 # the introspection token, the logging key, and the full rendered env contents.
 # Remove it on exit so it never lingers in the browsable Jenkins workspace.
 tfstate_dir=&quot;$PWD&quot;
-trap &apos;rm -f &quot;$tfstate_dir&quot;/terraform.tfstate &quot;$tfstate_dir&quot;/terraform.tfstate.backup&apos; EXIT
+rendered_operations_env=
+cleanup_sensitive_render_files() {
+  if [ -n &quot;$rendered_operations_env&quot; ]; then
+    rm -f -- &quot;$rendered_operations_env&quot; 2&gt;/dev/null || true
+  fi
+  rm -f &quot;$tfstate_dir&quot;/terraform.tfstate &quot;$tfstate_dir&quot;/terraform.tfstate.backup \
+    2&gt;/dev/null || true
+}
+trap cleanup_sensitive_render_files EXIT
 
 terraform init -input=false
 
@@ -215,11 +223,13 @@ if ! aws s3 cp \
   exit 1
 fi
 
-logging_url_count=$(grep -Fxc &apos;LOGGING_SERVICE_URL=http://pic-sure-logging&apos; \
-  &quot;$rendered_operations_env&quot; || true)
+logging_url_count=$(grep -c &apos;^LOGGING_SERVICE_URL=&apos; &quot;$rendered_operations_env&quot; || true)
 logging_key_count=$(grep -c &apos;^LOGGING_API_KEY=&apos; &quot;$rendered_operations_env&quot; || true)
+rendered_logging_service_url=$(sed -n &apos;s/^LOGGING_SERVICE_URL=//p&apos; \
+  &quot;$rendered_operations_env&quot;)
 rendered_logging_api_key=$(sed -n &apos;s/^LOGGING_API_KEY=//p&apos; &quot;$rendered_operations_env&quot;)
 if [ &quot;$logging_url_count&quot; -ne 1 ] \
+  || [ &quot;$rendered_logging_service_url&quot; != &quot;http://pic-sure-logging&quot; ] \
   || [ &quot;$logging_key_count&quot; -ne 1 ] \
   || [ -z &quot;$rendered_logging_api_key&quot; ] \
   || [ &quot;$rendered_logging_api_key&quot; != &quot;$logging_api_key&quot; ]; then
