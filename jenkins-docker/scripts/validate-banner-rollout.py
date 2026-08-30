@@ -28,7 +28,7 @@ EXPECTED_COMPONENTS = {
     "infrastructure": {
         "repository": "https://github.com/hms-dbmi/pic-sure-bdc-infrastructure.git",
         "ref": "pic_sure_api_rewrite",
-        "commit": "c18c56a4aeaf7b75a1f4feb4bc19c5c09a29c7c1",
+        "commit": "d10cecdeb89f14f8c672a81347ffa70d9b001ab3",
     },
     "migrationsParity": {
         "repository": "https://github.com/hms-dbmi/PIC-SURE-Migrations.git",

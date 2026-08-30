@@ -2168,6 +2168,65 @@ class ExecutableContractTest(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
         self.assertRegex(result.stdout.strip(), r"^[0-9a-f]{64}$")
 
+    def test_validator_accepts_logging_capable_executable_infrastructure(self):
+        spec = json.loads((self.release_control / "build-spec.json").read_text(encoding="utf-8"))
+        logging_commit = "d10cecdeb89f14f8c672a81347ffa70d9b001ab3"
+        spec["infrastructure_git_hash"] = logging_commit
+        spec["banner_rollout"]["components"]["infrastructure"]["commit"] = logging_commit
+        components = spec["banner_rollout"]["components"]
+        payload = {"deployment": "BDC", "components": components}
+        spec["banner_rollout"]["tupleSha256"] = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        with tempfile.NamedTemporaryFile("w", suffix=".json") as handle:
+            json.dump(spec, handle)
+            handle.flush()
+            result = self.validate("BDC", Path(handle.name), *self.required_selections())
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+    def test_reviewed_executable_infrastructure_contains_operations_logging_wiring(self):
+        logging_commit = "d10cecdeb89f14f8c672a81347ffa70d9b001ab3"
+        validator = VALIDATOR.read_text(encoding="utf-8")
+        self.assertIn(f'"commit": "{logging_commit}"', validator)
+        for relative, required in (
+            (
+                "app-infrastructure/template-renderer/templates/operations.env.tftpl",
+                ("LOGGING_SERVICE_URL=http://pic-sure-logging", "LOGGING_API_KEY=${logging_api_key}"),
+            ),
+            (
+                "app-infrastructure/template-renderer/main.tf",
+                ("logging_api_key              = var.logging_api_key",),
+            ),
+        ):
+            with self.subTest(relative=relative):
+                result = subprocess.run(
+                    ["git", "show", f"{logging_commit}:{relative}"],
+                    cwd=self.infrastructure,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                for value in required:
+                    self.assertIn(value, result.stdout)
+
+    def test_previous_executable_infrastructure_lacks_operations_logging_wiring(self):
+        previous = "c18c56a4aeaf7b75a1f4feb4bc19c5c09a29c7c1"
+        result = subprocess.run(
+            [
+                "git",
+                "show",
+                f"{previous}:app-infrastructure/template-renderer/templates/operations.env.tftpl",
+            ],
+            cwd=self.infrastructure,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertNotIn("LOGGING_SERVICE_URL", result.stdout)
+        self.assertNotIn("LOGGING_API_KEY", result.stdout)
+
     def test_aim_ahead_public_tuple_passes_separately(self):
         result = self.validate(
             "AIM-AHEAD",
