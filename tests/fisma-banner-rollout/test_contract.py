@@ -131,8 +131,10 @@ def run_check_for_updates_wait(
         )
 
 
-def pipeline_validation_snippet(path: Path, pipeline: str) -> str:
-    script = xml_script(path)
+def pipeline_validation_snippet(
+    path: Path, pipeline: str, source: str | None = None
+) -> str:
+    script = source if source is not None else xml_script(path)
     if pipeline == "parent":
         start = script.index("if (banner_rollout_present != params.BANNER_ROLLOUT)")
         end_marker = (
@@ -141,13 +143,14 @@ def pipeline_validation_snippet(path: Path, pipeline: str) -> str:
         )
         end = script.index(end_marker, start) + len(end_marker)
         validation = script[start:end]
-        dispatch_start = script.index(
-            "build job: 'PIC-SURE Pipeline Build and Deploy'", end
+        dispatch_stage = script.index(
+            "stage('Banner Rollout: Build, Backend, then Frontend')", end
         )
-        dispatch_end_marker = "\n                    ]"
-        dispatch_end = (
-            script.index(dispatch_end_marker, dispatch_start)
-            + len(dispatch_end_marker)
+        dispatch_script = script.index("script {", dispatch_stage)
+        dispatch_start = script.index("\n", dispatch_script) + 1
+        dispatch_end = script.index(
+            "\n                }",
+            dispatch_start,
         )
         return f"{validation}\n{script[dispatch_start:dispatch_end]}"
     if pipeline == "child":
@@ -1356,6 +1359,118 @@ if (currentBuild.getBuildCauses('hudson.model.Cause$UpstreamCause').size() != 1)
         result = run_pipeline_validation(snippet, fixture)
         self.assertEqual("ACCEPT", result["status"], result)
 
+    def test_forward_banner_child_rejects_every_extra_top_level_cause(self):
+        snippet = pipeline_validation_snippet(PIPELINE, "child")
+        upstream = {
+            "className": "hudson.model.Cause$UpstreamCause",
+            "upstreamProject": "Deployment Pipeline",
+        }
+        extras = (
+            {
+                "className": "hudson.model.Cause$UserIdCause",
+                "userId": "synthetic-operator",
+            },
+            {"className": "com.sonyericsson.rebuild.RebuildCause"},
+            {"className": "org.jenkinsci.plugins.workflow.cps.replay.ReplayCause"},
+            {"className": "synthetic.OtherCause"},
+        )
+
+        def forward_fixture(causes: list[dict], effect: Path | None = None) -> dict:
+            fixture = banner_validation_fixture("child", "BDC", "synthetic-bucket")
+            fixture["params"].update(
+                {
+                    "BANNER_ROLLOUT_OPERATION": "FORWARD",
+                    "MIGRATIONS_COMPLETED_UPSTREAM": True,
+                    "RUN_DATABASE_MIGRATIONS": True,
+                    "INCLUDE_PIC_SURE_API": True,
+                    "INCLUDE_PIC_SURE_AUTH_MICRO_APP": True,
+                    "INCLUDE_PIC_SURE_FRONTEND": True,
+                }
+            )
+            fixture["causes"] = causes
+            if effect is not None:
+                fixture["disruptiveEffect"] = str(effect)
+            return fixture
+
+        with tempfile.TemporaryDirectory() as temp:
+            for index, extra in enumerate(extras):
+                with self.subTest(extra=extra["className"]):
+                    effect = Path(temp) / f"mixed-cause-{index}"
+                    fixture = forward_fixture([upstream, extra], effect)
+                    result = run_pipeline_validation(snippet, fixture)
+                    self.assertEqual("REJECT", result["status"], result)
+                    self.assertEqual([], result["shellCalls"], result)
+                    self.assertFalse(effect.exists())
+
+            manual_parent = {
+                **upstream,
+                "upstreamCauses": [
+                    {
+                        "className": "hudson.model.Cause$UserIdCause",
+                        "userId": "synthetic-operator",
+                    }
+                ],
+            }
+            for scenario, causes, expected in (
+                ("trusted_automated_parent", [upstream], "ACCEPT"),
+                ("trusted_manual_parent", [manual_parent], "ACCEPT"),
+                ("direct", [], "REJECT"),
+                (
+                    "wrong_parent",
+                    [{**upstream, "upstreamProject": "Other Pipeline"}],
+                    "REJECT",
+                ),
+            ):
+                with self.subTest(scenario=scenario):
+                    result = run_pipeline_validation(
+                        snippet,
+                        forward_fixture(causes),
+                    )
+                    self.assertEqual(expected, result["status"], result)
+                    if expected == "REJECT":
+                        self.assertEqual([], result["shellCalls"], result)
+
+            mutation = snippet.replace("buildCauses.size() != 1 || ", "", 1)
+            self.assertNotEqual(snippet, mutation)
+            effect = Path(temp) / "cause-guard-mutation"
+            fixture = forward_fixture([upstream, extras[0]], effect)
+            mutated = run_pipeline_validation(mutation, fixture)
+            self.assertEqual("ACCEPT", mutated["status"], mutated)
+            self.assertTrue(effect.exists())
+
+            non_banner = banner_validation_fixture(
+                "child", "BDC", "synthetic-bucket"
+            )
+            non_banner["bannerRolloutPresent"] = False
+            non_banner["causes"] = [upstream, extras[0]]
+            non_banner_result = run_pipeline_validation(snippet, non_banner)
+            self.assertEqual("ACCEPT", non_banner_result["status"], non_banner_result)
+
+    def test_validator_catches_typed_bucket_guard_mismatch_mutations(self):
+        snippets = {
+            "parent": pipeline_validation_snippet(DEPLOYMENT_PIPELINE, "parent"),
+            "child": pipeline_validation_snippet(PIPELINE, "child"),
+        }
+        comparisons = {
+            "parent": "requested_artifact_bucket != controller_artifact_bucket",
+            "child": "requestedArtifactBucket != controllerArtifactBucket",
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            for pipeline, snippet in snippets.items():
+                with self.subTest(pipeline=pipeline):
+                    mutation = snippet.replace(comparisons[pipeline], "false", 1)
+                    self.assertNotEqual(snippet, mutation)
+                    effect = Path(temp) / f"{pipeline}-typed-guard-mutation"
+                    fixture = banner_validation_fixture(
+                        pipeline, "BDC", "requested-bucket"
+                    )
+                    fixture["env"]["stack_s3_bucket"] = "controller-bucket"
+                    fixture["disruptiveEffect"] = str(effect)
+                    result = run_pipeline_validation(mutation, fixture)
+                    self.assertEqual("REJECT", result["status"], result)
+                    self.assertEqual(1, len(result["shellCalls"]), result)
+                    self.assertFalse(effect.exists())
+
     def test_bucket_values_never_enter_parent_or_child_shell_source(self):
         snippets = {
             "parent": pipeline_validation_snippet(DEPLOYMENT_PIPELINE, "parent"),
@@ -1460,6 +1575,34 @@ if (currentBuild.getBuildCauses('hudson.model.Cause$UpstreamCause').size() != 1)
             original,
             mutated_parameters["BANNER_AIM_ATTESTATION_JSON"],
             mutated_dispatch,
+        )
+
+        parent_source = xml_script(DEPLOYMENT_PIPELINE)
+        build_call = "build job: 'PIC-SURE Pipeline Build and Deploy'"
+        late_reread_source = parent_source.replace(
+            build_call,
+            'aim_attestation_json = readFile("${env.JENKINS_HOME}/banner-rollout/'
+            'aim-ahead-operator-attestation.json")\n                    '
+            + build_call,
+            1,
+        )
+        self.assertNotEqual(parent_source, late_reread_source)
+        late_reread_snippet = pipeline_validation_snippet(
+            DEPLOYMENT_PIPELINE,
+            "parent",
+            source=late_reread_source,
+        )
+        late_reread = run_pipeline_validation(late_reread_snippet, parent_fixture)
+        with self.assertRaises(AssertionError):
+            self.assertEqual(1, len(late_reread["reads"]), late_reread)
+        late_parameters = {
+            parameter["name"]: parameter["value"]
+            for parameter in late_reread["scheduledBuilds"][0]["parameters"]
+        }
+        self.assertEqual(
+            replacement,
+            late_parameters["BANNER_AIM_ATTESTATION_JSON"],
+            late_reread,
         )
 
         runtime_reread = child_snippet.replace(

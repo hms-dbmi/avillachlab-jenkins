@@ -164,8 +164,8 @@ pipeline {
                             aim_attestation = &apos;--attestation aim-ahead-operator-attestation.json&apos;
                         }
                         withEnv([
-                            &quot;BANNER_ARTIFACT_BUCKET=${validated_artifact_bucket}&quot;,
-                            &quot;BANNER_CONTROLLER_ARTIFACT_BUCKET=${validated_artifact_bucket}&quot;
+                            &quot;BANNER_ARTIFACT_BUCKET=${requested_artifact_bucket}&quot;,
+                            &quot;BANNER_CONTROLLER_ARTIFACT_BUCKET=${controller_artifact_bucket}&quot;
                         ]) {
                             sh &quot;&quot;&quot;python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; \
                                 --deployment &apos;${banner_deployment}&apos; \

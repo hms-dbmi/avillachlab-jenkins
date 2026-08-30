@@ -212,8 +212,9 @@ pipeline {
             }
             validatedArtifactBucket = controllerArtifactBucket
             if (params.BANNER_ROLLOUT_OPERATION == &apos;FORWARD&apos;) {
+              def buildCauses = currentBuild.getBuildCauses()
               def upstreamCauses = currentBuild.getBuildCauses(&apos;hudson.model.Cause$UpstreamCause&apos;)
-              if (!params.MIGRATIONS_COMPLETED_UPSTREAM || upstreamCauses.size() != 1 || upstreamCauses[0].upstreamProject != &apos;Deployment Pipeline&apos;) {
+              if (buildCauses.size() != 1 || !params.MIGRATIONS_COMPLETED_UPSTREAM || upstreamCauses.size() != 1 || upstreamCauses[0].upstreamProject != &apos;Deployment Pipeline&apos;) {
                 error(&apos;Forward banner rollout requires the exact Deployment Pipeline upstream run&apos;)
               }
             }
@@ -226,8 +227,8 @@ pipeline {
               aimAttestation = &apos;--attestation aim-ahead-operator-attestation.json&apos;
             }
             withEnv([
-              &quot;BANNER_ARTIFACT_BUCKET=${validatedArtifactBucket}&quot;,
-              &quot;BANNER_CONTROLLER_ARTIFACT_BUCKET=${validatedArtifactBucket}&quot;
+              &quot;BANNER_ARTIFACT_BUCKET=${requestedArtifactBucket}&quot;,
+              &quot;BANNER_CONTROLLER_ARTIFACT_BUCKET=${controllerArtifactBucket}&quot;
             ]) {
               bannerRolloutTupleSha = sh(
                 script: &quot;&quot;&quot;python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; \
