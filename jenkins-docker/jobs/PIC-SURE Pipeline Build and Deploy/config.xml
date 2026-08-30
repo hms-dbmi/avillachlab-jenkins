@@ -145,6 +145,49 @@ def parseBuildSpec(String text) {
     ]
 }
 
+@NonCPS
+def requireTrustedBannerParent(def currentBuild) {
+  def collectCauseTree
+  collectCauseTree = { causeList ->
+    def collected = []
+    (causeList ?: []).each { nestedCause ->
+      collected &lt;&lt; nestedCause
+      if (nestedCause instanceof hudson.model.Cause.UpstreamCause) {
+        collected.addAll(collectCauseTree(nestedCause.upstreamCauses))
+      }
+    }
+    return collected
+  }
+  def build = currentBuild.rawBuild
+  def directCauses = build?.getCauses() ?: []
+  def cause = build?.getCause(hudson.model.Cause.UpstreamCause)
+  def parentJob = cause == null ? null : jenkins.model.Jenkins.instance.getItemByFullName(cause.upstreamProject)
+  def upstreamBuild = parentJob == null ? null : parentJob.getBuildByNumber(cause.upstreamBuild)
+  def currentParentBuild = parentJob?.getLastBuild()
+  def upstreamParameters = upstreamBuild?.getAction(hudson.model.ParametersAction)
+  def upstreamBannerValue = upstreamParameters?.getParameter(&apos;BANNER_ROLLOUT&apos;)?.value
+  def upstreamOperation = upstreamParameters?.getParameter(&apos;BANNER_ROLLOUT_OPERATION&apos;)?.value?.toString()
+  def upstreamManualValue = upstreamParameters?.getParameter(&apos;BANNER_MANUAL_OPERATOR_MODE&apos;)?.value
+  def upstreamManualMode = upstreamManualValue != null &amp;&amp; upstreamManualValue.toString().toBoolean()
+  def upstreamBannerForward = upstreamBannerValue != null &amp;&amp; upstreamBannerValue.toString().toBoolean() &amp;&amp; upstreamOperation == &apos;FORWARD&apos;
+  def copiedCauseTree = cause == null ? [] : collectCauseTree(cause.upstreamCauses)
+  def parentCauseTree = upstreamBuild == null ? [] : collectCauseTree(upstreamBuild.getCauses())
+  def copiedManualCauses = copiedCauseTree.findAll { it instanceof hudson.model.Cause.UserIdCause }
+  def parentManualCauses = parentCauseTree.findAll { it instanceof hudson.model.Cause.UserIdCause }
+  def automatedCauseContext = !upstreamManualMode &amp;&amp; copiedCauseTree.isEmpty() &amp;&amp; parentCauseTree.isEmpty()
+  def manualCauseContext = upstreamManualMode &amp;&amp;
+    copiedCauseTree.size() == 1 &amp;&amp; copiedManualCauses.size() == 1 &amp;&amp;
+    parentCauseTree.size() == 1 &amp;&amp; parentManualCauses.size() == 1 &amp;&amp;
+    copiedManualCauses[0].userId &amp;&amp; copiedManualCauses[0].userId == parentManualCauses[0].userId
+  if (directCauses.size() != 1 || !(directCauses[0] instanceof hudson.model.Cause.UpstreamCause) ||
+      cause == null || cause.upstreamProject != &apos;Deployment Pipeline&apos; ||
+      upstreamBuild == null || currentParentBuild == null || currentParentBuild.number != cause.upstreamBuild ||
+      !upstreamBuild.isBuilding() || !upstreamBannerForward ||
+      (!automatedCauseContext &amp;&amp; !manualCauseContext)) {
+    throw new hudson.AbortException(&apos;Banner rollout requires the active trusted Deployment Pipeline parent&apos;)
+  }
+}
+
 def retrieveBuildSpecId = &apos;&apos;
 def build_hashes = [:]
 def infrastructure_git_hash
@@ -168,11 +211,8 @@ pipeline {
     stage(&apos;Verify Supported Banner Entrypoint&apos;) {
       steps {
         script {
-          def causes = currentBuild.getBuildCauses(&apos;hudson.model.Cause$UpstreamCause&apos;)
           if (params.MIGRATIONS_COMPLETED_UPSTREAM) {
-            if (causes.size() != 1 || causes[0].upstreamProject != &apos;Deployment Pipeline&apos;) {
-              error(&apos;MIGRATIONS_COMPLETED_UPSTREAM requires the exact Deployment Pipeline upstream run&apos;)
-            }
+            requireTrustedBannerParent(currentBuild)
           }
           bannerRolloutRunId = &quot;combined-${env.BUILD_NUMBER}&quot;
         }
@@ -212,9 +252,7 @@ pipeline {
             }
             validatedArtifactBucket = controllerArtifactBucket
             if (params.BANNER_ROLLOUT_OPERATION == &apos;FORWARD&apos;) {
-              def buildCauses = currentBuild.getBuildCauses()
-              def upstreamCauses = currentBuild.getBuildCauses(&apos;hudson.model.Cause$UpstreamCause&apos;)
-              if (buildCauses.size() != 1 || !params.MIGRATIONS_COMPLETED_UPSTREAM || upstreamCauses.size() != 1 || upstreamCauses[0].upstreamProject != &apos;Deployment Pipeline&apos;) {
+              if (!params.MIGRATIONS_COMPLETED_UPSTREAM) {
                 error(&apos;Forward banner rollout requires the exact Deployment Pipeline upstream run&apos;)
               }
             }
@@ -425,7 +463,7 @@ pipeline {
 
   }
 }</script>
-    <sandbox>true</sandbox>
+    <sandbox>false</sandbox>
   </definition>
   <triggers/>
   <disabled>false</disabled>

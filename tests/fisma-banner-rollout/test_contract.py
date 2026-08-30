@@ -164,6 +164,29 @@ def pipeline_validation_snippet(
     raise AssertionError(f"Unknown pipeline validation snippet: {pipeline}")
 
 
+def pipeline_entry_parts(path: Path, source: str | None = None) -> tuple[str, str]:
+    script = source if source is not None else xml_script(path)
+    helper_start = script.index("@NonCPS\ndef requireTrustedBannerParent")
+    helper_end = script.index("\ndef retrieveBuildSpecId", helper_start)
+    helper = "import com.cloudbees.groovy.cps.NonCPS\n" + script[helper_start:helper_end]
+    entry_stage = script.index("stage('Verify Supported Banner Entrypoint')")
+    entry_script = script.index("script {", entry_stage)
+    guard_start = script.index("\n", entry_script) + 1
+    guard_end = script.index("\n        }", guard_start)
+    retrieve_stage = script.index("stage('Retrieve Build Spec')", guard_end)
+    retrieve_script = script.index("script {", retrieve_stage)
+    effect_start = script.index("\n", retrieve_script) + 1
+    effect_marker = "retrieveBuildSpecId = result.number"
+    effect_end = script.index(effect_marker, effect_start) + len(effect_marker)
+    guard = script[guard_start:guard_end]
+    return f"{helper}\n{guard}", script[effect_start:effect_end]
+
+
+def pipeline_entry_snippet(path: Path, source: str | None = None) -> str:
+    guard, first_effect = pipeline_entry_parts(path, source)
+    return f"{guard}\n{first_effect}"
+
+
 def run_pipeline_validation(snippet: str, fixture: dict) -> dict:
     groovy_jar = Path(os.environ["JENKINS_GROOVY_JAR"])
     with tempfile.TemporaryDirectory() as temp:
@@ -1148,13 +1171,11 @@ if (deploymentRun.getResult() != Result.SUCCESS) {
         self.assertIn("def retrieveBuildSpecId", script)
 
     def test_forward_banner_combined_job_requires_deployment_pipeline_parent(self):
-        script = xml_script(PIPELINE)
-        banner = script.index("if (bannerRolloutPresent)")
-        validator = script.index("validate-banner-rollout.py", banner)
-        guarded = script[banner:validator]
-        self.assertIn("Deployment Pipeline", guarded)
-        self.assertIn("MIGRATIONS_COMPLETED_UPSTREAM", guarded)
-        self.assertIn("Cause$UpstreamCause", guarded)
+        entry = pipeline_entry_snippet(PIPELINE)
+        self.assertIn("Deployment Pipeline", entry)
+        self.assertIn("MIGRATIONS_COMPLETED_UPSTREAM", entry)
+        self.assertIn("Cause.UpstreamCause", entry)
+        self.assertIn("getBuildByNumber", entry)
 
     def test_backend_health_finishes_before_frontend_publication(self):
         script = xml_script(PIPELINE)
@@ -1360,10 +1381,11 @@ if (currentBuild.getBuildCauses('hudson.model.Cause$UpstreamCause').size() != 1)
         self.assertEqual("ACCEPT", result["status"], result)
 
     def test_forward_banner_child_rejects_every_extra_top_level_cause(self):
-        snippet = pipeline_validation_snippet(PIPELINE, "child")
+        snippet = pipeline_entry_snippet(PIPELINE)
         upstream = {
             "className": "hudson.model.Cause$UpstreamCause",
             "upstreamProject": "Deployment Pipeline",
+            "upstreamBuild": 41,
         }
         extras = (
             {
@@ -1375,76 +1397,211 @@ if (currentBuild.getBuildCauses('hudson.model.Cause$UpstreamCause').size() != 1)
             {"className": "synthetic.OtherCause"},
         )
 
-        def forward_fixture(causes: list[dict], effect: Path | None = None) -> dict:
+        def forward_fixture(
+            causes: list[dict],
+            parent_causes: list[dict] | None = None,
+            manual: bool = False,
+        ) -> dict:
             fixture = banner_validation_fixture("child", "BDC", "synthetic-bucket")
-            fixture["params"].update(
-                {
-                    "BANNER_ROLLOUT_OPERATION": "FORWARD",
-                    "MIGRATIONS_COMPLETED_UPSTREAM": True,
-                    "RUN_DATABASE_MIGRATIONS": True,
-                    "INCLUDE_PIC_SURE_API": True,
-                    "INCLUDE_PIC_SURE_AUTH_MICRO_APP": True,
-                    "INCLUDE_PIC_SURE_FRONTEND": True,
-                }
-            )
+            fixture["params"]["MIGRATIONS_COMPLETED_UPSTREAM"] = True
             fixture["causes"] = causes
-            if effect is not None:
-                fixture["disruptiveEffect"] = str(effect)
+            fixture["parent"] = {
+                "number": 41,
+                "building": True,
+                "causes": parent_causes or [],
+                "parameters": {
+                    "BANNER_ROLLOUT": True,
+                    "BANNER_ROLLOUT_OPERATION": "FORWARD",
+                    "BANNER_MANUAL_OPERATOR_MODE": manual,
+                },
+            }
             return fixture
 
-        with tempfile.TemporaryDirectory() as temp:
-            for index, extra in enumerate(extras):
-                with self.subTest(extra=extra["className"]):
-                    effect = Path(temp) / f"mixed-cause-{index}"
-                    fixture = forward_fixture([upstream, extra], effect)
-                    result = run_pipeline_validation(snippet, fixture)
-                    self.assertEqual("REJECT", result["status"], result)
-                    self.assertEqual([], result["shellCalls"], result)
-                    self.assertFalse(effect.exists())
+        for extra in extras:
+            with self.subTest(extra=extra["className"]):
+                result = run_pipeline_validation(
+                    snippet, forward_fixture([upstream, extra])
+                )
+                self.assertEqual("REJECT", result["status"], result)
+                self.assertEqual([], result["scheduledBuilds"], result)
 
-            manual_parent = {
-                **upstream,
-                "upstreamCauses": [
-                    {
-                        "className": "hudson.model.Cause$UserIdCause",
-                        "userId": "synthetic-operator",
-                    }
-                ],
-            }
-            for scenario, causes, expected in (
-                ("trusted_automated_parent", [upstream], "ACCEPT"),
-                ("trusted_manual_parent", [manual_parent], "ACCEPT"),
-                ("direct", [], "REJECT"),
-                (
-                    "wrong_parent",
-                    [{**upstream, "upstreamProject": "Other Pipeline"}],
-                    "REJECT",
+        manual_cause = {
+            "className": "hudson.model.Cause$UserIdCause",
+            "userId": "synthetic-operator",
+        }
+        manual_parent = {**upstream, "upstreamCauses": [manual_cause]}
+        for scenario, fixture, expected in (
+            ("trusted_automated_parent", forward_fixture([upstream]), "ACCEPT"),
+            (
+                "trusted_manual_parent",
+                forward_fixture([manual_parent], [manual_cause], manual=True),
+                "ACCEPT",
+            ),
+            ("direct", forward_fixture([]), "REJECT"),
+            (
+                "wrong_parent",
+                forward_fixture(
+                    [{**upstream, "upstreamProject": "Other Pipeline"}]
                 ),
-            ):
-                with self.subTest(scenario=scenario):
-                    result = run_pipeline_validation(
-                        snippet,
-                        forward_fixture(causes),
-                    )
-                    self.assertEqual(expected, result["status"], result)
-                    if expected == "REJECT":
-                        self.assertEqual([], result["shellCalls"], result)
+                "REJECT",
+            ),
+        ):
+            with self.subTest(scenario=scenario):
+                result = run_pipeline_validation(snippet, fixture)
+                self.assertEqual(expected, result["status"], result)
+                if expected == "ACCEPT":
+                    self.assertEqual(1, len(result["scheduledBuilds"]), result)
+                else:
+                    self.assertEqual([], result["scheduledBuilds"], result)
 
-            mutation = snippet.replace("buildCauses.size() != 1 || ", "", 1)
-            self.assertNotEqual(snippet, mutation)
-            effect = Path(temp) / "cause-guard-mutation"
-            fixture = forward_fixture([upstream, extras[0]], effect)
-            mutated = run_pipeline_validation(mutation, fixture)
-            self.assertEqual("ACCEPT", mutated["status"], mutated)
-            self.assertTrue(effect.exists())
+        mutation = snippet.replace("directCauses.size() != 1 || ", "", 1)
+        self.assertNotEqual(snippet, mutation)
+        mutated = run_pipeline_validation(
+            mutation, forward_fixture([upstream, extras[0]])
+        )
+        self.assertEqual("ACCEPT", mutated["status"], mutated)
+        self.assertEqual(1, len(mutated["scheduledBuilds"]), mutated)
 
-            non_banner = banner_validation_fixture(
-                "child", "BDC", "synthetic-bucket"
-            )
-            non_banner["bannerRolloutPresent"] = False
-            non_banner["causes"] = [upstream, extras[0]]
-            non_banner_result = run_pipeline_validation(snippet, non_banner)
-            self.assertEqual("ACCEPT", non_banner_result["status"], non_banner_result)
+        non_banner = banner_validation_fixture("child", "BDC", "synthetic-bucket")
+        non_banner["causes"] = [upstream, extras[0]]
+        non_banner_result = run_pipeline_validation(snippet, non_banner)
+        self.assertEqual("ACCEPT", non_banner_result["status"], non_banner_result)
+        self.assertEqual(1, len(non_banner_result["scheduledBuilds"]), non_banner_result)
+
+    def test_complete_banner_entry_guard_is_before_the_first_effect(self):
+        entry = pipeline_entry_snippet(PIPELINE)
+        self.assertIn("getBuildByNumber", entry)
+        self.assertIn("getLastBuild", entry)
+        self.assertEqual("false", ET.parse(PIPELINE).findtext(".//definition/sandbox"))
+        self.assertLess(
+            entry.index("getBuildByNumber"),
+            entry.index("build job: 'Retrieve Build Spec'"),
+        )
+
+    def test_banner_entry_rejects_untrusted_parent_before_effects(self):
+        entry = pipeline_entry_snippet(PIPELINE)
+        upstream = {
+            "className": "hudson.model.Cause$UpstreamCause",
+            "upstreamProject": "Deployment Pipeline",
+            "upstreamBuild": 41,
+        }
+
+        def fixture_for(
+            cause: dict = upstream,
+            *,
+            parent_causes: list[dict] | None = None,
+            parent_exists: bool = True,
+            parent_building: bool = True,
+            last_parent_build: int = 41,
+            manual: bool = False,
+        ) -> dict:
+            fixture = banner_validation_fixture("child", "BDC", "synthetic-bucket")
+            fixture["params"]["MIGRATIONS_COMPLETED_UPSTREAM"] = True
+            fixture["causes"] = [cause]
+            fixture["lastParentBuildNumber"] = last_parent_build
+            if parent_exists:
+                fixture["parent"] = {
+                    "number": 41,
+                    "building": parent_building,
+                    "causes": parent_causes or [],
+                    "parameters": {
+                        "BANNER_ROLLOUT": True,
+                        "BANNER_ROLLOUT_OPERATION": "FORWARD",
+                        "BANNER_MANUAL_OPERATOR_MODE": manual,
+                    },
+                }
+            return fixture
+
+        replay = {
+            "className": "org.jenkinsci.plugins.workflow.cps.replay.ReplayCause"
+        }
+        rebuild = {"className": "com.sonyericsson.rebuild.RebuildCause"}
+        remote = {"className": "hudson.model.Cause$RemoteCause"}
+        timer = {"className": "hudson.triggers.TimerTrigger$TimerTriggerCause"}
+        other = {"className": "synthetic.OtherCause"}
+        operator = {
+            "className": "hudson.model.Cause$UserIdCause",
+            "userId": "synthetic-operator",
+        }
+        second_operator = {**operator, "userId": "different-operator"}
+        blank_operator = {**operator, "userId": ""}
+        scenarios = {
+            "deleted_parent": fixture_for(parent_exists=False),
+            "inactive_parent": fixture_for(parent_building=False),
+            "noncurrent_parent": fixture_for(last_parent_build=42),
+            "copied_nested_replay": fixture_for(
+                {**upstream, "upstreamCauses": [replay]}
+            ),
+            "copied_nested_rebuild": fixture_for(
+                {**upstream, "upstreamCauses": [rebuild]}
+            ),
+            "copied_nested_remote": fixture_for(
+                {**upstream, "upstreamCauses": [remote]}
+            ),
+            "copied_nested_timer": fixture_for(
+                {**upstream, "upstreamCauses": [timer]}
+            ),
+            "copied_nested_other": fixture_for(
+                {**upstream, "upstreamCauses": [other]}
+            ),
+            "copied_nested_mixed": fixture_for(
+                {**upstream, "upstreamCauses": [operator, replay]},
+                parent_causes=[operator],
+                manual=True,
+            ),
+            "parent_nested_replay": fixture_for(parent_causes=[replay]),
+            "parent_nested_rebuild": fixture_for(parent_causes=[rebuild]),
+            "parent_nested_mixed": fixture_for(
+                {**upstream, "upstreamCauses": [operator]},
+                parent_causes=[operator, replay],
+                manual=True,
+            ),
+            "manual_user_mismatch": fixture_for(
+                {**upstream, "upstreamCauses": [operator]},
+                parent_causes=[second_operator],
+                manual=True,
+            ),
+            "manual_blank_user": fixture_for(
+                {**upstream, "upstreamCauses": [blank_operator]},
+                parent_causes=[blank_operator],
+                manual=True,
+            ),
+        }
+        for scenario, fixture in scenarios.items():
+            with self.subTest(scenario=scenario):
+                result = run_pipeline_validation(entry, fixture)
+                self.assertEqual("REJECT", result["status"], result)
+                self.assertEqual([], result["scheduledBuilds"], result)
+
+        nested_fixture = scenarios["copied_nested_replay"]
+        removed = entry.replace("requireTrustedBannerParent(currentBuild)", "true", 1)
+        self.assertNotEqual(entry, removed)
+        removed_result = run_pipeline_validation(removed, nested_fixture)
+        self.assertEqual("ACCEPT", removed_result["status"], removed_result)
+        self.assertEqual(1, len(removed_result["scheduledBuilds"]), removed_result)
+
+        guard, first_effect = pipeline_entry_parts(PIPELINE)
+        reordered_result = run_pipeline_validation(
+            f"{first_effect}\n{guard}", nested_fixture
+        )
+        self.assertEqual("REJECT", reordered_result["status"], reordered_result)
+        self.assertEqual(1, len(reordered_result["scheduledBuilds"]), reordered_result)
+
+        nested_mutation = entry.replace(
+            "(!automatedCauseContext && !manualCauseContext)", "false", 1
+        )
+        self.assertNotEqual(entry, nested_mutation)
+        nested_result = run_pipeline_validation(nested_mutation, nested_fixture)
+        self.assertEqual("ACCEPT", nested_result["status"], nested_result)
+        self.assertEqual(1, len(nested_result["scheduledBuilds"]), nested_result)
+
+        inactive_mutation = entry.replace("!upstreamBuild.isBuilding()", "false", 1)
+        self.assertNotEqual(entry, inactive_mutation)
+        inactive_result = run_pipeline_validation(
+            inactive_mutation, scenarios["inactive_parent"]
+        )
+        self.assertEqual("ACCEPT", inactive_result["status"], inactive_result)
+        self.assertEqual(1, len(inactive_result["scheduledBuilds"]), inactive_result)
 
     def test_validator_catches_typed_bucket_guard_mismatch_mutations(self):
         snippets = {
