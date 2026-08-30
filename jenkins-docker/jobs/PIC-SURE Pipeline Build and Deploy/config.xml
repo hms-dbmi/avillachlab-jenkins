@@ -119,6 +119,11 @@
           <defaultValue>${stack_s3_bucket}</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>BANNER_AIM_ATTESTATION_JSON</name>
+          <description>Exact runtime AIM-AHEAD operator attestation propagated by Deployment Pipeline.</description>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -202,7 +207,14 @@ pipeline {
                 error(&apos;Forward banner rollout requires the exact Deployment Pipeline upstream run&apos;)
               }
             }
-            def aimAttestation = bannerDeployment == &apos;AIM-AHEAD&apos; ? &apos;--attestation banner-rollout-attestation.json&apos; : &apos;&apos;
+            def aimAttestation = &apos;&apos;
+            if (bannerDeployment == &apos;AIM-AHEAD&apos;) {
+              if (!params.BANNER_AIM_ATTESTATION_JSON?.trim()) {
+                error(&apos;AIM-AHEAD requires the exact runtime operator attestation from Deployment Pipeline&apos;)
+              }
+              writeFile file: &apos;aim-ahead-operator-attestation.json&apos;, text: params.BANNER_AIM_ATTESTATION_JSON
+              aimAttestation = &apos;--attestation aim-ahead-operator-attestation.json&apos;
+            }
             bannerRolloutTupleSha = sh(
               script: &quot;&quot;&quot;python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; \
                 --deployment &apos;${bannerDeployment}&apos; \
@@ -211,6 +223,8 @@ pipeline {
                 --jenkins-source-commit &apos;${env.JENKINS_SOURCE_COMMIT}&apos; \
                 --release-control-commit &apos;${pipelineBuildId}&apos; \
                 --controller-deployment &apos;${env.BANNER_CONTROLLER_DEPLOYMENT}&apos; \
+                --artifact-bucket &apos;${params.STACK_S3_BUCKET}&apos; \
+                --controller-artifact-bucket &apos;${env.stack_s3_bucket}&apos; \
                 ${aimAttestation} \
                 --run-database-migrations &apos;${params.RUN_DATABASE_MIGRATIONS}&apos; \
                 --include-api &apos;${params.INCLUDE_PIC_SURE_API}&apos; \

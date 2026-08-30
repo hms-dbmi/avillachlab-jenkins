@@ -27,6 +27,14 @@ QUERY_IMAGE = ROOT / "jenkins-docker/jobs/PIC-SURE HPDS Query Service Image/conf
 VALIDATOR = ROOT / "jenkins-docker/scripts/validate-banner-rollout.py"
 CONTRACT = ROOT / "jenkins-docker/scripts/banner-rollout-contract.json"
 GROOVY_GUARD_RUNNER = ROOT / "tests/fisma-banner-rollout/run_system_groovy_guard.groovy"
+CHECK_FOR_UPDATES_RUNNER = ROOT / "tests/fisma-banner-rollout/run_check_for_updates_wait.groovy"
+CRITICAL_IMAGE_JOBS = (
+    ROOT / "jenkins-docker/jobs/PIC-SURE Gateway Image/config.xml",
+    ROOT / "jenkins-docker/jobs/PIC-SURE Operations Service Image/config.xml",
+    ROOT / "jenkins-docker/jobs/PIC-SURE HPDS Query Service Image/config.xml",
+    ROOT / "jenkins-docker/jobs/PIC-SURE Auth Micro App Image/config.xml",
+    FRONTEND_BUILD,
+)
 
 
 def current_jenkins_commit() -> str:
@@ -92,6 +100,121 @@ def run_system_groovy_guard(guard: str, fixture: dict) -> subprocess.CompletedPr
             timeout=20,
             check=False,
         )
+
+
+def run_check_for_updates_wait(
+    script: str, banner_rollout: bool, child_result: str
+) -> subprocess.CompletedProcess[str]:
+    groovy_jar = Path(os.environ["JENKINS_GROOVY_JAR"])
+    start = script.index("def deploymentFuture")
+    deployment_script = "\n".join(script.splitlines()[:5]) + "\n" + script[start:]
+    with tempfile.TemporaryDirectory() as temp:
+        script_path = Path(temp) / "check-for-updates.groovy"
+        script_path.write_text(deployment_script, encoding="utf-8")
+        return subprocess.run(
+            [
+                "java",
+                "-cp",
+                str(groovy_jar),
+                "groovy.ui.GroovyMain",
+                str(CHECK_FOR_UPDATES_RUNNER),
+                str(script_path),
+                str(banner_rollout).lower(),
+                child_result,
+            ],
+            text=True,
+            capture_output=True,
+            timeout=20,
+            check=False,
+        )
+
+
+def run_standard_writer(
+    path: Path, component_commit: str, shell: str | None = None
+) -> tuple[subprocess.CompletedProcess[str], str]:
+    with tempfile.TemporaryDirectory() as temp:
+        home = Path(temp)
+        (home / "banner-rollout").mkdir()
+        shutil.copy2(VALIDATOR, home / "banner-rollout/validate-banner-rollout.py")
+        shutil.copy2(CONTRACT, home / "banner-rollout/banner-rollout-contract.json")
+        fake_bin = home / "bin"
+        fake_bin.mkdir()
+        effects = home / "effects.log"
+        for command in ("aws", "docker"):
+            executable = fake_bin / command
+            executable.write_text(
+                "#!/usr/bin/env bash\n"
+                f"printf '%s\\n' '{command}' >> \"$FAKE_EFFECTS\"\n"
+                "if [[ \"$1\" == \"save\" ]]; then printf 'synthetic-image'; fi\n"
+                "if [[ \"$1 $2\" == \"s3api get-object\" ]]; then : > \"${@: -1}\"; fi\n"
+                "exit 0\n",
+                encoding="utf-8",
+            )
+            executable.chmod(0o755)
+
+        job_shell = shell if shell is not None else xml_shell(path)
+        job_shell = job_shell.replace("/var/jenkins_home", str(home))
+        env = {
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "FAKE_EFFECTS": str(effects),
+            "JENKINS_HOME": str(home),
+            "JENKINS_SOURCE_COMMIT": current_jenkins_commit(),
+            "BANNER_CONTROLLER_DEPLOYMENT": "bdc",
+            "BANNER_ROLLOUT_RUN_ID": "",
+            "BANNER_ROLLBACK": "false",
+            "BANNER_ROLLBACK_ATTESTATION_JSON": "",
+            "TARGET_STACK": "staging",
+            "S3_BUCKET_NAME": "synthetic-bucket",
+            "THEME": "synthetic",
+            "DATASOURCE_URL": "jdbc:synthetic",
+            "DATASOURCE_USERNAME": "synthetic",
+            "STACK_SPECIFIC_APPLICATION_ID": "synthetic",
+            "GIT_BRANCH": "origin/reviewed",
+            "GIT_COMMIT": component_commit,
+        }
+        if path != FRONTEND_BUILD:
+            module_match = re.search(r'^MODULE="([^"]+)"$', job_shell, re.MULTILINE)
+            if module_match is None:
+                raise AssertionError(f"Missing MODULE in {path}")
+            module = module_match.group(1)
+            maven = home / "workspace/PIC-SURE Maven Build - staging"
+            target = maven / module / "target"
+            target.mkdir(parents=True)
+            (target / "synthetic.jar").write_text("synthetic", encoding="utf-8")
+            build_info = maven / "build-info"
+            build_info.mkdir()
+            (build_info / f"{module.replace('/', '_')}.txt").write_text(
+                f"GIT_COMMIT_FULL={component_commit}\n"
+                f"GIT_COMMIT_SHORT={component_commit[:7]}\n"
+                "GIT_BRANCH_SHORT=reviewed\n",
+                encoding="utf-8",
+            )
+            if "pic-sure-auth-microapp" in module:
+                auth_target = (
+                    maven
+                    / "services/pic-sure-auth-microapp/pic-sure-auth-services/target"
+                )
+                auth_target.mkdir(parents=True, exist_ok=True)
+                (auth_target / "pic-sure-auth-services-synthetic.jar").write_text(
+                    "synthetic", encoding="utf-8"
+                )
+            else:
+                jar_name = {
+                    "services/pic-sure-gateway": "pic-sure-gateway-synthetic.jar",
+                    "services/pic-sure-operations-service": "pic-sure-operations-service-synthetic.jar",
+                    "services/pic-sure-hpds-query-service": "pic-sure-hpds-query-service-synthetic.jar",
+                }[module]
+                (target / jar_name).write_text("synthetic", encoding="utf-8")
+        result = subprocess.run(
+            ["bash", "-c", job_shell],
+            cwd=home,
+            env=env,
+            text=True,
+            capture_output=True,
+            timeout=20,
+            check=False,
+        )
+        return result, effects.read_text(encoding="utf-8") if effects.exists() else ""
 
 
 def run_shell_guard(
@@ -166,7 +289,7 @@ class JenkinsOrderTest(unittest.TestCase):
         _, check_for_updates = xml_system_scripts(CHECK_FOR_UPDATES)
         deployment_call = check_for_updates[
             check_for_updates.index('getItemByFullName("Deployment Pipeline")') :
-            check_for_updates.index("if (bannerRollout)")
+            check_for_updates.index("def deploymentRun")
         ]
         self.assertIn(".scheduleBuild2(0, new ParametersAction([", deployment_call)
         self.assertNotIn("CauseAction", deployment_call)
@@ -533,6 +656,140 @@ class JenkinsOrderTest(unittest.TestCase):
         self.assertIn('getParameter("infrastructure_git_hash")', guard)
         self.assertIn("AbortException", guard)
 
+    def test_all_banner_system_groovy_guards_execute_and_detect_mutations(self):
+        leaf_jobs = (*CRITICAL_IMAGE_JOBS, WILDFLY, FRONTEND)
+        valid_leaf = {
+            "downstream": {
+                "causes": [
+                    {
+                        "type": "upstream",
+                        "upstreamProject": "PIC-SURE Pipeline Build and Deploy",
+                        "upstreamBuild": 17,
+                        "upstreamCauses": [],
+                    }
+                ],
+                "parameters": {"BANNER_ROLLOUT_RUN_ID": "combined-17"},
+            },
+            "parent": None,
+        }
+        direct_leaf = {
+            "downstream": {
+                "causes": [],
+                "parameters": {"BANNER_ROLLOUT_RUN_ID": "combined-17"},
+            },
+            "parent": None,
+        }
+        for job in leaf_jobs:
+            with self.subTest(job=job.name, scenario="valid"):
+                guard = xml_system_scripts(job)[0]
+                valid = run_system_groovy_guard(guard, valid_leaf)
+                self.assertEqual(0, valid.returncode, valid.stdout + valid.stderr)
+                self.assertEqual("ACCEPT", valid.stdout.strip(), valid.stderr)
+            with self.subTest(job=job.name, scenario="direct"):
+                direct = run_system_groovy_guard(guard, direct_leaf)
+                self.assertEqual(0, direct.returncode, direct.stdout + direct.stderr)
+                self.assertEqual("REJECT", direct.stdout.strip(), direct.stderr)
+            with self.subTest(job=job.name, scenario="wrong-parent"):
+                wrong_parent = json.loads(json.dumps(valid_leaf))
+                wrong_parent["downstream"]["causes"][0]["upstreamProject"] = "Other Pipeline"
+                result = run_system_groovy_guard(guard, wrong_parent)
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertEqual("REJECT", result.stdout.strip(), result.stderr)
+            with self.subTest(job=job.name, scenario="polarity-mutation"):
+                mutation = guard.replace("if (rolloutRunId)", "if (!rolloutRunId)", 1)
+                self.assertNotEqual(guard, mutation)
+                result = run_system_groovy_guard(mutation, direct_leaf)
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertEqual("ACCEPT", result.stdout.strip(), result.stderr)
+            with self.subTest(job=job.name, scenario="control-flow-mutation"):
+                mutation = guard.replace("throw new hudson.AbortException", "return // ", 1)
+                self.assertNotEqual(guard, mutation)
+                result = run_system_groovy_guard(mutation, direct_leaf)
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertEqual("ACCEPT", result.stdout.strip(), result.stderr)
+
+        teardown_guard = xml_system_scripts(TEARDOWN_REBUILD)[0]
+        valid_teardown = {
+            "downstream": {
+                "causes": [
+                    {
+                        "type": "upstream",
+                        "upstreamProject": "Deployment Pipeline",
+                        "upstreamBuild": 41,
+                        "upstreamCauses": [],
+                    }
+                ],
+                "parameters": {
+                    "BOOTSTRAP_STANDARD_CRITICAL_ARTIFACTS": False,
+                    "BANNER_VALIDATED_UPSTREAM_RUN_ID": "deployment-41",
+                    "deployment_git_hash": "a" * 40,
+                    "infrastructure_git_hash": "b" * 40,
+                    "BANNER_VALIDATED_INFRASTRUCTURE_COMMIT": "b" * 40,
+                },
+            },
+            "parent": {
+                "number": 41,
+                "building": True,
+                "causes": [],
+                "parameters": {
+                    "BANNER_ROLLOUT": True,
+                    "BANNER_ROLLOUT_OPERATION": "FORWARD",
+                    "deployment_git_hash": "a" * 40,
+                },
+            },
+        }
+        valid = run_system_groovy_guard(teardown_guard, valid_teardown)
+        self.assertEqual(0, valid.returncode, valid.stdout + valid.stderr)
+        self.assertEqual("ACCEPT", valid.stdout.strip(), valid.stderr)
+        direct_teardown = json.loads(json.dumps(valid_teardown))
+        direct_teardown["downstream"]["causes"] = []
+        rejected = run_system_groovy_guard(teardown_guard, direct_teardown)
+        self.assertEqual(0, rejected.returncode, rejected.stdout + rejected.stderr)
+        self.assertEqual("REJECT", rejected.stdout.strip(), rejected.stderr)
+        polarity = teardown_guard.replace(
+            "!bootstrapStandard.toString().toBoolean()",
+            "bootstrapStandard.toString().toBoolean()",
+            1,
+        )
+        mutated = run_system_groovy_guard(polarity, direct_teardown)
+        self.assertEqual(0, mutated.returncode, mutated.stdout + mutated.stderr)
+        self.assertEqual("ACCEPT", mutated.stdout.strip(), mutated.stderr)
+        control_flow = teardown_guard.replace("throw new hudson.AbortException", "return // ", 1)
+        mutated = run_system_groovy_guard(control_flow, direct_teardown)
+        self.assertEqual(0, mutated.returncode, mutated.stdout + mutated.stderr)
+        self.assertEqual("ACCEPT", mutated.stdout.strip(), mutated.stderr)
+
+    def test_check_for_updates_waits_and_propagates_for_both_rollout_modes(self):
+        script = xml_system_scripts(CHECK_FOR_UPDATES)[1]
+        for banner in (False, True):
+            with self.subTest(banner=banner, child="success"):
+                result = run_check_for_updates_wait(script, banner, "SUCCESS")
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertEqual("WAITED", result.stdout.strip(), result.stderr)
+            with self.subTest(banner=banner, child="failure"):
+                result = run_check_for_updates_wait(script, banner, "FAILURE")
+                self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertEqual("REJECT_WAITED", result.stdout.strip(), result.stderr)
+
+        wait_block = """def deploymentRun = deploymentFuture.get()
+if (deploymentRun.getResult() != Result.SUCCESS) {
+    throw new AbortException("Deployment Pipeline failed")
+}"""
+        control_flow = script.replace(
+            wait_block,
+            """if (bannerRollout) {
+    def deploymentRun = deploymentFuture.get()
+    if (deploymentRun.getResult() != Result.SUCCESS) {
+        throw new AbortException("Deployment Pipeline failed")
+    }
+}""",
+            1,
+        )
+        self.assertNotEqual(script, control_flow)
+        mutation = run_check_for_updates_wait(control_flow, False, "SUCCESS")
+        self.assertEqual(0, mutation.returncode, mutation.stdout + mutation.stderr)
+        self.assertEqual("NOT_WAITED", mutation.stdout.strip(), mutation.stderr)
+
     def test_intervening_standard_writer_cannot_reach_banner_bootstrap(self):
         legacy = xml_script(LEGACY_PIPELINE)
         deployment = xml_script(DEPLOYMENT_PIPELINE)
@@ -645,13 +902,14 @@ class JenkinsOrderTest(unittest.TestCase):
 
     def test_normal_path_routes_banner_input_through_deployment_pipeline(self):
         first_script, final_script = xml_system_scripts(CHECK_FOR_UPDATES)
-        guard = first_script.index("buildSpec.banner_rollout")
         old_pipeline = first_script.index('getItemByFullName("PIC-SURE Pipeline")')
-        self.assertLess(guard, old_pipeline)
+        self.assertNotIn("buildSpec.banner_rollout", first_script)
         self.assertNotIn("if (!bannerRollout)", first_script)
         self.assertIn("scheduleBuild2(0, new ParametersAction([", first_script[old_pipeline:])
         self.assertIn("])).get()", first_script[old_pipeline:])
+        guard = final_script.index("buildSpec.banner_rollout")
         deployment = final_script.index('getItemByFullName("Deployment Pipeline")')
+        self.assertLess(guard, deployment)
         self.assertNotIn('getItemByFullName("PIC-SURE Pipeline Build and Deploy")', final_script)
         self.assertIn("BANNER_ROLLOUT", final_script[deployment:])
         self.assertIn("BANNER_ROLLOUT_OPERATION", final_script[deployment:])
@@ -818,7 +1076,7 @@ class JenkinsOrderTest(unittest.TestCase):
         script = xml_script(PIPELINE)
         self.assertIn("validate-banner-rollout.py", script)
         self.assertIn("--jenkins-source-commit", script)
-        self.assertIn("banner-rollout-attestation.json", script)
+        self.assertIn("aim-ahead-operator-attestation.json", script)
         self.assertIn("${aimAttestation}", script)
         for selection in (
             "RUN_DATABASE_MIGRATIONS",
@@ -833,7 +1091,20 @@ class JenkinsOrderTest(unittest.TestCase):
         self.assertIn("BANNER_CONTROLLER_DEPLOYMENT", dockerfile)
         self.assertIn("--controller-deployment", script)
         retrieve = RETRIEVE_BUILD_SPEC.read_text(encoding="utf-8")
-        self.assertIn("banner-rollout-attestation.json", retrieve)
+        self.assertNotIn("banner-rollout-attestation.json", retrieve)
+
+    def test_bucket_is_bound_before_disruptive_banner_stages(self):
+        script = xml_script(DEPLOYMENT_PIPELINE)
+        validation = script.index("stage('Validate Banner Rollout Input')")
+        bucket_check = script.index("--controller-artifact-bucket", validation)
+        for stage in (
+            "stage('Create Auth & Picsure Database Backups')",
+            "stage('Database Migrations')",
+            "stage('Teardown and Rebuild Stage Environment')",
+            "stage('Banner Rollout: Build, Backend, then Frontend')",
+        ):
+            with self.subTest(stage=stage):
+                self.assertLess(bucket_check, script.index(stage))
 
     def test_backend_runs_real_aggregate_health_probe(self):
         shell = xml_shell(WILDFLY)
@@ -856,6 +1127,33 @@ class FailClosedStandaloneTest(unittest.TestCase):
                 self.assertIn("Cause.UpstreamCause", guard)
                 self.assertIn("PIC-SURE Pipeline Build and Deploy", guard)
                 self.assertIn("BANNER_ROLLOUT_RUN_ID", guard)
+
+    def test_reviewed_critical_commits_cannot_reach_standard_writer_side_effects(self):
+        def component_commit(name: str) -> str:
+            return subprocess.run(
+                ["python3", str(VALIDATOR), "--component-commit", name],
+                text=True,
+                capture_output=True,
+                check=True,
+            ).stdout.strip()
+
+        backend_commit = component_commit("backend")
+        frontend_commit = component_commit("frontend")
+        for job in CRITICAL_IMAGE_JOBS:
+            component_commit = frontend_commit if job == FRONTEND_BUILD else backend_commit
+            with self.subTest(job=job.name):
+                result, effects = run_standard_writer(job, component_commit)
+                self.assertEqual(2, result.returncode, result.stdout + result.stderr)
+                self.assertIn("immutable banner rollout namespace", result.stderr)
+                self.assertEqual("", effects)
+
+                shell = xml_shell(job)
+                mutation = shell.replace(
+                    '"${reviewed_component_commit}"', '"not-${reviewed_component_commit}"', 1
+                )
+                self.assertNotEqual(shell, mutation)
+                mutated, mutated_effects = run_standard_writer(job, component_commit, mutation)
+                self.assertNotEqual("", mutated_effects, mutated.stdout + mutated.stderr)
 
     def test_service_wrappers_propagate_banner_mode_to_fail_closed_backend(self):
         for job in (
@@ -1131,6 +1429,10 @@ class ExecutableContractTest(unittest.TestCase):
                 str(spec),
                 "--jenkins-source-commit",
                 self.current_jenkins_commit(),
+                "--artifact-bucket",
+                "synthetic-bucket",
+                "--controller-artifact-bucket",
+                "synthetic-bucket",
                 *deployment_args,
                 *selections,
                 ],
@@ -1218,6 +1520,10 @@ class ExecutableContractTest(unittest.TestCase):
                 ).stdout.strip(),
                 "--controller-deployment",
                 "bdc",
+                "--artifact-bucket",
+                "synthetic-bucket",
+                "--controller-artifact-bucket",
+                "synthetic-bucket",
                 "--run-database-migrations",
                 "false",
                 "--include-api",
@@ -1431,6 +1737,61 @@ class ExecutableContractTest(unittest.TestCase):
         spec = self.infrastructure / "tests/fisma-banner-rollout/aim-ahead-required-release-input.json"
         result = self.validate("AIM-AHEAD", spec, *self.required_selections())
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+    def test_release_input_rejects_wrong_controller_artifact_bucket(self):
+        result = self.validate(
+            "BDC",
+            self.release_control / "build-spec.json",
+            *self.required_selections(),
+            "--artifact-bucket",
+            "wrong-bucket",
+            "--controller-artifact-bucket",
+            "controller-bucket",
+        )
+        self.assertEqual(2, result.returncode, result.stdout + result.stderr)
+        self.assertIn("artifact bucket", result.stderr)
+
+    def test_explicit_false_is_not_treated_as_an_omitted_incompatible_flag(self):
+        component = subprocess.run(
+            [
+                "python3",
+                str(VALIDATOR),
+                "--component-commit",
+                "backend",
+                "--run-database-migrations",
+                "false",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(2, component.returncode, component.stdout + component.stderr)
+        self.assertIn("cannot be combined", component.stderr)
+
+        tuple_digest = self.bdc_tuple()
+        tuple_result = subprocess.run(
+            [
+                "python3",
+                str(VALIDATOR),
+                "--tuple-sha256",
+                tuple_digest,
+                "--deployment",
+                "BDC",
+                "--jenkins-source-commit",
+                self.current_jenkins_commit(),
+                "--include-frontend",
+                "false",
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(2, tuple_result.returncode, tuple_result.stdout + tuple_result.stderr)
+        self.assertIn("cannot be combined", tuple_result.stderr)
+
+    def test_first_check_for_updates_script_has_no_dead_banner_parse(self):
+        first_script = xml_system_scripts(CHECK_FOR_UPDATES)[0]
+        self.assertNotIn("bannerRollout", first_script)
 
     def test_stale_rollback_attestation_is_rejected(self):
         template = json.loads(

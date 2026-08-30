@@ -92,6 +92,7 @@ def banner_tuple_sha256
 def banner_rollout_present = false
 def banner_forward = false
 def release_control_commit
+def aim_attestation_json = &apos;&apos;
 
 pipeline {
     agent any
@@ -143,7 +144,16 @@ pipeline {
                         if (!(banner_deployment in [&apos;BDC&apos;, &apos;AIM-AHEAD&apos;])) {
                             error(&quot;Unsupported banner rollout deployment: ${banner_deployment}&quot;)
                         }
-                        def aim_attestation = banner_deployment == &apos;AIM-AHEAD&apos; ? &apos;--attestation banner-rollout-attestation.json&apos; : &apos;&apos;
+                        def aim_attestation = &apos;&apos;
+                        if (banner_deployment == &apos;AIM-AHEAD&apos;) {
+                            def runtime_attestation = &quot;${env.JENKINS_HOME}/banner-rollout/aim-ahead-operator-attestation.json&quot;
+                            if (!fileExists(runtime_attestation)) {
+                                error(&apos;AIM-AHEAD requires the separate runtime operator attestation&apos;)
+                            }
+                            aim_attestation_json = readFile(runtime_attestation)
+                            writeFile file: &apos;aim-ahead-operator-attestation.json&apos;, text: aim_attestation_json
+                            aim_attestation = &apos;--attestation aim-ahead-operator-attestation.json&apos;
+                        }
                         sh &quot;&quot;&quot;python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; \
                             --deployment &apos;${banner_deployment}&apos; \
                             --operation &apos;${params.BANNER_ROLLOUT_OPERATION}&apos; \
@@ -151,6 +161,8 @@ pipeline {
                             --jenkins-source-commit &apos;${env.JENKINS_SOURCE_COMMIT}&apos; \
                             --release-control-commit &apos;${release_control_commit}&apos; \
                             --controller-deployment &apos;${env.BANNER_CONTROLLER_DEPLOYMENT}&apos; \
+                            --artifact-bucket &apos;${params.STACK_S3_BUCKET}&apos; \
+                            --controller-artifact-bucket &apos;${env.stack_s3_bucket}&apos; \
                             ${aim_attestation} \
                             --run-database-migrations true \
                             --include-api true \
@@ -252,6 +264,7 @@ pipeline {
                         [$class: &apos;StringParameterValue&apos;, name: &apos;DESTIGMATIZED_DATASET_S3_OBJECT_KEY&apos;, value: params.destigmatized_dataset_s3_object_key],
                         [$class: &apos;StringParameterValue&apos;, name: &apos;GENOMIC_DATASET_S3_OBJECT_KEY&apos;, value: params.genomic_dataset_s3_object_key],
                         [$class: &apos;StringParameterValue&apos;, name: &apos;STACK_S3_BUCKET&apos;, value: params.STACK_S3_BUCKET],
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_AIM_ATTESTATION_JSON&apos;, value: aim_attestation_json],
                         [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_OPERATION&apos;, value: params.BANNER_ROLLOUT_OPERATION],
                         [$class: &apos;BooleanParameterValue&apos;, name: &apos;MIGRATIONS_COMPLETED_UPSTREAM&apos;, value: true],
                         [$class: &apos;BooleanParameterValue&apos;, name: &apos;RUN_DATABASE_MIGRATIONS&apos;, value: true],

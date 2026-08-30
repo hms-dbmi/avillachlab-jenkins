@@ -389,12 +389,22 @@ def main() -> int:
     parser.add_argument("--jenkins-source-commit")
     parser.add_argument("--release-control-commit")
     parser.add_argument("--controller-deployment")
+    parser.add_argument("--artifact-bucket")
+    parser.add_argument("--controller-artifact-bucket")
     parser.add_argument("--target-stack")
     parser.add_argument("--run-database-migrations", type=parse_bool)
     parser.add_argument("--include-api", type=parse_bool)
     parser.add_argument("--include-psama", type=parse_bool)
     parser.add_argument("--include-frontend", type=parse_bool)
     args = parser.parse_args()
+    provided_options = {value for value in sys.argv[1:] if value.startswith("--")}
+    selection_options = {
+        "--run-database-migrations",
+        "--include-api",
+        "--include-psama",
+        "--include-frontend",
+    }
+    selections_provided = bool(provided_options & selection_options)
     try:
         if args.component_commit:
             if any(
@@ -409,12 +419,10 @@ def main() -> int:
                     args.release_control_commit,
                     args.controller_deployment,
                     args.target_stack,
-                    args.run_database_migrations,
-                    args.include_api,
-                    args.include_psama,
-                    args.include_frontend,
+                    args.artifact_bucket,
+                    args.controller_artifact_bucket,
                 )
-            ) or args.operation != "FORWARD":
+            ) or selections_provided or args.operation != "FORWARD":
                 raise ContractError("component commit lookup cannot be combined with a release input")
             print(COMPONENT_COMMITS[args.component_commit])
             return 0
@@ -427,12 +435,10 @@ def main() -> int:
                     args.component_commit,
                     args.deployment,
                     args.release_control_commit,
-                    args.run_database_migrations,
-                    args.include_api,
-                    args.include_psama,
-                    args.include_frontend,
+                    args.artifact_bucket,
+                    args.controller_artifact_bucket,
                 )
-            ) or args.operation != "FORWARD":
+            ) or selections_provided or args.operation != "FORWARD":
                 raise ContractError("rollback attestation cannot be combined with a release input")
             if not args.jenkins_source_commit:
                 raise ContractError("--jenkins-source-commit is required with --rollback-attestation")
@@ -457,12 +463,10 @@ def main() -> int:
                     args.release_control_commit,
                     args.controller_deployment,
                     args.target_stack,
-                    args.run_database_migrations,
-                    args.include_api,
-                    args.include_psama,
-                    args.include_frontend,
+                    args.artifact_bucket,
+                    args.controller_artifact_bucket,
                 )
-            ) or args.operation != "FORWARD":
+            ) or selections_provided or args.operation != "FORWARD":
                 raise ContractError("tuple verification cannot be combined with a release input")
             if not args.deployment or not args.jenkins_source_commit:
                 raise ContractError("--deployment and --jenkins-source-commit are required with --tuple-sha256")
@@ -479,6 +483,12 @@ def main() -> int:
             raise ContractError("--deployment is required with --build-spec")
         if not args.jenkins_source_commit:
             raise ContractError("--jenkins-source-commit is required with --build-spec")
+        if not args.artifact_bucket or not args.controller_artifact_bucket:
+            raise ContractError(
+                "--artifact-bucket and --controller-artifact-bucket are required with --build-spec"
+            )
+        if args.artifact_bucket != args.controller_artifact_bucket:
+            raise ContractError("artifact bucket does not match the controller-bound artifact bucket")
         if args.required_rollback_stage or args.target_stack:
             raise ContractError("rollback-only arguments cannot be combined with --build-spec")
         selections = {

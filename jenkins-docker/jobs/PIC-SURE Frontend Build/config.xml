@@ -117,6 +117,12 @@ fi
 GIT_BRANCH_SHORT=$(echo &quot;${GIT_BRANCH}&quot; | awk -F/ &apos;{print $NF}&apos;)
 GIT_COMMIT_SHORT=$(echo &quot;${GIT_COMMIT}&quot; | cut -c1-7)
 
+reviewed_component_commit=$(python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; --component-commit frontend)
+if [[ &quot;${BANNER_ROLLBACK:-false}&quot; != &quot;true&quot; &amp;&amp; -z &quot;${BANNER_ROLLOUT_RUN_ID:-}&quot; &amp;&amp; &quot;${GIT_COMMIT}&quot; == &quot;${reviewed_component_commit}&quot; ]]; then
+  echo &quot;ERROR: reviewed banner commit requires the immutable banner rollout namespace.&quot; &gt;&amp;2
+  exit 2
+fi
+
 aws s3api get-object --bucket &quot;${S3_BUCKET_NAME}&quot; --key &quot;configs/pic-sure-frontend/bdc.env&quot; .env
 aws s3api get-object --bucket &quot;${S3_BUCKET_NAME}&quot; --key &quot;configs/pic-sure-frontend/configuration.json&quot; configuration.json
 

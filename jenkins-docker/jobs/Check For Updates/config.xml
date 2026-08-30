@@ -38,9 +38,6 @@ import hudson.*
 import hudson.model.*
 import groovy.json.JsonSlurper;
 
-def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/Check For Updates/build-spec.json&apos;));
-def bannerRollout = buildSpec.banner_rollout != null
-
 def envVars= Hudson.instance.getItem(&quot;Check For Updates&quot;).lastBuild.properties.get(&quot;envVars&quot;);
 
 Jenkins.instance.getItemByFullName(&quot;Bash_Functions&quot;)
@@ -153,11 +150,9 @@ def deploymentFuture = Jenkins.instance.getItemByFullName(&quot;Deployment Pipel
         new StringParameterValue(&quot;BANNER_EXPECTED_TUPLE_SHA256&quot;, bannerRollout ? buildSpec.banner_rollout.tupleSha256.toString() : &quot;&quot;),
         new StringParameterValue(&quot;STACK_S3_BUCKET&quot;, envVars[&quot;stack_s3_bucket&quot;].trim())
     ]))
-if (bannerRollout) {
-    def deploymentRun = deploymentFuture.get()
-    if (deploymentRun.getResult() != Result.SUCCESS) {
-        throw new AbortException(&quot;Deployment Pipeline failed&quot;)
-    }
+def deploymentRun = deploymentFuture.get()
+if (deploymentRun.getResult() != Result.SUCCESS) {
+    throw new AbortException(&quot;Deployment Pipeline failed&quot;)
 }
 
 

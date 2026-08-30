@@ -113,6 +113,12 @@ fi
 # shellcheck source=/dev/null
 . &quot;$STAMP&quot;
 
+reviewed_component_commit=$(python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; --component-commit backend)
+if [[ &quot;${BANNER_ROLLBACK:-false}&quot; != &quot;true&quot; &amp;&amp; -z &quot;${BANNER_ROLLOUT_RUN_ID:-}&quot; &amp;&amp; &quot;${GIT_COMMIT_FULL}&quot; == &quot;${reviewed_component_commit}&quot; ]]; then
+  echo &quot;ERROR: reviewed banner commit requires the immutable banner rollout namespace.&quot; &gt;&amp;2
+  exit 2
+fi
+
 if [[ &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot; &amp;&amp; &quot;${GIT_COMMIT_FULL}&quot; != &quot;${expected_backend_commit}&quot; ]]; then
   echo &quot;ERROR: Maven artifact commit does not match artifacts.backendCommit in the rollback attestation.&quot; &gt;&amp;2
   exit 2
