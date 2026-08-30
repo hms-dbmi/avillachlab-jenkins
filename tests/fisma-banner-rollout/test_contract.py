@@ -24,6 +24,9 @@ FRONTEND_BUILD = ROOT / "jenkins-docker/jobs/PIC-SURE Frontend Build/config.xml"
 WILDFLY = ROOT / "jenkins-docker/jobs/PIC-SURE Wildfly Stack Deploy/config.xml"
 FRONTEND = ROOT / "jenkins-docker/jobs/PIC-SURE Frontend Deploy/config.xml"
 QUERY_IMAGE = ROOT / "jenkins-docker/jobs/PIC-SURE HPDS Query Service Image/config.xml"
+RENDER_SERVICE_CONFIG = (
+    ROOT / "jenkins-docker/jobs/Render PIC-SURE Service Config Templates/config.xml"
+)
 VALIDATOR = ROOT / "jenkins-docker/scripts/validate-banner-rollout.py"
 CONTRACT = ROOT / "jenkins-docker/scripts/banner-rollout-contract.json"
 GROOVY_GUARD_RUNNER = ROOT / "tests/fisma-banner-rollout/run_system_groovy_guard.groovy"
@@ -67,6 +70,112 @@ def xml_shell(path: Path) -> str:
 def xml_shells(path: Path) -> list[str]:
     root = ET.parse(path).getroot()
     return [node.text for node in root.findall(".//hudson.tasks.Shell/command") if node.text]
+
+
+def run_render_service_config(
+    infrastructure: Path, operations_override: str
+) -> tuple[subprocess.CompletedProcess[str], list[str], str]:
+    secret = "synthetic-render-logging-key"
+    with tempfile.TemporaryDirectory() as temp:
+        root = Path(temp)
+        home = root / "jenkins-home"
+        bash_functions = home / "workspace/Bash_Functions"
+        bash_functions.mkdir(parents=True)
+        effects = root / "effects.log"
+        (bash_functions / "functions.sh").write_text(
+            "assume_role() { printf 'assume-role\\n' >> \"$FAKE_EFFECTS\"; }\n"
+            "reset_role() { printf 'reset-role\\n' >> \"$FAKE_EFFECTS\"; }\n"
+            "fetch_secret() { printf '{\"username\":\"synthetic-user\",\"password\":\"synthetic-password\"}'; }\n"
+            "extract_field() { if [[ \"$2\" == username ]]; then printf 'synthetic-user'; else printf 'synthetic-password'; fi; }\n"
+            "initialize_shared_db_config() { :; }\n"
+            "get_token_by_uuid() { printf 'synthetic-introspection-token'; }\n"
+            "unset_shared_db_config() { :; }\n",
+            encoding="utf-8",
+        )
+
+        workspace = root / "workspace"
+        renderer = workspace / "app-infrastructure/template-renderer"
+        shutil.copytree(infrastructure / "app-infrastructure/template-renderer", renderer)
+        fake_s3 = root / "s3"
+        (fake_s3 / "configs/pic-sure-logging").mkdir(parents=True)
+        (fake_s3 / "configs/pic-sure-logging/logging.env").write_text(
+            f"LOGGING_API_KEY={secret}\n", encoding="utf-8"
+        )
+        override = fake_s3 / "configs/operations/templates/staging/operations.env.tftpl"
+        override.parent.mkdir(parents=True)
+        override.write_text(operations_override, encoding="utf-8")
+
+        fake_bin = root / "bin"
+        fake_bin.mkdir()
+        aws = fake_bin / "aws"
+        aws.write_text(
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            "[[ \"$1 $2\" == 's3 cp' ]] || exit 64\n"
+            "key=${3#s3://*/}\n"
+            "source=$FAKE_S3/$key\n"
+            "if [[ ! -f \"$source\" ]]; then echo 'An error occurred (404)' >&2; exit 1; fi\n"
+            "cp \"$source\" \"$4\"\n",
+            encoding="utf-8",
+        )
+        aws.chmod(0o755)
+        grep = fake_bin / "grep"
+        grep.write_text(
+            "#!/usr/bin/env bash\n"
+            "if [[ \"${1:-}\" == -oP ]]; then sed -n 's/^LOGGING_API_KEY=//p' \"$3\"; exit 0; fi\n"
+            "exec /usr/bin/grep \"$@\"\n",
+            encoding="utf-8",
+        )
+        grep.chmod(0o755)
+        terraform = fake_bin / "terraform"
+        terraform.write_text(
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            "printf 'terraform-%s\\n' \"$1\" >> \"$FAKE_EFFECTS\"\n"
+            "[[ \"$1\" == apply ]] || exit 0\n"
+            "logging_key=\n"
+            "target_stack=\n"
+            "for argument in \"$@\"; do\n"
+            "  case \"$argument\" in\n"
+            "    -var=logging_api_key=*) logging_key=${argument#-var=logging_api_key=} ;;\n"
+            "    -var=target_stack=*) target_stack=${argument#-var=target_stack=} ;;\n"
+            "  esac\n"
+            "done\n"
+            "destination=$FAKE_S3/configs/operations/$target_stack/operations.env\n"
+            "mkdir -p \"$(dirname \"$destination\")\"\n"
+            "sed \"s/\\${logging_api_key}/$logging_key/g\" templates/operations.env.tftpl > \"$destination\"\n",
+            encoding="utf-8",
+        )
+        terraform.chmod(0o755)
+
+        shell = xml_shell(RENDER_SERVICE_CONFIG) + "\nprintf 'success\\n' >> \"$FAKE_EFFECTS\"\n"
+        environment = {
+            **os.environ,
+            "PATH": f"{fake_bin}:{os.environ['PATH']}",
+            "FAKE_EFFECTS": str(effects),
+            "FAKE_S3": str(fake_s3),
+            "JENKINS_HOME": str(home),
+            "TARGET_STACK": "staging",
+            "database_app_user_secret_name": "synthetic-app-user",
+            "database_host_address": "synthetic-db:3306",
+            "application_id_for_base_query": "synthetic-app",
+            "stack_s3_bucket": "synthetic-bucket",
+            "environment_name": "synthetic",
+            "env_private_dns_name": "synthetic.invalid",
+            "include_open_hpds": "false",
+            "TMPDIR": str(root),
+        }
+        result = subprocess.run(
+            ["bash", "-c", shell],
+            cwd=workspace,
+            env=environment,
+            text=True,
+            capture_output=True,
+            timeout=20,
+            check=False,
+        )
+        recorded = effects.read_text(encoding="utf-8").splitlines() if effects.exists() else []
+        return result, recorded, secret
 
 
 def xml_system_scripts(path: Path) -> list[str]:
@@ -2146,6 +2255,50 @@ class ExecutableContractTest(unittest.TestCase):
     def bdc_tuple(self):
         spec = json.loads((self.release_control / "build-spec.json").read_text(encoding="utf-8"))
         return spec["banner_rollout"]["tupleSha256"]
+
+    def test_render_rejects_hostile_operations_override_before_reset_or_success(self):
+        hostile_overrides = {
+            "missing": "SPRING_DATASOURCE_URL=jdbc:synthetic\n",
+            "wrong URL": (
+                "LOGGING_SERVICE_URL=http://wrong-logging\n"
+                "LOGGING_API_KEY=${logging_api_key}\n"
+            ),
+            "duplicate key": (
+                "LOGGING_SERVICE_URL=http://pic-sure-logging\n"
+                "LOGGING_API_KEY=${logging_api_key}\n"
+                "LOGGING_API_KEY=${logging_api_key}\n"
+            ),
+            "mismatched key": (
+                "LOGGING_SERVICE_URL=http://pic-sure-logging\n"
+                "LOGGING_API_KEY=wrong-key\n"
+            ),
+        }
+        for label, override in hostile_overrides.items():
+            with self.subTest(label=label):
+                result, effects, secret = run_render_service_config(
+                    self.infrastructure,
+                    override,
+                )
+
+                self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertIn("terraform-apply", effects)
+                self.assertNotIn("reset-role", effects)
+                self.assertNotIn("success", effects)
+                self.assertNotIn(secret, result.stdout)
+                self.assertNotIn(secret, result.stderr)
+
+    def test_render_accepts_exact_operations_logging_values_without_printing_secret(self):
+        result, effects, secret = run_render_service_config(
+            self.infrastructure,
+            "LOGGING_SERVICE_URL=http://pic-sure-logging\n"
+            "LOGGING_API_KEY=${logging_api_key}\n",
+        )
+
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertLess(effects.index("terraform-apply"), effects.index("reset-role"))
+        self.assertLess(effects.index("reset-role"), effects.index("success"))
+        self.assertNotIn(secret, result.stdout)
+        self.assertNotIn(secret, result.stderr)
 
     def required_selections(self):
         return (
