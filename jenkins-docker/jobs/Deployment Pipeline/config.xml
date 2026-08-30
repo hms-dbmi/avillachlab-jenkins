@@ -205,7 +205,7 @@ pipeline {
         stage(&apos;Await Initialization&apos;) {
             steps {
                 script {
-                    def result = build job: &apos;Await Initialization&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack], [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: infrastructure_git_hash], [$class: &apos;BooleanParameterValue&apos;, name: &apos;WAIT_FOR_TARGET_GROUP_HEALTH&apos;, value: !banner_forward]]
+                    def result = build job: &apos;Await Initialization&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack], [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: infrastructure_git_hash], [$class: &apos;StringParameterValue&apos;, name: &apos;deployment_git_hash&apos;, value: params.deployment_git_hash], [$class: &apos;BooleanParameterValue&apos;, name: &apos;WAIT_FOR_TARGET_GROUP_HEALTH&apos;, value: !banner_forward], [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_VALIDATED_UPSTREAM_RUN_ID&apos;, value: banner_forward ? &quot;deployment-${env.BUILD_NUMBER}&quot; : &apos;&apos;], [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_VALIDATED_INFRASTRUCTURE_COMMIT&apos;, value: banner_forward ? infrastructure_git_hash : &apos;&apos;]]
                 }
             }
         }

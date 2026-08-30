@@ -124,6 +124,57 @@ def run_shell_guard(
 
 
 class JenkinsOrderTest(unittest.TestCase):
+    def test_ssm_only_await_requires_exact_validated_deployment_upstream(self):
+        deployment = xml_script(DEPLOYMENT_PIPELINE)
+        await_job = AWAIT_INITIALIZATION.read_text(encoding="utf-8")
+        guards = xml_system_scripts(AWAIT_INITIALIZATION)
+
+        for parameter in (
+            "BANNER_VALIDATED_UPSTREAM_RUN_ID",
+            "deployment_git_hash",
+            "BANNER_VALIDATED_INFRASTRUCTURE_COMMIT",
+        ):
+            with self.subTest(parameter=parameter):
+                self.assertIn(parameter, deployment)
+                self.assertIn(parameter, await_job)
+
+        self.assertEqual(1, len(guards))
+        guard = guards[0]
+        self.assertIn("WAIT_FOR_TARGET_GROUP_HEALTH", guard)
+        self.assertIn("!waitForTargetHealth.toString().toBoolean()", guard)
+        self.assertIn("Cause.UpstreamCause", guard)
+        self.assertIn("causes.size() != 1", guard)
+        self.assertIn("instanceof hudson.model.Cause.UpstreamCause", guard)
+        self.assertIn('cause.upstreamProject != "Deployment Pipeline"', guard)
+        self.assertIn('"deployment-${cause.upstreamBuild}"', guard)
+        self.assertIn("getBuildByNumber", guard)
+        self.assertIn("upstreamBuild == null", guard)
+        self.assertIn("!upstreamBuild.isBuilding()", guard)
+        self.assertIn('getParameter("BANNER_ROLLOUT")', guard)
+        self.assertIn('getParameter("BANNER_ROLLOUT_OPERATION")', guard)
+        self.assertIn('getParameter("deployment_git_hash")', guard)
+        self.assertIn('getParameter("git_hash")', guard)
+        self.assertIn("deploymentInput", guard)
+        self.assertIn("validatedInfrastructureCommit", guard)
+        self.assertIn("AbortException", guard)
+        rejection_checks = {
+            "direct": "cause == null",
+            "other_parent": 'cause.upstreamProject != "Deployment Pipeline"',
+            "replayed_with_extra_cause": "causes.size() != 1",
+            "deleted_parent": "upstreamBuild == null",
+            "replayed_or_stale_parent": "!upstreamBuild.isBuilding()",
+            "mismatched_run": 'validatedRunId != "deployment-${cause.upstreamBuild}"',
+            "mismatched_deployment": "deploymentInput != upstreamDeploymentCommit",
+            "mismatched_infrastructure": "gitHash != validatedInfrastructureCommit",
+        }
+        for scenario, check in rejection_checks.items():
+            with self.subTest(rejected_scenario=scenario):
+                self.assertIn(check, guard)
+        self.assertLess(
+            await_job.index("<hudson.plugins.groovy.SystemGroovy"),
+            await_job.index("<hudson.tasks.Shell>"),
+        )
+
     def test_suppressed_hosts_are_ready_before_immutable_deploy_and_final_health(self):
         deployment = xml_script(DEPLOYMENT_PIPELINE)
         await_job = AWAIT_INITIALIZATION.read_text(encoding="utf-8")
