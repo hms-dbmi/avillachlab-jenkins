@@ -55,7 +55,18 @@
   <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3975.v567e2a_1ffa_22">
     <script>import groovy.json.JsonSlurper;
 
+@NonCPS
+def parseBuildSpec(String text) {
+    def spec = new JsonSlurper().parseText(text)
+    return [
+        infrastructureGitHash: spec.infrastructure_git_hash?.toString(),
+        bannerDeployment: spec.banner_rollout?.deployment?.toString(),
+        bannerRolloutPresent: spec.banner_rollout != null
+    ]
+}
+
 def retrieveDepStateId
+def retrieveBuildSpecId
 def stacksJson
 def target_stack
 def live_stack
@@ -83,11 +94,10 @@ pipeline {
                     sh &apos;cat build-spec.json&apos;
                     sh &apos;cat pipeline_git_commit.txt&apos;
                     sh &apos;pwd&apos;
-                    def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/Deployment Pipeline/build-spec.json&apos;))
-                    println(buildSpec)
-                    infrastructure_git_hash = buildSpec.infrastructure_git_hash
-                    banner_deployment = buildSpec.banner_rollout?.deployment?.toString()
-                    banner_rollout_present = buildSpec.banner_rollout != null
+                    def parsedBuildSpec = parseBuildSpec(readFile(&apos;build-spec.json&apos;))
+                    infrastructure_git_hash = parsedBuildSpec.infrastructureGitHash
+                    banner_deployment = parsedBuildSpec.bannerDeployment
+                    banner_rollout_present = parsedBuildSpec.bannerRolloutPresent
                     release_control_commit = readFile(&apos;pipeline_git_commit.txt&apos;).trim()
                 }
             }

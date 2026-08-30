@@ -92,6 +92,7 @@ set -euo pipefail
 
 artifact_prefix=&quot;${TARGET_STACK}/containers&quot;
 if [[ &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot; ]]; then
+  [[ -z &quot;${BANNER_ROLLOUT_RUN_ID:-}&quot; ]] || { echo &quot;ERROR: frontend rollback cannot include a forward run identity.&quot; &gt;&amp;2; exit 2; }
   [[ -n &quot;${BANNER_ROLLBACK_ATTESTATION_JSON:-}&quot; ]] || { echo &quot;ERROR: frontend rollback build requires a FRONTEND_ALLOWED attestation.&quot; &gt;&amp;2; exit 2; }
   rollback_attestation=$(mktemp)
   trap &apos;rm -f &quot;${rollback_attestation}&quot;&apos; EXIT
@@ -110,7 +111,7 @@ if [[ &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot; ]]; then
   fi
 elif [[ -n &quot;${BANNER_ROLLOUT_RUN_ID:-}&quot; ]]; then
   [[ &quot;${BANNER_ROLLOUT_RUN_ID}&quot; =~ ^combined-[0-9]+$ ]] || { echo &quot;ERROR: invalid banner rollout run identity.&quot; &gt;&amp;2; exit 2; }
-  artifact_prefix=&quot;${TARGET_STACK}/banner-rollout/${BANNER_ROLLOUT_RUN_ID}/containers&quot;
+  artifact_prefix=&quot;${TARGET_STACK}/banner-rollout/forward/${BANNER_ROLLOUT_RUN_ID}/containers&quot;
 fi
 
 GIT_BRANCH_SHORT=$(echo &quot;${GIT_BRANCH}&quot; | awk -F/ &apos;{print $NF}&apos;)
@@ -124,7 +125,19 @@ cp -f configuration.json ./src/lib/assets/configuration.json
 frontend_image=&quot;hms-dbmi/pic-sure-frontend:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}_${TARGET_STACK}&quot;
 docker build --no-cache --load -f Dockerfile --build-arg THEME=&quot;${THEME}&quot; -t &quot;${frontend_image}&quot; .
 docker save &quot;${frontend_image}&quot; | gzip &gt; pic-sure-frontend.tar.gz
-aws s3 --sse=AES256 cp pic-sure-frontend.tar.gz &quot;s3://${S3_BUCKET_NAME}/${artifact_prefix}/pic-sure-frontend.tar.gz&quot; --metadata &quot;git-commit=${GIT_COMMIT},rollout-run=${BANNER_ROLLOUT_RUN_ID:-rollback-or-standard}&quot;
+if [[ &quot;${artifact_prefix}&quot; == &quot;${TARGET_STACK}/banner-rollout/&quot;* ]]; then
+  artifact_run_id=&quot;${artifact_prefix%/containers}&quot;
+  artifact_run_id=&quot;${artifact_run_id##*/}&quot;
+  aws s3api put-object \
+    --bucket &quot;${S3_BUCKET_NAME}&quot; \
+    --key &quot;${artifact_prefix}/pic-sure-frontend.tar.gz&quot; \
+    --body pic-sure-frontend.tar.gz \
+    --server-side-encryption AES256 \
+    --metadata &quot;git-commit=${GIT_COMMIT},rollout-run=${artifact_run_id}&quot; \
+    --if-none-match &apos;*&apos;
+else
+  aws s3 --sse=AES256 cp pic-sure-frontend.tar.gz &quot;s3://${S3_BUCKET_NAME}/${artifact_prefix}/pic-sure-frontend.tar.gz&quot; --metadata &quot;git-commit=${GIT_COMMIT},rollout-run=standard&quot;
+fi
 </command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>

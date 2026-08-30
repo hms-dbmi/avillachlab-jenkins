@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import hashlib
 import os
 import shutil
 import subprocess
@@ -62,6 +63,7 @@ def run_shell_guard(
     path: Path,
     extra_env: dict[str, str],
     artifact_commit: str | None = None,
+    artifact_run: str = "standard",
 ) -> subprocess.CompletedProcess[str]:
     with tempfile.TemporaryDirectory() as temp:
         home = Path(temp)
@@ -81,7 +83,8 @@ def run_shell_guard(
         (fake_bin / "aws").write_text(
             "#!/usr/bin/env bash\n"
             "if [[ \"$1 $2\" == \"s3api head-object\" ]]; then\n"
-            "  printf '%s\\n' \"${FAKE_ARTIFACT_COMMIT:-None}\"\n"
+            "  printf '{\"commit\":\"%s\",\"run\":\"%s\",\"etag\":\"fake-etag\"}\\n' "
+            "\"${FAKE_ARTIFACT_COMMIT:-None}\" \"${FAKE_ARTIFACT_RUN:-standard}\"\n"
             "  exit 0\n"
             "fi\n"
             "exit 99\n",
@@ -95,6 +98,7 @@ def run_shell_guard(
             "S3_BUCKET_NAME": "synthetic-bucket",
             "stack_s3_bucket": "synthetic-bucket",
             "JENKINS_SOURCE_COMMIT": current_jenkins_commit(),
+            "FAKE_ARTIFACT_RUN": artifact_run,
             **extra_env,
         }
         if artifact_commit is not None:
@@ -116,7 +120,8 @@ class JenkinsOrderTest(unittest.TestCase):
         guard = first_script.index("buildSpec.banner_rollout")
         old_pipeline = first_script.index('getItemByFullName("PIC-SURE Pipeline")')
         self.assertLess(guard, old_pipeline)
-        self.assertIn("if (!bannerRollout)", first_script[guard:old_pipeline])
+        self.assertNotIn("if (!bannerRollout)", first_script)
+        self.assertIn("scheduleBuild2(0).get()", first_script[old_pipeline:])
         deployment = final_script.index('getItemByFullName("Deployment Pipeline")')
         self.assertNotIn('getItemByFullName("PIC-SURE Pipeline Build and Deploy")', final_script)
         self.assertIn("BANNER_ROLLOUT", final_script[deployment:])
@@ -166,6 +171,14 @@ class JenkinsOrderTest(unittest.TestCase):
         self.assertNotIn("bannerRollout = new JsonSlurper", script)
         self.assertIn("bannerRolloutPresent: spec.banner_rollout != null", script)
         self.assertIn("bannerRolloutPresent = parsedBuildSpec.bannerRolloutPresent", script)
+
+    def test_deployment_pipeline_does_not_hold_lazy_json_across_cps_steps(self):
+        script = xml_script(DEPLOYMENT_PIPELINE)
+        self.assertIn("@NonCPS\ndef parseBuildSpec", script)
+        self.assertEqual(1, script[: script.index("pipeline {")].count("new JsonSlurper().parseText"))
+        self.assertNotIn("new JsonSlurper().parse(new File", script)
+        self.assertIn("parseBuildSpec(readFile('build-spec.json'))", script)
+        self.assertIn("def retrieveBuildSpecId", script)
 
     def test_forward_banner_combined_job_requires_deployment_pipeline_parent(self):
         script = xml_script(PIPELINE)
@@ -222,6 +235,32 @@ class JenkinsOrderTest(unittest.TestCase):
         query_image = QUERY_IMAGE.read_text(encoding="utf-8")
         self.assertIn("--metadata", query_image)
         self.assertIn("git-commit=${GIT_COMMIT_FULL}", query_image)
+
+    def test_banner_artifacts_are_no_overwrite_and_downloaded_by_verified_etag(self):
+        for job in (
+            "PIC-SURE Operations Service Image",
+            "PIC-SURE Gateway Image",
+            "PIC-SURE HPDS Query Service Image",
+            "PIC-SURE Auth Micro App Image",
+            "PIC-SURE Frontend Build",
+        ):
+            with self.subTest(job=job):
+                shell = xml_shell(ROOT / f"jenkins-docker/jobs/{job}/config.xml")
+                self.assertIn("/banner-rollout/forward/", shell)
+                self.assertIn("s3api put-object", shell)
+                self.assertIn("--if-none-match '*'", shell)
+        for job in (WILDFLY, FRONTEND):
+            with self.subTest(job=job):
+                shell = xml_shell(job)
+                self.assertIn("ETag", shell)
+                self.assertIn("_artifact_etag" if job == WILDFLY else "--artifact_etag", shell)
+                self.assertIn("'${frontend_etag}'" if job == FRONTEND else "'${operations_artifact_etag}'", shell)
+
+    def test_non_banner_component_operation_does_not_enable_banner_leaf_guards(self):
+        script = xml_script(PIPELINE)
+        self.assertIn("bannerForward = bannerRolloutPresent && params.BANNER_ROLLOUT_OPERATION == 'FORWARD'", script)
+        self.assertIn("name: 'BANNER_ROLLOUT', value: bannerForward", script)
+        self.assertIn("name: 'BANNER_ROLLOUT_RUN_ID', value: bannerForward ? bannerRolloutRunId : ''", script)
 
     def test_unrelated_deploy_legs_remain_parallel_with_backend_sequence(self):
         script = xml_script(PIPELINE)
@@ -365,6 +404,96 @@ class FailClosedStandaloneTest(unittest.TestCase):
         )
         self.assertEqual(2, result.returncode, result.stdout + result.stderr)
         self.assertIn("combined banner pipeline", result.stderr)
+
+    def test_backend_rollback_requires_the_attested_artifact_commit(self):
+        infrastructure = Path(os.environ["BDC_INFRASTRUCTURE_ROOT"])
+        release_control = Path(os.environ["BDC_RELEASE_CONTROL_ROOT"])
+        attestation = json.loads(
+            (infrastructure / "tests/fisma-banner-rollout/rollback-operator-attestation.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        release_spec = json.loads((release_control / "build-spec.json").read_text(encoding="utf-8"))
+        components = release_spec["banner_rollout"]["components"]
+        components["infrastructure"]["commit"] = subprocess.run(
+            ["python3", str(VALIDATOR), "--component-commit", "infrastructure"],
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+        components["jenkins"]["commit"] = current_jenkins_commit()
+        tuple_sha = hashlib.sha256(
+            json.dumps({"deployment": "BDC", "components": components}, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        attestation.update(
+            {
+                "deployment": "BDC",
+                "controllerDeployment": "BDC",
+                "targetStack": "staging",
+                "artifactPrefix": "staging/banner-rollout/rollback/rollback-fixture/containers",
+                "artifacts": {"frontendCommit": "1" * 40, "backendCommit": "2" * 40},
+                "tupleSha256": tuple_sha,
+                "stage": "BACKEND_ALLOWED",
+                "operator": "synthetic-operator",
+                "attestedAtUtc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            }
+        )
+        for phase, accepted in zip(attestation["phases"], (True, True, True, False, False, False)):
+            phase["attested"] = accepted
+        attestation["state"] = {
+            "managementWritesFrozen": True,
+            "frontendRolledBack": True,
+            "targetedActiveOrScheduledRemaining": 0,
+            "forwardSchemaRetained": True,
+            "downMigrationRun": False,
+            "psamaRecreated": False,
+        }
+        base_env = {
+            "BANNER_ROLLBACK": "true",
+            "BANNER_ROLLBACK_ATTESTATION_JSON": json.dumps(attestation),
+            "BANNER_CONTROLLER_DEPLOYMENT": "bdc",
+            "DEPLOY_OPERATIONS": "true",
+            "DEPLOY_GATEWAY": "true",
+            "DEPLOY_PSAMA": "false",
+            "DEPLOY_QUERY": "false",
+            "DEPLOY_DICTIONARY": "false",
+            "DEPLOY_VISUALIZATION": "false",
+        }
+        matching = run_shell_guard(
+            WILDFLY,
+            base_env,
+            artifact_commit="2" * 40,
+            artifact_run="rollback-fixture",
+        )
+        self.assertNotEqual(2, matching.returncode, matching.stdout + matching.stderr)
+        self.assertNotIn("combined banner pipeline", matching.stderr)
+        mismatched = run_shell_guard(
+            WILDFLY,
+            base_env,
+            artifact_commit="3" * 40,
+            artifact_run="rollback-fixture",
+        )
+        self.assertEqual(2, mismatched.returncode, mismatched.stdout + mismatched.stderr)
+        self.assertIn("does not match", mismatched.stderr)
+
+    def test_frontend_build_rejects_rollback_with_forward_run_identity(self):
+        result = run_shell_guard(
+            FRONTEND_BUILD,
+            {
+                "BANNER_ROLLBACK": "true",
+                "BANNER_ROLLOUT_RUN_ID": "combined-1",
+                "BANNER_ROLLBACK_ATTESTATION_JSON": "",
+            },
+        )
+        self.assertEqual(2, result.returncode, result.stdout + result.stderr)
+        self.assertIn("forward run identity", result.stderr)
+
+    def test_frontend_deploy_uses_bash_and_quotes_host_arguments(self):
+        shell = xml_shell(FRONTEND)
+        self.assertIn('sudo /bin/bash /opt/picsure/deploy-httpd.sh', shell)
+        self.assertIn('--stack_s3_bucket "${stack_s3_bucket}"', shell)
+        self.assertIn('--target_stack "${TARGET_STACK}"', shell)
+        self.assertIn('--artifact_prefix "${artifact_prefix}"', shell)
 
     def test_rollback_entrypoints_reject_missing_stage_attestations(self):
         frontend = run_shell_guard(
@@ -611,7 +740,7 @@ class ExecutableContractTest(unittest.TestCase):
         template["deployment"] = "BDC"
         template["controllerDeployment"] = "BDC"
         template["targetStack"] = "staging"
-        template["artifactPrefix"] = "staging/banner-rollout/rollback-fixture/containers"
+        template["artifactPrefix"] = "staging/banner-rollout/rollback/rollback-fixture/containers"
         template["artifacts"] = {
             "frontendCommit": "1" * 40,
             "backendCommit": "2" * 40,
@@ -653,6 +782,57 @@ class ExecutableContractTest(unittest.TestCase):
             )
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
+    def test_rollback_attestation_rejects_a_forward_run_prefix(self):
+        template = json.loads(
+            (self.infrastructure / "tests/fisma-banner-rollout/rollback-operator-attestation.json").read_text(encoding="utf-8")
+        )
+        template.update(
+            {
+                "deployment": "BDC",
+                "controllerDeployment": "BDC",
+                "targetStack": "staging",
+                "artifactPrefix": "staging/banner-rollout/forward/combined-57/containers",
+                "artifacts": {"frontendCommit": "1" * 40, "backendCommit": "2" * 40},
+                "tupleSha256": self.bdc_tuple(),
+                "stage": "COMPLETE",
+                "operator": "synthetic-operator",
+                "attestedAtUtc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            }
+        )
+        for phase in template["phases"]:
+            phase["attested"] = True
+        template["state"] = {
+            "managementWritesFrozen": True,
+            "frontendRolledBack": True,
+            "targetedActiveOrScheduledRemaining": 0,
+            "forwardSchemaRetained": True,
+            "downMigrationRun": False,
+            "psamaRecreated": True,
+        }
+        with tempfile.NamedTemporaryFile("w", suffix=".json") as handle:
+            json.dump(template, handle)
+            handle.flush()
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(VALIDATOR),
+                    "--rollback-attestation",
+                    handle.name,
+                    "--jenkins-source-commit",
+                    self.current_jenkins_commit(),
+                    "--controller-deployment",
+                    "bdc",
+                    "--target-stack",
+                    "staging",
+                ],
+                text=True,
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+        self.assertEqual(2, result.returncode, result.stdout + result.stderr)
+        self.assertIn("rollback namespace", result.stderr)
+
     def test_tuple_verifier_rejects_a_forged_leaf_receipt(self):
         result = subprocess.run(
             [
@@ -684,7 +864,6 @@ class ExecutableContractTest(unittest.TestCase):
         spec["banner_rollout"]["components"]["jenkins"]["commit"] = "a" * 40
         components = spec["banner_rollout"]["components"]
         payload = {"deployment": "BDC", "components": components}
-        import hashlib
         spec["banner_rollout"]["tupleSha256"] = hashlib.sha256(
             json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
@@ -699,7 +878,6 @@ class ExecutableContractTest(unittest.TestCase):
         spec = json.loads((self.release_control / "build-spec.json").read_text(encoding="utf-8"))
         spec["banner_rollout"]["components"]["jenkins"]["extra"] = "accepted-by-old-validator"
         components = spec["banner_rollout"]["components"]
-        import hashlib
         payload = {"deployment": "BDC", "components": components}
         spec["banner_rollout"]["tupleSha256"] = hashlib.sha256(
             json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
@@ -725,7 +903,7 @@ class ExecutableContractTest(unittest.TestCase):
                 "deployment": "BDC",
                 "controllerDeployment": "BDC",
                 "targetStack": "staging",
-                "artifactPrefix": "staging/banner-rollout/old-run/containers",
+                "artifactPrefix": "staging/banner-rollout/rollback/old-run/containers",
                 "tupleSha256": self.bdc_tuple(),
                 "stage": "COMPLETE",
                 "operator": "synthetic-operator",

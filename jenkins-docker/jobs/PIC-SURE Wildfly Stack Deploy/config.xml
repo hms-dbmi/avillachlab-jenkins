@@ -197,12 +197,16 @@ done
 
 artifact_prefix=&quot;${TARGET_STACK}/containers&quot;
 expected_backend_commit=$(python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; --component-commit backend)
+expected_artifact_run=standard
 if [[ &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot; ]]; then
   artifact_prefix=$(jq -r &apos;.artifactPrefix&apos; &quot;${rollback_attestation}&quot;)
   expected_backend_commit=$(jq -r &apos;.artifacts.backendCommit&apos; &quot;${rollback_attestation}&quot;)
+  expected_artifact_run=&quot;${artifact_prefix%/containers}&quot;
+  expected_artifact_run=&quot;${expected_artifact_run##*/}&quot;
 elif [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; ]]; then
   [[ &quot;${BANNER_ROLLOUT_RUN_ID}&quot; =~ ^combined-[0-9]+$ ]] || { echo &quot;ERROR: invalid banner rollout run identity.&quot; &gt;&amp;2; exit 2; }
-  artifact_prefix=&quot;${TARGET_STACK}/banner-rollout/${BANNER_ROLLOUT_RUN_ID}/containers&quot;
+  artifact_prefix=&quot;${TARGET_STACK}/banner-rollout/forward/${BANNER_ROLLOUT_RUN_ID}/containers&quot;
+  expected_artifact_run=&quot;${BANNER_ROLLOUT_RUN_ID}&quot;
 fi
 
 # Default optional parameters
@@ -213,6 +217,10 @@ SPRING_PROFILE=&quot;${SPRING_PROFILE:-prod}&quot;
 assume_role
 
 banner_backend_seen=false
+operations_artifact_etag=&quot;&quot;
+query_artifact_etag=&quot;&quot;
+psama_artifact_etag=&quot;&quot;
+gateway_artifact_etag=&quot;&quot;
 for artifact in \
   &quot;${DEPLOY_OPERATIONS}:pic-sure-operations-service.tar.gz&quot; \
   &quot;${DEPLOY_PSAMA}:psama.tar.gz&quot; \
@@ -223,16 +231,31 @@ for artifact in \
   if [[ &quot;${selected}&quot; != &quot;true&quot; ]]; then
     continue
   fi
-  artifact_commit=$(aws s3api head-object \
+  artifact_head=$(aws s3api head-object \
     --bucket &quot;${S3_BUCKET_NAME}&quot; \
     --key &quot;${artifact_prefix}/${object_name}&quot; \
-    --query &apos;Metadata.&quot;git-commit&quot;&apos; \
-    --output text)
-  if [[ &quot;${artifact_commit}&quot; == &quot;${expected_backend_commit}&quot; ]]; then
+    --query &apos;{commit:Metadata.&quot;git-commit&quot;,run:Metadata.&quot;rollout-run&quot;,etag:ETag}&apos; \
+    --output json)
+  artifact_commit=$(jq -r &apos;.commit // empty&apos; &lt;&lt;&lt;&quot;${artifact_head}&quot;)
+  artifact_run=$(jq -r &apos;.run // empty&apos; &lt;&lt;&lt;&quot;${artifact_head}&quot;)
+  artifact_etag=$(jq -r &apos;.etag // empty&apos; &lt;&lt;&lt;&quot;${artifact_head}&quot;)
+  if [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; || &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot; ]]; then
+    if [[ &quot;${artifact_commit}&quot; != &quot;${expected_backend_commit}&quot; ]]; then
+      echo &quot;ERROR: ${object_name} does not match the selected banner backend commit.&quot; &gt;&amp;2
+      exit 2
+    fi
+    if [[ &quot;${artifact_run}&quot; != &quot;${expected_artifact_run}&quot; || -z &quot;${artifact_etag}&quot; ]]; then
+      echo &quot;ERROR: ${object_name} is not bound to the selected immutable rollout object.&quot; &gt;&amp;2
+      exit 2
+    fi
+    case &quot;${object_name}&quot; in
+      pic-sure-operations-service.tar.gz) operations_artifact_etag=&quot;${artifact_etag}&quot; ;;
+      pic-sure-hpds-query-service.tar.gz) query_artifact_etag=&quot;${artifact_etag}&quot; ;;
+      psama.tar.gz) psama_artifact_etag=&quot;${artifact_etag}&quot; ;;
+      pic-sure-gateway.tar.gz) gateway_artifact_etag=&quot;${artifact_etag}&quot; ;;
+    esac
+  elif [[ &quot;${artifact_commit}&quot; == &quot;${expected_backend_commit}&quot; ]]; then
     banner_backend_seen=true
-  elif [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; ]]; then
-    echo &quot;ERROR: ${object_name} does not match the reviewed banner backend commit.&quot; &gt;&amp;2
-    exit 2
   fi
 done
 if [[ &quot;${banner_backend_seen}&quot; == &quot;true&quot; &amp;&amp; &quot;${BANNER_ROLLOUT:-false}&quot; != &quot;true&quot; ]]; then
@@ -289,6 +312,10 @@ sudo /opt/picsure/deploy-wildfly-stack.sh \
   --stack_s3_bucket &quot;${S3_BUCKET_NAME}&quot; \
   --target_stack &quot;${TARGET_STACK}&quot; \
   --artifact_prefix &quot;${artifact_prefix}&quot; \
+  --operations_artifact_etag &apos;${operations_artifact_etag}&apos; \
+  --query_artifact_etag &apos;${query_artifact_etag}&apos; \
+  --psama_artifact_etag &apos;${psama_artifact_etag}&apos; \
+  --gateway_artifact_etag &apos;${gateway_artifact_etag}&apos; \
   --dataset_s3_object_key &quot;${DATASET_S3_OBJECT_KEY}&quot; \
   --enable_debug &quot;${ENABLE_DEBUG}&quot; \
   --spring_profile &quot;${SPRING_PROFILE}&quot;

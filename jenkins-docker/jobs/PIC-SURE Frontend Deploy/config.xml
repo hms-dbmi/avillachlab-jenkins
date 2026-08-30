@@ -118,12 +118,16 @@ fi
 stack_s3_bucket=&quot;${S3_BUCKET_NAME}&quot;
 artifact_prefix=&quot;${TARGET_STACK}/containers&quot;
 expected_frontend_commit=$(python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; --component-commit frontend)
+expected_artifact_run=standard
 if [[ &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot; ]]; then
   artifact_prefix=$(jq -r &apos;.artifactPrefix&apos; &quot;${rollback_attestation}&quot;)
   expected_frontend_commit=$(jq -r &apos;.artifacts.frontendCommit&apos; &quot;${rollback_attestation}&quot;)
+  expected_artifact_run=&quot;${artifact_prefix%/containers}&quot;
+  expected_artifact_run=&quot;${expected_artifact_run##*/}&quot;
 elif [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; ]]; then
   [[ &quot;${BANNER_ROLLOUT_RUN_ID}&quot; =~ ^combined-[0-9]+$ ]] || { echo &quot;ERROR: invalid banner rollout run identity.&quot; &gt;&amp;2; exit 2; }
-  artifact_prefix=&quot;${TARGET_STACK}/banner-rollout/${BANNER_ROLLOUT_RUN_ID}/containers&quot;
+  artifact_prefix=&quot;${TARGET_STACK}/banner-rollout/forward/${BANNER_ROLLOUT_RUN_ID}/containers&quot;
+  expected_artifact_run=&quot;${BANNER_ROLLOUT_RUN_ID}&quot;
 fi
 
 # Source folder containing the scripts
@@ -151,11 +155,14 @@ done
 
 assume_role
 
-frontend_commit=$(aws s3api head-object \
+frontend_head=$(aws s3api head-object \
   --bucket &quot;${stack_s3_bucket}&quot; \
   --key &quot;${artifact_prefix}/pic-sure-frontend.tar.gz&quot; \
-  --query &apos;Metadata.&quot;git-commit&quot;&apos; \
-  --output text)
+  --query &apos;{commit:Metadata.&quot;git-commit&quot;,run:Metadata.&quot;rollout-run&quot;,etag:ETag}&apos; \
+  --output json)
+frontend_commit=$(jq -r &apos;.commit // empty&apos; &lt;&lt;&lt;&quot;${frontend_head}&quot;)
+frontend_run=$(jq -r &apos;.run // empty&apos; &lt;&lt;&lt;&quot;${frontend_head}&quot;)
+frontend_etag=$(jq -r &apos;.etag // empty&apos; &lt;&lt;&lt;&quot;${frontend_head}&quot;)
 if [[ &quot;${frontend_commit}&quot; == &quot;${expected_frontend_commit}&quot; &amp;&amp; &quot;${BANNER_ROLLOUT:-false}&quot; != &quot;true&quot; &amp;&amp; &quot;${BANNER_ROLLBACK:-false}&quot; != &quot;true&quot; ]]; then
   echo &quot;ERROR: reviewed banner frontend artifact requires the combined banner pipeline.&quot; &gt;&amp;2
   exit 2
@@ -163,6 +170,12 @@ fi
 if [[ (&quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; || &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot;) &amp;&amp; &quot;${frontend_commit}&quot; != &quot;${expected_frontend_commit}&quot; ]]; then
   echo &quot;ERROR: frontend artifact does not match the reviewed banner commit.&quot; &gt;&amp;2
   exit 2
+fi
+if [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; || &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot; ]]; then
+  if [[ &quot;${frontend_run}&quot; != &quot;${expected_artifact_run}&quot; || -z &quot;${frontend_etag}&quot; ]]; then
+    echo &quot;ERROR: frontend artifact is not bound to the selected immutable rollout object.&quot; &gt;&amp;2
+    exit 2
+  fi
 fi
 
 # Download the terraform state file
@@ -174,7 +187,15 @@ echo &quot;Extract HTTPD instance ID for $TARGET_STACK stack&quot;
 httpd_instance_id=$(jq -r &apos;.outputs[&quot;httpd-ec2-id&quot;].value&apos; terraform.tfstate)
 echo &quot;${httpd_instance_id}&quot;
 
-update_httpd_container=&quot;sudo sh /opt/picsure/deploy-httpd.sh --stack_s3_bucket $stack_s3_bucket --target_stack $TARGET_STACK --artifact_prefix $artifact_prefix&quot;
+update_httpd_container=$(
+  cat &lt;&lt;EOF
+sudo /bin/bash /opt/picsure/deploy-httpd.sh \
+  --stack_s3_bucket &quot;${stack_s3_bucket}&quot; \
+  --target_stack &quot;${TARGET_STACK}&quot; \
+  --artifact_prefix &quot;${artifact_prefix}&quot; \
+  --artifact_etag &apos;${frontend_etag}&apos;
+EOF
+)
 echo &quot;$update_httpd_container&quot;
 
 update_httpd_container_json=$(jq -n --arg cmd &quot;$update_httpd_container&quot; &apos;{commands: [$cmd]}&apos;)

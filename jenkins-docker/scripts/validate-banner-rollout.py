@@ -11,7 +11,9 @@ from pathlib import Path
 SHA = re.compile(r"^[0-9a-f]{40}$")
 OPERATOR = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._@-]{2,127}$")
 TARGET_STACK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$")
-ARTIFACT_PREFIX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{1,63}/banner-rollout/[A-Za-z0-9][A-Za-z0-9_-]{2,127}/containers$")
+ARTIFACT_PREFIX = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9_-]{1,63}/banner-rollout/rollback/[A-Za-z0-9][A-Za-z0-9_-]{2,127}/containers$"
+)
 CONTRACT_PATH = Path(__file__).with_name("banner-rollout-contract.json")
 EXPECTED_CONTRACT_SHA256 = "f8cb265d735b757872391e04fdcd5b999b785eaa427ca13f8f2eefd493715359"
 EXPECTED_COMPONENTS = {
@@ -26,7 +28,7 @@ EXPECTED_COMPONENTS = {
     "infrastructure": {
         "repository": "https://github.com/hms-dbmi/pic-sure-bdc-infrastructure.git",
         "ref": "pic_sure_api_rewrite",
-        "commit": "3a10a20ce261e3771cb4cd48bc4d72967f3c54d3",
+        "commit": "c686eed42696bcdf27fd0cec694be088f432ddc3",
     },
     "migrationsParity": {
         "repository": "https://github.com/hms-dbmi/PIC-SURE-Migrations.git",
@@ -306,8 +308,8 @@ def validate_rollback_attestation(
         raise ContractError("rollback attestation does not match the target stack")
     artifact_prefix = attestation.get("artifactPrefix")
     if not isinstance(artifact_prefix, str) or not ARTIFACT_PREFIX.fullmatch(artifact_prefix):
-        raise ContractError("rollback attestation artifactPrefix is not a commit-addressed rollout path")
-    if not artifact_prefix.startswith(f"{target_stack}/banner-rollout/"):
+        raise ContractError("rollback attestation artifactPrefix must use the rollback namespace")
+    if not artifact_prefix.startswith(f"{target_stack}/banner-rollout/rollback/"):
         raise ContractError("rollback attestation artifactPrefix does not match the target stack")
     artifacts = attestation.get("artifacts")
     if not isinstance(artifacts, dict) or set(artifacts) != {"frontendCommit", "backendCommit"}:

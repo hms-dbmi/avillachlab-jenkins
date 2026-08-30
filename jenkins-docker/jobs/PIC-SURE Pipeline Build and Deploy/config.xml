@@ -146,6 +146,7 @@ def infrastructure_git_hash
 def targetStack
 def pipelineBuildId
 def bannerRolloutPresent = false
+def bannerForward = false
 def bannerDeployment
 def bannerRolloutTupleSha = &apos;&apos;
 def bannerRolloutRunId = &apos;&apos;
@@ -190,6 +191,7 @@ pipeline {
           infrastructure_git_hash = parsedBuildSpec.infrastructureGitHash
           bannerDeployment = parsedBuildSpec.bannerDeployment
           bannerRolloutPresent = parsedBuildSpec.bannerRolloutPresent
+          bannerForward = bannerRolloutPresent &amp;&amp; params.BANNER_ROLLOUT_OPERATION == &apos;FORWARD&apos;
           if (bannerRolloutPresent) {
             if (!(bannerDeployment in [&apos;BDC&apos;, &apos;AIM-AHEAD&apos;])) {
               error(&quot;Unsupported banner rollout deployment: ${bannerDeployment}&quot;)
@@ -285,7 +287,7 @@ pipeline {
               [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: String.valueOf(params.STACK_S3_BUCKET)]
             ]
             def bannerImageParams = imageParams + [
-              [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_RUN_ID&apos;, value: bannerRolloutPresent ? bannerRolloutRunId : &apos;&apos;]
+              [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_RUN_ID&apos;, value: bannerForward ? bannerRolloutRunId : &apos;&apos;]
             ]
             def branches = [:]
             if (params.INCLUDE_PIC_SURE_API) {
@@ -304,7 +306,7 @@ pipeline {
                   [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
                   [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSF&apos;]],
                   [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: String.valueOf(params.STACK_S3_BUCKET)],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_RUN_ID&apos;, value: bannerRolloutPresent ? bannerRolloutRunId : &apos;&apos;]
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_RUN_ID&apos;, value: bannerForward ? bannerRolloutRunId : &apos;&apos;]
                 ]
               }
             }
@@ -331,10 +333,10 @@ pipeline {
                   [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_PSAMA&apos;, value: params.INCLUDE_PIC_SURE_AUTH_MICRO_APP],
                   [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_DICTIONARY&apos;, value: params.INCLUDE_PIC_SURE_DICTIONARY],
                   [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_VISUALIZATION&apos;, value: params.INCLUDE_PIC_SURE_VISUALIZATION],
-                  [$class: &apos;BooleanParameterValue&apos;, name: &apos;BANNER_ROLLOUT&apos;, value: bannerRolloutPresent],
+                  [$class: &apos;BooleanParameterValue&apos;, name: &apos;BANNER_ROLLOUT&apos;, value: bannerForward],
                   [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_DEPLOYMENT&apos;, value: bannerDeployment ?: &apos;&apos;],
                   [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_TUPLE_SHA256&apos;, value: bannerRolloutTupleSha],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_RUN_ID&apos;, value: bannerRolloutPresent ? bannerRolloutRunId : &apos;&apos;]
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_RUN_ID&apos;, value: bannerForward ? bannerRolloutRunId : &apos;&apos;]
                 ]
               } else {
                 echo &apos;Skipping Wildfly Stack Deploy (no wildfly-host components selected)&apos;
@@ -343,11 +345,11 @@ pipeline {
                 build job: &apos;PIC-SURE Frontend Deploy&apos;, parameters: [
                   [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
                   [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: String.valueOf(params.STACK_S3_BUCKET)],
-                  [$class: &apos;BooleanParameterValue&apos;, name: &apos;BANNER_ROLLOUT&apos;, value: bannerRolloutPresent],
+                  [$class: &apos;BooleanParameterValue&apos;, name: &apos;BANNER_ROLLOUT&apos;, value: bannerForward],
                   [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_DEPLOYMENT&apos;, value: bannerDeployment ?: &apos;&apos;],
                   [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_TUPLE_SHA256&apos;, value: bannerRolloutTupleSha],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_BACKEND_HEALTH_RECEIPT&apos;, value: bannerRolloutPresent ? bannerRolloutRunId : &apos;&apos;],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_RUN_ID&apos;, value: bannerRolloutPresent ? bannerRolloutRunId : &apos;&apos;]
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_BACKEND_HEALTH_RECEIPT&apos;, value: bannerForward ? bannerRolloutRunId : &apos;&apos;],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_RUN_ID&apos;, value: bannerForward ? bannerRolloutRunId : &apos;&apos;]
                 ]
               } else {
                 echo &apos;Skipping PIC-SURE Frontend Deploy&apos;

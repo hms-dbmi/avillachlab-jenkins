@@ -79,7 +79,7 @@ if [[ &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot; ]]; then
   expected_backend_commit=$(jq -r &apos;.artifacts.backendCommit&apos; &quot;${rollback_attestation}&quot;)
 elif [[ -n &quot;${BANNER_ROLLOUT_RUN_ID:-}&quot; ]]; then
   [[ &quot;${BANNER_ROLLOUT_RUN_ID}&quot; =~ ^combined-[0-9]+$ ]] || { echo &quot;ERROR: invalid banner rollout run identity.&quot; &gt;&amp;2; exit 2; }
-  artifact_prefix=&quot;${TARGET_STACK}/banner-rollout/${BANNER_ROLLOUT_RUN_ID}/containers&quot;
+  artifact_prefix=&quot;${TARGET_STACK}/banner-rollout/forward/${BANNER_ROLLOUT_RUN_ID}/containers&quot;
 fi
 
 MAVEN_WS=&quot;/var/jenkins_home/workspace/PIC-SURE Maven Build - ${TARGET_STACK}&quot;
@@ -105,7 +105,19 @@ docker build --load \
   &quot;$MAVEN_WS/services/pic-sure-hpds-query-service/&quot;
 
 docker save &quot;hms-dbmi/pic-sure-hpds-query-service:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}&quot; | gzip &gt; pic-sure-hpds-query-service.tar.gz
-aws s3 --sse=AES256 cp pic-sure-hpds-query-service.tar.gz &quot;s3://$S3_BUCKET_NAME/$artifact_prefix/pic-sure-hpds-query-service.tar.gz&quot; --metadata &quot;git-commit=${GIT_COMMIT_FULL},rollout-run=${BANNER_ROLLOUT_RUN_ID:-rollback-or-standard}&quot;</command>
+if [[ &quot;${artifact_prefix}&quot; == &quot;${TARGET_STACK}/banner-rollout/&quot;* ]]; then
+  artifact_run_id=&quot;${artifact_prefix%/containers}&quot;
+  artifact_run_id=&quot;${artifact_run_id##*/}&quot;
+  aws s3api put-object \
+    --bucket &quot;${S3_BUCKET_NAME}&quot; \
+    --key &quot;${artifact_prefix}/pic-sure-hpds-query-service.tar.gz&quot; \
+    --body pic-sure-hpds-query-service.tar.gz \
+    --server-side-encryption AES256 \
+    --metadata &quot;git-commit=${GIT_COMMIT_FULL},rollout-run=${artifact_run_id}&quot; \
+    --if-none-match &apos;*&apos;
+else
+  aws s3 --sse=AES256 cp pic-sure-hpds-query-service.tar.gz &quot;s3://${S3_BUCKET_NAME}/${artifact_prefix}/pic-sure-hpds-query-service.tar.gz&quot; --metadata &quot;git-commit=${GIT_COMMIT_FULL},rollout-run=standard&quot;
+fi</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
