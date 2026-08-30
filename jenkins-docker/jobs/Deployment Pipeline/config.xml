@@ -93,6 +93,7 @@ def banner_rollout_present = false
 def banner_forward = false
 def release_control_commit
 def aim_attestation_json = &apos;&apos;
+def validated_artifact_bucket = &apos;&apos;
 
 pipeline {
     agent any
@@ -144,11 +145,14 @@ pipeline {
                         if (!(banner_deployment in [&apos;BDC&apos;, &apos;AIM-AHEAD&apos;])) {
                             error(&quot;Unsupported banner rollout deployment: ${banner_deployment}&quot;)
                         }
-                        String requested_artifact_bucket = params.STACK_S3_BUCKET?.toString()?.trim()
-                        String controller_artifact_bucket = env.stack_s3_bucket?.toString()?.trim()
-                        if (!requested_artifact_bucket || !controller_artifact_bucket || requested_artifact_bucket != controller_artifact_bucket) {
-                            error(&apos;Artifact bucket must match the controller-bound artifact bucket&apos;)
+                        String requested_artifact_bucket = params.STACK_S3_BUCKET?.toString()
+                        String controller_artifact_bucket = env.stack_s3_bucket?.toString()
+                        if (!requested_artifact_bucket || requested_artifact_bucket != requested_artifact_bucket.trim() ||
+                                !controller_artifact_bucket || controller_artifact_bucket != controller_artifact_bucket.trim() ||
+                                requested_artifact_bucket != controller_artifact_bucket) {
+                            error(&apos;Artifact bucket must be nonempty, canonical, and match the controller-bound artifact bucket&apos;)
                         }
+                        validated_artifact_bucket = controller_artifact_bucket
                         def aim_attestation = &apos;&apos;
                         if (banner_deployment == &apos;AIM-AHEAD&apos;) {
                             def runtime_attestation = &quot;${env.JENKINS_HOME}/banner-rollout/aim-ahead-operator-attestation.json&quot;
@@ -160,8 +164,8 @@ pipeline {
                             aim_attestation = &apos;--attestation aim-ahead-operator-attestation.json&apos;
                         }
                         withEnv([
-                            &quot;BANNER_ARTIFACT_BUCKET=${requested_artifact_bucket}&quot;,
-                            &quot;BANNER_CONTROLLER_ARTIFACT_BUCKET=${controller_artifact_bucket}&quot;
+                            &quot;BANNER_ARTIFACT_BUCKET=${validated_artifact_bucket}&quot;,
+                            &quot;BANNER_CONTROLLER_ARTIFACT_BUCKET=${validated_artifact_bucket}&quot;
                         ]) {
                             sh &quot;&quot;&quot;python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; \
                                 --deployment &apos;${banner_deployment}&apos; \
@@ -273,7 +277,7 @@ pipeline {
                         [$class: &apos;StringParameterValue&apos;, name: &apos;DATASET_S3_OBJECT_KEY&apos;, value: params.dataset_s3_object_key],
                         [$class: &apos;StringParameterValue&apos;, name: &apos;DESTIGMATIZED_DATASET_S3_OBJECT_KEY&apos;, value: params.destigmatized_dataset_s3_object_key],
                         [$class: &apos;StringParameterValue&apos;, name: &apos;GENOMIC_DATASET_S3_OBJECT_KEY&apos;, value: params.genomic_dataset_s3_object_key],
-                        [$class: &apos;StringParameterValue&apos;, name: &apos;STACK_S3_BUCKET&apos;, value: params.STACK_S3_BUCKET],
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;STACK_S3_BUCKET&apos;, value: validated_artifact_bucket],
                         [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_AIM_ATTESTATION_JSON&apos;, value: aim_attestation_json],
                         [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_OPERATION&apos;, value: params.BANNER_ROLLOUT_OPERATION],
                         [$class: &apos;BooleanParameterValue&apos;, name: &apos;MIGRATIONS_COMPLETED_UPSTREAM&apos;, value: true],

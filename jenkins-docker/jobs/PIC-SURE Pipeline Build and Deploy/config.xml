@@ -155,6 +155,7 @@ def bannerForward = false
 def bannerDeployment
 def bannerRolloutTupleSha = &apos;&apos;
 def bannerRolloutRunId = &apos;&apos;
+def validatedArtifactBucket = &apos;&apos;
 
 pipeline {
   agent any
@@ -197,15 +198,19 @@ pipeline {
           bannerDeployment = parsedBuildSpec.bannerDeployment
           bannerRolloutPresent = parsedBuildSpec.bannerRolloutPresent
           bannerForward = bannerRolloutPresent &amp;&amp; params.BANNER_ROLLOUT_OPERATION == &apos;FORWARD&apos;
+          validatedArtifactBucket = String.valueOf(params.STACK_S3_BUCKET)
           if (bannerRolloutPresent) {
             if (!(bannerDeployment in [&apos;BDC&apos;, &apos;AIM-AHEAD&apos;])) {
               error(&quot;Unsupported banner rollout deployment: ${bannerDeployment}&quot;)
             }
-            String requestedArtifactBucket = params.STACK_S3_BUCKET?.toString()?.trim()
-            String controllerArtifactBucket = env.stack_s3_bucket?.toString()?.trim()
-            if (!requestedArtifactBucket || !controllerArtifactBucket || requestedArtifactBucket != controllerArtifactBucket) {
-              error(&apos;Artifact bucket must match the controller-bound artifact bucket&apos;)
+            String requestedArtifactBucket = params.STACK_S3_BUCKET?.toString()
+            String controllerArtifactBucket = env.stack_s3_bucket?.toString()
+            if (!requestedArtifactBucket || requestedArtifactBucket != requestedArtifactBucket.trim() ||
+                    !controllerArtifactBucket || controllerArtifactBucket != controllerArtifactBucket.trim() ||
+                    requestedArtifactBucket != controllerArtifactBucket) {
+              error(&apos;Artifact bucket must be nonempty, canonical, and match the controller-bound artifact bucket&apos;)
             }
+            validatedArtifactBucket = controllerArtifactBucket
             if (params.BANNER_ROLLOUT_OPERATION == &apos;FORWARD&apos;) {
               def upstreamCauses = currentBuild.getBuildCauses(&apos;hudson.model.Cause$UpstreamCause&apos;)
               if (!params.MIGRATIONS_COMPLETED_UPSTREAM || upstreamCauses.size() != 1 || upstreamCauses[0].upstreamProject != &apos;Deployment Pipeline&apos;) {
@@ -215,14 +220,14 @@ pipeline {
             def aimAttestation = &apos;&apos;
             if (bannerDeployment == &apos;AIM-AHEAD&apos;) {
               if (!params.BANNER_AIM_ATTESTATION_JSON?.trim()) {
-                error(&apos;AIM-AHEAD requires the exact runtime operator attestation from Deployment Pipeline&apos;)
+                error(&apos;AIM-AHEAD requires an exact Deployment Pipeline snapshot or standalone AIM-AHEAD NON_BANNER_COMPONENTS attestation parameter&apos;)
               }
               writeFile file: &apos;aim-ahead-operator-attestation.json&apos;, text: params.BANNER_AIM_ATTESTATION_JSON
               aimAttestation = &apos;--attestation aim-ahead-operator-attestation.json&apos;
             }
             withEnv([
-              &quot;BANNER_ARTIFACT_BUCKET=${requestedArtifactBucket}&quot;,
-              &quot;BANNER_CONTROLLER_ARTIFACT_BUCKET=${controllerArtifactBucket}&quot;
+              &quot;BANNER_ARTIFACT_BUCKET=${validatedArtifactBucket}&quot;,
+              &quot;BANNER_CONTROLLER_ARTIFACT_BUCKET=${validatedArtifactBucket}&quot;
             ]) {
               bannerRolloutTupleSha = sh(
                 script: &quot;&quot;&quot;python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; \
@@ -308,7 +313,7 @@ pipeline {
             def imageParams = [
               [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
               [$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],
-              [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: String.valueOf(params.STACK_S3_BUCKET)]
+              [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: validatedArtifactBucket]
             ]
             def bannerImageParams = imageParams + [
               [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_RUN_ID&apos;, value: bannerForward ? bannerRolloutRunId : &apos;&apos;]
@@ -329,7 +334,7 @@ pipeline {
                 build job: &apos;PIC-SURE Frontend Build&apos;, parameters: [
                   [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
                   [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSF&apos;]],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: String.valueOf(params.STACK_S3_BUCKET)],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: validatedArtifactBucket],
                   [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_RUN_ID&apos;, value: bannerForward ? bannerRolloutRunId : &apos;&apos;]
                 ]
               }
@@ -349,7 +354,7 @@ pipeline {
               if (shouldDeploy) {
                 build job: &apos;PIC-SURE Wildfly Stack Deploy&apos;, parameters: [
                   [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: String.valueOf(params.STACK_S3_BUCKET)],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: validatedArtifactBucket],
                   [$class: &apos;StringParameterValue&apos;, name: &apos;DATASET_S3_OBJECT_KEY&apos;, value: String.valueOf(params.DATASET_S3_OBJECT_KEY)],
                   [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_GATEWAY&apos;, value: params.INCLUDE_PIC_SURE_API],
                   [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_OPERATIONS&apos;, value: params.INCLUDE_PIC_SURE_API],
@@ -368,7 +373,7 @@ pipeline {
               if (params.INCLUDE_PIC_SURE_FRONTEND) {
                 build job: &apos;PIC-SURE Frontend Deploy&apos;, parameters: [
                   [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: String.valueOf(params.STACK_S3_BUCKET)],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: validatedArtifactBucket],
                   [$class: &apos;BooleanParameterValue&apos;, name: &apos;BANNER_ROLLOUT&apos;, value: bannerForward],
                   [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_DEPLOYMENT&apos;, value: bannerDeployment ?: &apos;&apos;],
                   [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_TUPLE_SHA256&apos;, value: bannerRolloutTupleSha],
@@ -383,7 +388,7 @@ pipeline {
                 if (params.INCLUDE_PIC_SURE_HPDS_AUTH) {
                   build job: &apos;PIC-SURE HPDS Auth Deploy&apos;, parameters: [
                     [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                    [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: String.valueOf(params.STACK_S3_BUCKET)],
+                    [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: validatedArtifactBucket],
                     [$class: &apos;StringParameterValue&apos;, name: &apos;DATA_S3_OBJECT_KEY&apos;, value: String.valueOf(params.DATA_S3_OBJECT_KEY)],
                     [$class: &apos;StringParameterValue&apos;, name: &apos;GENOMIC_DATASET_S3_OBJECT_KEY&apos;, value: String.valueOf(params.GENOMIC_DATASET_S3_OBJECT_KEY)]
                   ]
@@ -395,7 +400,7 @@ pipeline {
                 if (params.INCLUDE_PIC_SURE_HPDS_OPEN) {
                   build job: &apos;PIC-SURE HPDS Open Deploy&apos;, parameters: [
                     [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                    [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: String.valueOf(params.STACK_S3_BUCKET)],
+                    [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: validatedArtifactBucket],
                     [$class: &apos;StringParameterValue&apos;, name: &apos;DESTIGMATIZED_DATASET_S3_OBJECT_KEY&apos;, value: String.valueOf(params.DESTIGMATIZED_DATASET_S3_OBJECT_KEY)]
                   ]
                 } else {

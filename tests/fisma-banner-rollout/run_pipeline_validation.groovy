@@ -11,6 +11,7 @@ def activeEnvironment = [:]
 def reads = []
 def writes = [:]
 def shellCalls = []
+def scheduledBuilds = []
 
 def pipelineError = { String message -> throw new PipelineFailure(message) }
 def fileExistsStep = { String path -> new File(path).exists() }
@@ -59,10 +60,31 @@ def shStep = { Object input ->
     options.returnStdout ? stdout.toString() : status
 }
 
-def causes = (fixture.causes ?: []).collect { cause -> new Expando(upstreamProject: cause.upstreamProject) }
+def causes = (fixture.causes ?: []).collect { cause ->
+    def className = cause.get('className')?.toString()
+    if (!className && cause.containsKey('userId')) {
+        className = 'hudson.model.Cause$UserIdCause'
+    } else if (!className && cause.containsKey('upstreamProject')) {
+        className = 'hudson.model.Cause$UpstreamCause'
+    }
+    [className: className, value: new Expando(cause as Map)]
+}
 def currentBuildValue = new Expando(
-    getBuildCauses: { Object... ignored -> causes }
+    getBuildCauses: { Object... requested ->
+        def requestedClass = requested.length ? requested[0]?.toString() : null
+        def matching = requestedClass ? causes.findAll { it.className == requestedClass } : causes
+        matching.collect { it.value }
+    }
 )
+def buildStep = { Map values ->
+    scheduledBuilds << [
+        job: values.job?.toString(),
+        parameters: (values.parameters ?: []).collect { parameter ->
+            [name: parameter.name?.toString(), value: parameter.value]
+        },
+    ]
+    new Expando(number: 1)
+}
 def paramsValue = new Expando(fixture.params as Map)
 def envValues = new LinkedHashMap(fixture.env as Map)
 envValues.JENKINS_HOME = fixture.jenkinsHome.toString()
@@ -78,6 +100,7 @@ def bindingValues = [
     writeFile: writeFileStep,
     withEnv: withEnvStep,
     sh: shStep,
+    build: buildStep,
     banner_rollout_present: fixture.bannerRolloutPresent,
     banner_deployment: fixture.bannerDeployment,
     banner_tuple_sha256: fixture.bannerTupleSha256,
@@ -108,6 +131,7 @@ println JsonOutput.toJson([
     reads: reads,
     writes: writes,
     shellCalls: shellCalls,
+    scheduledBuilds: scheduledBuilds,
     propagatedAttestation: binding.getVariable('aim_attestation_json'),
     tupleSha256: binding.getVariable('bannerRolloutTupleSha'),
 ])

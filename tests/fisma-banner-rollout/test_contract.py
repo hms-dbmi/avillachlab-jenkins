@@ -140,9 +140,20 @@ def pipeline_validation_snippet(path: Path, pipeline: str) -> str:
             "params.BANNER_ROLLOUT_OPERATION == 'FORWARD'"
         )
         end = script.index(end_marker, start) + len(end_marker)
-        return script[start:end]
+        validation = script[start:end]
+        dispatch_start = script.index(
+            "build job: 'PIC-SURE Pipeline Build and Deploy'", end
+        )
+        dispatch_end_marker = "\n                    ]"
+        dispatch_end = (
+            script.index(dispatch_end_marker, dispatch_start)
+            + len(dispatch_end_marker)
+        )
+        return f"{validation}\n{script[dispatch_start:dispatch_end]}"
     if pipeline == "child":
-        start = script.index("if (bannerRolloutPresent) {")
+        start = script.index(
+            "validatedArtifactBucket = String.valueOf(params.STACK_S3_BUCKET)"
+        )
         stage_marker = "\n    stage('Retrieve Stack')"
         stage = script.index(stage_marker, start)
         end = script.rindex("\n          }", start, stage) + len("\n          }")
@@ -236,6 +247,10 @@ def banner_validation_fixture(
         "INCLUDE_PIC_SURE_AUTH_MICRO_APP": False,
         "INCLUDE_PIC_SURE_FRONTEND": False,
         "BANNER_AIM_ATTESTATION_JSON": attestation_json,
+        "deployment_git_hash": "a" * 40,
+        "dataset_s3_object_key": "synthetic-dataset",
+        "destigmatized_dataset_s3_object_key": "synthetic-destigmatized-dataset",
+        "genomic_dataset_s3_object_key": "synthetic-genomic-dataset",
     }
     return {
         "buildSpec": str(spec_path),
@@ -1276,6 +1291,71 @@ if (deploymentRun.getResult() != Result.SUCCESS) {
                     self.assertEqual([], result["shellCalls"], result)
                     self.assertFalse(effect.exists())
 
+    def test_bucket_whitespace_is_rejected_before_shell_or_disruptive_effects(self):
+        snippets = {
+            "parent": pipeline_validation_snippet(DEPLOYMENT_PIPELINE, "parent"),
+            "child": pipeline_validation_snippet(PIPELINE, "child"),
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            for pipeline, snippet in snippets.items():
+                for caller_bucket, controller_bucket in (
+                    (" controller-bucket", "controller-bucket"),
+                    ("controller-bucket ", "controller-bucket"),
+                    ("controller-bucket", " controller-bucket"),
+                    ("controller-bucket", "controller-bucket "),
+                ):
+                    with self.subTest(
+                        pipeline=pipeline,
+                        caller_bucket=caller_bucket,
+                        controller_bucket=controller_bucket,
+                    ):
+                        effect = Path(temp) / f"{pipeline}-{caller_bucket!r}-{controller_bucket!r}"
+                        fixture = banner_validation_fixture(pipeline, "BDC", caller_bucket)
+                        fixture["env"]["stack_s3_bucket"] = controller_bucket
+                        fixture["disruptiveEffect"] = str(effect)
+                        result = run_pipeline_validation(snippet, fixture)
+                        self.assertEqual("REJECT", result["status"], result)
+                        self.assertEqual([], result["shellCalls"], result)
+                        self.assertFalse(effect.exists())
+
+    def test_only_the_validated_bucket_reaches_the_child_and_leaf_jobs(self):
+        parent = pipeline_validation_snippet(DEPLOYMENT_PIPELINE, "parent")
+        child = xml_script(PIPELINE)
+        self.assertIn(
+            "name: 'STACK_S3_BUCKET', value: validated_artifact_bucket",
+            parent,
+        )
+        self.assertNotIn("value: params.STACK_S3_BUCKET", parent)
+        self.assertEqual(1, child.count("String.valueOf(params.STACK_S3_BUCKET)"))
+        self.assertEqual(6, child.count("value: validatedArtifactBucket"))
+
+    def test_parent_validation_snippet_reaches_actual_child_dispatch(self):
+        parent = pipeline_validation_snippet(DEPLOYMENT_PIPELINE, "parent")
+        self.assertIn("build job: 'PIC-SURE Pipeline Build and Deploy'", parent)
+
+    def test_pipeline_validation_runner_filters_requested_cause_class(self):
+        fixture = banner_validation_fixture("parent", "BDC", "synthetic-bucket")
+        fixture["causes"] = [
+            {
+                "className": "hudson.model.Cause$UserIdCause",
+                "userId": "synthetic-operator",
+            },
+            {
+                "className": "hudson.model.Cause$UpstreamCause",
+                "upstreamProject": "Deployment Pipeline",
+            },
+        ]
+        snippet = """
+if (currentBuild.getBuildCauses('hudson.model.Cause$UserIdCause').size() != 1) {
+    error('UserIdCause filter returned the wrong causes')
+}
+if (currentBuild.getBuildCauses('hudson.model.Cause$UpstreamCause').size() != 1) {
+    error('UpstreamCause filter returned the wrong causes')
+}
+"""
+        result = run_pipeline_validation(snippet, fixture)
+        self.assertEqual("ACCEPT", result["status"], result)
+
     def test_bucket_values_never_enter_parent_or_child_shell_source(self):
         snippets = {
             "parent": pipeline_validation_snippet(DEPLOYMENT_PIPELINE, "parent"),
@@ -1314,6 +1394,16 @@ if (deploymentRun.getResult() != Result.SUCCESS) {
         self.assertEqual(1, len(parent["reads"]), parent)
         self.assertEqual(original, parent["propagatedAttestation"])
         self.assertEqual(original, parent["writes"]["aim-ahead-operator-attestation.json"])
+        self.assertEqual(1, len(parent["scheduledBuilds"]), parent)
+        dispatched = {
+            parameter["name"]: parameter["value"]
+            for parameter in parent["scheduledBuilds"][0]["parameters"]
+        }
+        self.assertEqual(
+            "PIC-SURE Pipeline Build and Deploy",
+            parent["scheduledBuilds"][0]["job"],
+        )
+        self.assertEqual(original, dispatched["BANNER_AIM_ATTESTATION_JSON"])
 
         child_fixture = banner_validation_fixture(
             "child", "AIM-AHEAD", "synthetic-bucket", parent["propagatedAttestation"]
@@ -1346,6 +1436,32 @@ if (deploymentRun.getResult() != Result.SUCCESS) {
         self.assertEqual("REJECT", mutated_parent["status"], mutated_parent)
         self.assertEqual(2, len(mutated_parent["reads"]), mutated_parent)
 
+        dispatch_reread = parent_snippet.replace(
+            "name: 'BANNER_AIM_ATTESTATION_JSON', value: aim_attestation_json",
+            "name: 'BANNER_AIM_ATTESTATION_JSON', "
+            'value: readFile("${env.JENKINS_HOME}/banner-rollout/'
+            'aim-ahead-operator-attestation.json")',
+            1,
+        )
+        self.assertNotEqual(parent_snippet, dispatch_reread)
+        mutated_dispatch = run_pipeline_validation(dispatch_reread, parent_fixture)
+        self.assertEqual("ACCEPT", mutated_dispatch["status"], mutated_dispatch)
+        self.assertEqual(2, len(mutated_dispatch["reads"]), mutated_dispatch)
+        mutated_parameters = {
+            parameter["name"]: parameter["value"]
+            for parameter in mutated_dispatch["scheduledBuilds"][0]["parameters"]
+        }
+        self.assertEqual(
+            replacement,
+            mutated_parameters["BANNER_AIM_ATTESTATION_JSON"],
+            mutated_dispatch,
+        )
+        self.assertNotEqual(
+            original,
+            mutated_parameters["BANNER_AIM_ATTESTATION_JSON"],
+            mutated_dispatch,
+        )
+
         runtime_reread = child_snippet.replace(
             "writeFile file: 'aim-ahead-operator-attestation.json', text: params.BANNER_AIM_ATTESTATION_JSON",
             "writeFile file: 'aim-ahead-operator-attestation.json', "
@@ -1373,6 +1489,8 @@ if (deploymentRun.getResult() != Result.SUCCESS) {
         )
         rejected = run_pipeline_validation(child_snippet, missing)
         self.assertEqual("REJECT", rejected["status"], rejected)
+        self.assertIn("Deployment Pipeline snapshot", rejected["failure"])
+        self.assertIn("standalone AIM-AHEAD NON_BANNER_COMPONENTS", rejected["failure"])
         self.assertEqual([], rejected["reads"], rejected)
         self.assertEqual([], rejected["shellCalls"], rejected)
 
