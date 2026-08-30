@@ -140,6 +140,15 @@ class JenkinsOrderTest(unittest.TestCase):
         upstream_class = "hudson.model.Cause$UpstreamCause"
         replay_class = "org.jenkinsci.plugins.workflow.cps.replay.ReplayCause"
 
+        _, check_for_updates = xml_system_scripts(CHECK_FOR_UPDATES)
+        deployment_call = check_for_updates[
+            check_for_updates.index('getItemByFullName("Deployment Pipeline")') :
+            check_for_updates.index("if (bannerRollout)")
+        ]
+        self.assertIn(".scheduleBuild2(0, new ParametersAction([", deployment_call)
+        self.assertNotIn("CauseAction", deployment_call)
+        normal_parent_causes = []
+
         def upstream(build=41, nested=None):
             return {
                 "_class": upstream_class,
@@ -173,7 +182,7 @@ class JenkinsOrderTest(unittest.TestCase):
         valid_parent = {
             "number": 41,
             "building": True,
-            "causes": [],
+            "causes": normal_parent_causes,
             "banner": True,
             "operation": "FORWARD",
             "contextMatches": True,
