@@ -6,16 +6,19 @@ import subprocess
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
 PIPELINE = ROOT / "jenkins-docker/jobs/PIC-SURE Pipeline Build and Deploy/config.xml"
+DEPLOYMENT_PIPELINE = ROOT / "jenkins-docker/jobs/Deployment Pipeline/config.xml"
 CHECK_FOR_UPDATES = ROOT / "jenkins-docker/jobs/Check For Updates/config.xml"
 RETRIEVE_BUILD_SPEC = ROOT / "jenkins-docker/jobs/Retrieve Build Spec/config.xml"
 FRONTEND_BUILD = ROOT / "jenkins-docker/jobs/PIC-SURE Frontend Build/config.xml"
 WILDFLY = ROOT / "jenkins-docker/jobs/PIC-SURE Wildfly Stack Deploy/config.xml"
 FRONTEND = ROOT / "jenkins-docker/jobs/PIC-SURE Frontend Deploy/config.xml"
+QUERY_IMAGE = ROOT / "jenkins-docker/jobs/PIC-SURE HPDS Query Service Image/config.xml"
 VALIDATOR = ROOT / "jenkins-docker/scripts/validate-banner-rollout.py"
 CONTRACT = ROOT / "jenkins-docker/scripts/banner-rollout-contract.json"
 
@@ -53,34 +56,6 @@ def xml_system_scripts(path: Path) -> list[str]:
         for node in root.findall(".//hudson.plugins.groovy.SystemGroovy/source/script/script")
         if node.text
     ]
-
-
-def containing_parallel(script: str, offset: int):
-    for start in (index for index in range(len(script)) if script.startswith("parallel (", index)):
-        depth = 0
-        quote = None
-        escaped = False
-        for index in range(start + len("parallel "), len(script)):
-            char = script[index]
-            if quote:
-                if escaped:
-                    escaped = False
-                elif char == "\\":
-                    escaped = True
-                elif char == quote:
-                    quote = None
-                continue
-            if char in "'\"":
-                quote = char
-            elif char == "(":
-                depth += 1
-            elif char == ")":
-                depth -= 1
-                if depth == 0:
-                    if start < offset < index:
-                        return (start, index)
-                    break
-    return None
 
 
 def run_shell_guard(
@@ -136,23 +111,52 @@ def run_shell_guard(
 
 
 class JenkinsOrderTest(unittest.TestCase):
-    def test_normal_path_routes_banner_input_to_hardened_pipeline(self):
+    def test_normal_path_routes_banner_input_through_deployment_pipeline(self):
         first_script, final_script = xml_system_scripts(CHECK_FOR_UPDATES)
         guard = first_script.index("buildSpec.banner_rollout")
         old_pipeline = first_script.index('getItemByFullName("PIC-SURE Pipeline")')
         self.assertLess(guard, old_pipeline)
         self.assertIn("if (!bannerRollout)", first_script[guard:old_pipeline])
-        hardened = final_script.index('getItemByFullName("PIC-SURE Pipeline Build and Deploy")')
-        legacy = final_script.index('getItemByFullName("Deployment Pipeline")')
-        self.assertLess(hardened, legacy)
-        self.assertIn("if (bannerRollout)", final_script[:hardened])
+        deployment = final_script.index('getItemByFullName("Deployment Pipeline")')
+        self.assertNotIn('getItemByFullName("PIC-SURE Pipeline Build and Deploy")', final_script)
+        self.assertIn("BANNER_ROLLOUT", final_script[deployment:])
+        self.assertIn("BANNER_ROLLOUT_OPERATION", final_script[deployment:])
         for required in (
-            "RUN_DATABASE_MIGRATIONS",
-            "INCLUDE_PIC_SURE_API",
-            "INCLUDE_PIC_SURE_AUTH_MICRO_APP",
-            "INCLUDE_PIC_SURE_FRONTEND",
+            "deployment_git_hash",
+            "dataset_s3_object_key",
+            "destigmatized_dataset_s3_object_key",
+            "genomic_dataset_s3_object_key",
         ):
-            self.assertIn(required, final_script[hardened:legacy])
+            self.assertIn(required, final_script[deployment:])
+
+    def test_deployment_pipeline_preserves_controls_and_calls_hardened_job(self):
+        script = xml_script(DEPLOYMENT_PIPELINE)
+        validation = script.index("stage('Validate Banner Rollout Input')")
+        backup = script.index("stage('Create Auth & Picsure Database Backups')")
+        migrations = script.index("stage('Database Migrations')")
+        rebuild = script.index("stage('Teardown and Rebuild Stage Environment')")
+        initialize = script.index("stage('Await Initialization')")
+        hardened = script.index("build job: 'PIC-SURE Pipeline Build and Deploy'")
+        sensor = script.index("stage('Falcon Sensor Check')")
+        self.assertLess(validation, backup)
+        validation_body = script[validation:backup]
+        self.assertIn("banner_rollout_present != params.BANNER_ROLLOUT", validation_body)
+        self.assertIn("if (banner_rollout_present)", validation_body)
+        self.assertLess(backup, migrations)
+        self.assertLess(migrations, rebuild)
+        self.assertLess(rebuild, initialize)
+        self.assertLess(initialize, hardened)
+        self.assertLess(hardened, sensor)
+        for retained in (
+            "Retrieve Deployment State",
+            "Update PIC-SURE Token Introspection Token",
+            "Render PIC-SURE Service Config Templates",
+            "Write Stack State",
+        ):
+            self.assertIn(retained, script)
+        self.assertIn("BANNER_ROLLOUT_OPERATION", script)
+        self.assertIn("MIGRATIONS_COMPLETED_UPSTREAM", script)
+        self.assertIn("name: 'TARGET_STACK', value: 'staging'", script)
 
     def test_build_spec_is_parsed_once_into_serializable_values(self):
         script = xml_script(PIPELINE)
@@ -163,12 +167,29 @@ class JenkinsOrderTest(unittest.TestCase):
         self.assertIn("bannerRolloutPresent: spec.banner_rollout != null", script)
         self.assertIn("bannerRolloutPresent = parsedBuildSpec.bannerRolloutPresent", script)
 
+    def test_forward_banner_combined_job_requires_deployment_pipeline_parent(self):
+        script = xml_script(PIPELINE)
+        banner = script.index("if (bannerRolloutPresent)")
+        validator = script.index("validate-banner-rollout.py", banner)
+        guarded = script[banner:validator]
+        self.assertIn("Deployment Pipeline", guarded)
+        self.assertIn("MIGRATIONS_COMPLETED_UPSTREAM", guarded)
+        self.assertIn("Cause$UpstreamCause", guarded)
+
     def test_backend_health_finishes_before_frontend_publication(self):
         script = xml_script(PIPELINE)
         backend = script.index("build job: 'PIC-SURE Wildfly Stack Deploy'")
         frontend = script.index("build job: 'PIC-SURE Frontend Deploy'")
         self.assertLess(backend, frontend)
-        self.assertEqual(containing_parallel(script, backend), containing_parallel(script, frontend))
+        branch_start = script.index("deployBranches['banner_backend_then_frontend']")
+        next_branch = script.index("deployBranches['hpds_auth_deploy']")
+        parallel_call = script.index("parallel deployBranches")
+        self.assertLess(branch_start, backend)
+        self.assertLess(backend, frontend)
+        self.assertLess(frontend, next_branch)
+        self.assertLess(next_branch, parallel_call)
+        self.assertIn("deployBranches['banner_backend_then_frontend']", script[branch_start:backend])
+        self.assertIn("parallel deployBranches", script[next_branch:])
         self.assertIn("BANNER_BACKEND_HEALTH_RECEIPT", script[frontend:])
 
     def test_frontend_is_built_from_reviewed_commit_before_deploy(self):
@@ -178,7 +199,29 @@ class JenkinsOrderTest(unittest.TestCase):
         self.assertLess(build, deploy)
         self.assertIn("build_hashes['PSF']", script[build:deploy])
         frontend_build_shell = xml_shell(FRONTEND_BUILD)
-        self.assertIn('"git-commit=${GIT_COMMIT}"', frontend_build_shell)
+        self.assertIn("git-commit=${GIT_COMMIT}", frontend_build_shell)
+
+    def test_banner_artifacts_use_one_combined_run_prefix_and_explicit_bucket(self):
+        script = xml_script(PIPELINE)
+        self.assertIn("BANNER_ROLLOUT_RUN_ID", script)
+        self.assertIn("STACK_S3_BUCKET", script)
+        for job in (
+            "PIC-SURE Operations Service Image",
+            "PIC-SURE Gateway Image",
+            "PIC-SURE HPDS Query Service Image",
+            "PIC-SURE Auth Micro App Image",
+            "PIC-SURE Frontend Build",
+            "PIC-SURE Wildfly Stack Deploy",
+            "PIC-SURE Frontend Deploy",
+        ):
+            with self.subTest(job=job):
+                job_path = ROOT / f"jenkins-docker/jobs/{job}/config.xml"
+                text = job_path.read_text(encoding="utf-8")
+                self.assertIn("BANNER_ROLLOUT_RUN_ID", text)
+                self.assertIn("S3_BUCKET_NAME", text)
+        query_image = QUERY_IMAGE.read_text(encoding="utf-8")
+        self.assertIn("--metadata", query_image)
+        self.assertIn("git-commit=${GIT_COMMIT_FULL}", query_image)
 
     def test_unrelated_deploy_legs_remain_parallel_with_backend_sequence(self):
         script = xml_script(PIPELINE)
@@ -210,6 +253,8 @@ class JenkinsOrderTest(unittest.TestCase):
         dockerfile = (ROOT / "jenkins-docker/Dockerfile").read_text(encoding="utf-8")
         self.assertIn("validate-banner-rollout.py", dockerfile)
         self.assertIn("JENKINS_SOURCE_COMMIT", dockerfile)
+        self.assertIn("BANNER_CONTROLLER_DEPLOYMENT", dockerfile)
+        self.assertIn("--controller-deployment", script)
         retrieve = RETRIEVE_BUILD_SPEC.read_text(encoding="utf-8")
         self.assertIn("banner-rollout-attestation.json", retrieve)
 
@@ -219,9 +264,22 @@ class JenkinsOrderTest(unittest.TestCase):
         probe = shell.rindex("/system/status")
         self.assertLess(logs, probe)
         self.assertIn("RUNNING", shell[probe:])
+        self.assertIn("get-command-invocation", shell[probe:])
+        self.assertIn("StandardErrorContent", shell[probe:])
+        self.assertIn("if ! (wait_for_command", shell[probe:])
 
 
 class FailClosedStandaloneTest(unittest.TestCase):
+    def test_forward_leaf_jobs_require_the_real_combined_upstream_run(self):
+        for job in (WILDFLY, FRONTEND, FRONTEND_BUILD):
+            with self.subTest(job=job):
+                guards = xml_system_scripts(job)
+                self.assertTrue(guards)
+                guard = "\n".join(guards)
+                self.assertIn("Cause.UpstreamCause", guard)
+                self.assertIn("PIC-SURE Pipeline Build and Deploy", guard)
+                self.assertIn("BANNER_ROLLOUT_RUN_ID", guard)
+
     def test_service_wrappers_propagate_banner_mode_to_fail_closed_backend(self):
         for job in (
             "PIC-SURE Operations Service Deploy",
@@ -243,6 +301,7 @@ class FailClosedStandaloneTest(unittest.TestCase):
             WILDFLY,
             {
                 "BANNER_ROLLOUT": "true",
+                "BANNER_ROLLOUT_RUN_ID": "combined-1",
                 "BANNER_ROLLOUT_TUPLE_SHA256": "0" * 64,
                 "DEPLOY_OPERATIONS": "true",
                 "DEPLOY_GATEWAY": "true",
@@ -257,6 +316,7 @@ class FailClosedStandaloneTest(unittest.TestCase):
             FRONTEND,
             {
                 "BANNER_ROLLOUT": "true",
+                "BANNER_ROLLOUT_RUN_ID": "combined-1",
                 "BANNER_ROLLOUT_TUPLE_SHA256": "0" * 64,
                 "BANNER_BACKEND_HEALTH_RECEIPT": "",
             },
@@ -278,6 +338,7 @@ class FailClosedStandaloneTest(unittest.TestCase):
             WILDFLY,
             {
                 "BANNER_ROLLOUT": "true",
+                "BANNER_ROLLOUT_RUN_ID": "combined-1",
                 "BANNER_ROLLOUT_DEPLOYMENT": "BDC",
                 "BANNER_ROLLOUT_TUPLE_SHA256": "0" * 64,
                 "DEPLOY_OPERATIONS": "true",
@@ -328,6 +389,31 @@ class FailClosedStandaloneTest(unittest.TestCase):
         self.assertIn("BANNER_ROLLBACK", psama_wrapper)
         self.assertIn("BANNER_ROLLBACK_ATTESTATION_JSON", psama_wrapper)
 
+    def test_frontend_rollback_builds_and_deploys_the_attested_immutable_artifact(self):
+        build = FRONTEND_BUILD.read_text(encoding="utf-8")
+        deploy = FRONTEND.read_text(encoding="utf-8")
+        self.assertIn("BANNER_ROLLBACK", build)
+        self.assertIn("BANNER_ROLLBACK_ATTESTATION_JSON", build)
+        self.assertIn("--required-rollback-stage FRONTEND_ALLOWED", build)
+        self.assertIn("artifactPrefix", build)
+        self.assertIn("artifactPrefix", deploy)
+        self.assertIn("--artifact_prefix", deploy)
+
+    def test_backend_rollback_images_build_the_attested_immutable_artifacts(self):
+        for job in (
+            "PIC-SURE Operations Service Image",
+            "PIC-SURE Gateway Image",
+            "PIC-SURE HPDS Query Service Image",
+            "PIC-SURE Auth Micro App Image",
+        ):
+            with self.subTest(job=job):
+                text = (ROOT / f"jenkins-docker/jobs/{job}/config.xml").read_text(encoding="utf-8")
+                self.assertIn("BANNER_ROLLBACK", text)
+                self.assertIn("BANNER_ROLLBACK_ATTESTATION_JSON", text)
+                self.assertIn("--required-rollback-stage BACKEND_ALLOWED", text)
+                self.assertIn("artifactPrefix", text)
+                self.assertIn("artifacts.backendCommit", text)
+
 
 class ExecutableContractTest(unittest.TestCase):
     def setUp(self):
@@ -335,14 +421,41 @@ class ExecutableContractTest(unittest.TestCase):
         self.infrastructure = Path(os.environ["BDC_INFRASTRUCTURE_ROOT"])
 
     def validate(self, deployment: str, spec: Path, *selections: str):
-        attestation = []
+        release_control_commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=self.release_control,
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout.strip()
+        deployment_args = [
+            "--release-control-commit",
+            release_control_commit,
+            "--controller-deployment",
+            "bdc",
+        ]
+        attestation_handle = None
         if deployment == "AIM-AHEAD":
-            attestation = [
+            attestation = json.loads(
+                (self.infrastructure / "tests/fisma-banner-rollout/fixtures/aim-ahead-completed-attestation.synthetic.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            attestation["attestedAtUtc"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            attestation_handle = tempfile.NamedTemporaryFile("w", suffix=".json")
+            json.dump(attestation, attestation_handle)
+            attestation_handle.flush()
+            deployment_args = [
                 "--attestation",
-                str(self.infrastructure / "tests/fisma-banner-rollout/aim-ahead-completed-attestation.synthetic.json"),
+                attestation_handle.name,
+                "--release-control-commit",
+                "a" * 40,
+                "--controller-deployment",
+                "aim-ahead",
             ]
-        return subprocess.run(
-            [
+        try:
+            return subprocess.run(
+                [
                 "python3",
                 str(VALIDATOR),
                 "--deployment",
@@ -351,15 +464,18 @@ class ExecutableContractTest(unittest.TestCase):
                 str(spec),
                 "--jenkins-source-commit",
                 self.current_jenkins_commit(),
-                *attestation,
+                *deployment_args,
                 *selections,
-            ],
-            cwd=ROOT,
-            text=True,
-            capture_output=True,
-            timeout=10,
-            check=False,
-        )
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+        finally:
+            if attestation_handle is not None:
+                attestation_handle.close()
 
     def current_jenkins_commit(self):
         return current_jenkins_commit()
@@ -425,6 +541,16 @@ class ExecutableContractTest(unittest.TestCase):
                 str(self.release_control / "build-spec.json"),
                 "--jenkins-source-commit",
                 self.current_jenkins_commit(),
+                "--release-control-commit",
+                subprocess.run(
+                    ["git", "rev-parse", "HEAD"],
+                    cwd=self.release_control,
+                    text=True,
+                    capture_output=True,
+                    check=True,
+                ).stdout.strip(),
+                "--controller-deployment",
+                "bdc",
                 "--run-database-migrations",
                 "false",
                 "--include-api",
@@ -452,7 +578,7 @@ class ExecutableContractTest(unittest.TestCase):
             check=False,
         )
         self.assertEqual(2, result.returncode, result.stdout + result.stderr)
-        self.assertIn("operator attestation is incomplete", result.stderr)
+        self.assertIn("requires the exact --build-spec", result.stderr)
 
     def test_rollback_template_fails_until_every_phase_is_attested(self):
         template = self.infrastructure / "tests/fisma-banner-rollout/rollback-operator-attestation.json"
@@ -464,6 +590,10 @@ class ExecutableContractTest(unittest.TestCase):
                 str(template),
                 "--jenkins-source-commit",
                 self.current_jenkins_commit(),
+                "--controller-deployment",
+                "bdc",
+                "--target-stack",
+                "staging",
             ],
             cwd=ROOT,
             text=True,
@@ -479,6 +609,13 @@ class ExecutableContractTest(unittest.TestCase):
             (self.infrastructure / "tests/fisma-banner-rollout/rollback-operator-attestation.json").read_text(encoding="utf-8")
         )
         template["deployment"] = "BDC"
+        template["controllerDeployment"] = "BDC"
+        template["targetStack"] = "staging"
+        template["artifactPrefix"] = "staging/banner-rollout/rollback-fixture/containers"
+        template["artifacts"] = {
+            "frontendCommit": "1" * 40,
+            "backendCommit": "2" * 40,
+        }
         template["tupleSha256"] = self.bdc_tuple()
         template["stage"] = "COMPLETE"
         for phase in template["phases"]:
@@ -492,7 +629,7 @@ class ExecutableContractTest(unittest.TestCase):
             "psamaRecreated": True,
         }
         template["operator"] = "synthetic-operator"
-        template["attestedAtUtc"] = "2026-08-29T00:00:00Z"
+        template["attestedAtUtc"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         with tempfile.NamedTemporaryFile("w", suffix=".json") as handle:
             json.dump(template, handle)
             handle.flush()
@@ -504,6 +641,10 @@ class ExecutableContractTest(unittest.TestCase):
                     handle.name,
                     "--jenkins-source-commit",
                     self.current_jenkins_commit(),
+                    "--controller-deployment",
+                    "bdc",
+                    "--target-stack",
+                    "staging",
                 ],
                 text=True,
                 capture_output=True,
@@ -553,6 +694,99 @@ class ExecutableContractTest(unittest.TestCase):
             result = self.validate("BDC", Path(handle.name), *self.required_selections())
         self.assertEqual(2, result.returncode, result.stdout + result.stderr)
         self.assertIn("Jenkins source", result.stderr)
+
+    def test_extra_nested_component_fields_are_rejected_before_work(self):
+        spec = json.loads((self.release_control / "build-spec.json").read_text(encoding="utf-8"))
+        spec["banner_rollout"]["components"]["jenkins"]["extra"] = "accepted-by-old-validator"
+        components = spec["banner_rollout"]["components"]
+        import hashlib
+        payload = {"deployment": "BDC", "components": components}
+        spec["banner_rollout"]["tupleSha256"] = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        with tempfile.NamedTemporaryFile("w", suffix=".json") as handle:
+            json.dump(spec, handle)
+            handle.flush()
+            result = self.validate("BDC", Path(handle.name), *self.required_selections())
+        self.assertEqual(2, result.returncode, result.stdout + result.stderr)
+        self.assertIn("unexpected", result.stderr)
+
+    def test_aim_attestation_binds_checked_out_commit_tuple_and_build_input(self):
+        spec = self.infrastructure / "tests/fisma-banner-rollout/aim-ahead-required-release-input.json"
+        result = self.validate("AIM-AHEAD", spec, *self.required_selections())
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+    def test_stale_rollback_attestation_is_rejected(self):
+        template = json.loads(
+            (self.infrastructure / "tests/fisma-banner-rollout/rollback-operator-attestation.json").read_text(encoding="utf-8")
+        )
+        template.update(
+            {
+                "deployment": "BDC",
+                "controllerDeployment": "BDC",
+                "targetStack": "staging",
+                "artifactPrefix": "staging/banner-rollout/old-run/containers",
+                "tupleSha256": self.bdc_tuple(),
+                "stage": "COMPLETE",
+                "operator": "synthetic-operator",
+                "attestedAtUtc": "2000-01-01T00:00:00Z",
+            }
+        )
+        for phase in template["phases"]:
+            phase["attested"] = True
+        template["state"] = {
+            "managementWritesFrozen": True,
+            "frontendRolledBack": True,
+            "targetedActiveOrScheduledRemaining": 0,
+            "forwardSchemaRetained": True,
+            "downMigrationRun": False,
+            "psamaRecreated": True,
+        }
+        with tempfile.NamedTemporaryFile("w", suffix=".json") as handle:
+            json.dump(template, handle)
+            handle.flush()
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(VALIDATOR),
+                    "--rollback-attestation",
+                    handle.name,
+                    "--jenkins-source-commit",
+                    self.current_jenkins_commit(),
+                    "--controller-deployment",
+                    "bdc",
+                    "--target-stack",
+                    "staging",
+                ],
+                text=True,
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+        self.assertEqual(2, result.returncode, result.stdout + result.stderr)
+        self.assertIn("fresh", result.stderr)
+
+    def test_validator_rejects_ignored_attestation_arguments(self):
+        attestation = self.infrastructure / "tests/fisma-banner-rollout/fixtures/aim-ahead-completed-attestation.synthetic.json"
+        result = subprocess.run(
+            ["python3", str(VALIDATOR), "--attestation", str(attestation), "--deployment", "BDC"],
+            text=True,
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+        self.assertEqual(2, result.returncode, result.stdout + result.stderr)
+
+    def test_backend_root_is_the_clean_reviewed_commit(self):
+        backend_root = Path(os.environ["BACKEND_ROOT"])
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=backend_root, text=True, capture_output=True, check=True
+        ).stdout.strip()
+        status = subprocess.run(
+            ["git", "status", "--porcelain"], cwd=backend_root, text=True, capture_output=True, check=True
+        ).stdout
+        self.assertEqual("0178bbd2d1753e07dcead77a6d0e8ca37bf76dd8", head)
+        self.assertEqual("", status)
 
 
 if __name__ == "__main__":

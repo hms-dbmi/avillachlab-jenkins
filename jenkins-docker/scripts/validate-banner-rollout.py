@@ -10,6 +10,8 @@ from pathlib import Path
 
 SHA = re.compile(r"^[0-9a-f]{40}$")
 OPERATOR = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._@-]{2,127}$")
+TARGET_STACK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$")
+ARTIFACT_PREFIX = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{1,63}/banner-rollout/[A-Za-z0-9][A-Za-z0-9_-]{2,127}/containers$")
 CONTRACT_PATH = Path(__file__).with_name("banner-rollout-contract.json")
 EXPECTED_CONTRACT_SHA256 = "f8cb265d735b757872391e04fdcd5b999b785eaa427ca13f8f2eefd493715359"
 EXPECTED_COMPONENTS = {
@@ -24,12 +26,18 @@ EXPECTED_COMPONENTS = {
     "infrastructure": {
         "repository": "https://github.com/hms-dbmi/pic-sure-bdc-infrastructure.git",
         "ref": "pic_sure_api_rewrite",
-        "commit": "5d2ba9f59f161ace5e807c82a0580518a9d44d16",
+        "commit": "3a10a20ce261e3771cb4cd48bc4d72967f3c54d3",
     },
     "migrationsParity": {
         "repository": "https://github.com/hms-dbmi/PIC-SURE-Migrations.git",
         "commit": "05b1a77512dc0921570f0d442853fdcee75b8131",
     },
+}
+COMPONENT_COMMITS = {
+    "backend": EXPECTED_COMPONENTS["backend"]["commit"],
+    "frontend": EXPECTED_COMPONENTS["frontend"]["commit"],
+    "infrastructure": EXPECTED_COMPONENTS["infrastructure"]["commit"],
+    "migrationsParity": EXPECTED_COMPONENTS["migrationsParity"]["commit"],
 }
 EXPECTED_CONTRACT_SOURCE = {
     "repository": "https://github.com/hms-dbmi/pic-sure.git",
@@ -121,6 +129,8 @@ def validate_components(components: object, jenkins_source_commit: str):
         raise ContractError("running Jenkins source must be an exact 40-character commit")
     if jenkins.get("commit") != jenkins_source_commit:
         raise ContractError("banner_rollout Jenkins source does not match the running Jenkins image")
+    if jenkins != expected_components(jenkins_source_commit)["jenkins"]:
+        raise ContractError("banner_rollout.components.jenkins contains an unexpected field")
     if set(components) != {*EXPECTED_COMPONENTS, "jenkins"}:
         raise ContractError("banner_rollout.components contains an unexpected or omitted component")
 
@@ -132,6 +142,9 @@ def validate_release_input(
     jenkins_source_commit: str,
     attestation: object | None = None,
     operation: str = "FORWARD",
+    release_control_commit: str | None = None,
+    controller_deployment: str | None = None,
+    build_spec_sha256: str | None = None,
 ) -> str:
     if not isinstance(spec, dict):
         raise ContractError("build spec must be a JSON object")
@@ -153,7 +166,7 @@ def validate_release_input(
 
     components = rollout.get("components")
     validate_components(components, jenkins_source_commit)
-    expected_tuple = tuple_sha256(deployment, components)
+    expected_tuple = expected_tuple_sha256(deployment, jenkins_source_commit)
     if rollout.get("tupleSha256") != expected_tuple:
         raise ContractError(f"banner_rollout.tupleSha256 must be {expected_tuple}")
 
@@ -182,14 +195,32 @@ def validate_release_input(
                 raise ContractError(f"{option} must be false for a non-banner component run")
     else:
         raise ContractError(f"unsupported banner rollout operation: {operation}")
+    if normalize_controller_deployment(controller_deployment) != deployment:
+        raise ContractError("build input deployment does not match this Jenkins controller")
+    if not isinstance(release_control_commit, str) or not SHA.fullmatch(release_control_commit):
+        raise ContractError("checked-out release-control commit must be exact")
     if deployment == "AIM-AHEAD":
         if attestation is None:
             raise ContractError("AIM-AHEAD requires its private release-control attestation")
-        validate_attestation(attestation)
+        validate_attestation(
+            attestation,
+            release_control_commit,
+            expected_tuple,
+            build_spec_sha256,
+            jenkins_source_commit,
+        )
+    elif attestation is not None:
+        raise ContractError("BDC does not accept an AIM-AHEAD attestation")
     return expected_tuple
 
 
-def validate_attestation(attestation: object):
+def validate_attestation(
+    attestation: object,
+    release_control_commit: str,
+    expected_tuple: str,
+    build_spec_sha256: str | None,
+    jenkins_source_commit: str,
+):
     if not isinstance(attestation, dict) or attestation.get("schemaVersion") != 1:
         raise ContractError("operator attestation is incomplete: schemaVersion must be 1")
     if attestation.get("deployment") != "AIM-AHEAD":
@@ -203,7 +234,17 @@ def validate_attestation(attestation: object):
             raise ContractError(f"operator attestation is incomplete: privateReleaseControl.{field}")
     if not SHA.fullmatch(release_control["resolvedCommit"]):
         raise ContractError("operator attestation is incomplete: private release-control commit is not exact")
+    if release_control["resolvedCommit"] != release_control_commit:
+        raise ContractError("operator attestation does not match the checked-out private release-control commit")
     validate_operator_metadata(attestation, "operator attestation")
+    release_input = attestation.get("releaseInput")
+    expected_release_input = {
+        "buildSpecSha256": build_spec_sha256,
+        "tupleSha256": expected_tuple,
+        "jenkinsSourceCommit": jenkins_source_commit,
+    }
+    if release_input != expected_release_input:
+        raise ContractError("operator attestation does not match the exact build input and tuple")
     checks = attestation.get("checks")
     required_checks = (
         "privateReleaseControlPinsRequiredTuple",
@@ -229,11 +270,25 @@ def validate_operator_metadata(attestation: dict, label: str):
         raise ContractError(f"{label} is incomplete: attestedAtUtc must be an ISO-8601 UTC timestamp") from error
     if parsed.tzinfo != datetime.timezone.utc:
         raise ContractError(f"{label} is incomplete: attestedAtUtc must be UTC")
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if parsed > now + datetime.timedelta(minutes=5) or now - parsed > datetime.timedelta(hours=24):
+        raise ContractError(f"{label} is not fresh within the allowed 24-hour window")
+
+
+def normalize_controller_deployment(value: str | None) -> str | None:
+    return {
+        "bdc": "BDC",
+        "BDC": "BDC",
+        "aim-ahead": "AIM-AHEAD",
+        "AIM-AHEAD": "AIM-AHEAD",
+    }.get(value)
 
 
 def validate_rollback_attestation(
     attestation: object,
     jenkins_source_commit: str,
+    controller_deployment: str,
+    target_stack: str,
     required_stage: str | None = None,
 ):
     if not isinstance(attestation, dict) or attestation.get("schemaVersion") != 1:
@@ -244,6 +299,23 @@ def validate_rollback_attestation(
     if attestation.get("tupleSha256") != expected_tuple:
         raise ContractError("rollback attestation is incomplete: tupleSha256 does not match the deployment")
     validate_operator_metadata(attestation, "rollback attestation")
+    normalized_controller = normalize_controller_deployment(controller_deployment)
+    if normalized_controller != attestation["deployment"] or attestation.get("controllerDeployment") != normalized_controller:
+        raise ContractError("rollback attestation does not match this Jenkins controller tenant")
+    if not TARGET_STACK.fullmatch(target_stack) or attestation.get("targetStack") != target_stack:
+        raise ContractError("rollback attestation does not match the target stack")
+    artifact_prefix = attestation.get("artifactPrefix")
+    if not isinstance(artifact_prefix, str) or not ARTIFACT_PREFIX.fullmatch(artifact_prefix):
+        raise ContractError("rollback attestation artifactPrefix is not a commit-addressed rollout path")
+    if not artifact_prefix.startswith(f"{target_stack}/banner-rollout/"):
+        raise ContractError("rollback attestation artifactPrefix does not match the target stack")
+    artifacts = attestation.get("artifacts")
+    if not isinstance(artifacts, dict) or set(artifacts) != {"frontendCommit", "backendCommit"}:
+        raise ContractError("rollback attestation must identify the exact frontend and backend artifacts")
+    if not all(isinstance(value, str) and SHA.fullmatch(value) for value in artifacts.values()):
+        raise ContractError("rollback attestation artifact commits must be exact")
+    if artifacts["frontendCommit"] == COMPONENT_COMMITS["frontend"] or artifacts["backendCommit"] == COMPONENT_COMMITS["backend"]:
+        raise ContractError("rollback attestation must select artifacts older than the reviewed forward tuple")
     phases = attestation.get("phases")
     expected_phases = authoritative_contract()["rollbackPhases"]
     if not isinstance(phases, list) or any(not isinstance(entry, dict) for entry in phases):
@@ -281,6 +353,14 @@ def validate_rollback_attestation(
             "downMigrationRun": False,
             "psamaRecreated": False,
         },
+        "PSAMA_ALLOWED": {
+            "managementWritesFrozen": True,
+            "frontendRolledBack": True,
+            "targetedActiveOrScheduledRemaining": 0,
+            "forwardSchemaRetained": True,
+            "downMigrationRun": False,
+            "psamaRecreated": False,
+        },
         "COMPLETE": {
             "managementWritesFrozen": True,
             "frontendRolledBack": True,
@@ -290,7 +370,6 @@ def validate_rollback_attestation(
             "psamaRecreated": True,
         },
     }
-    expected_states["PSAMA_ALLOWED"] = expected_states["BACKEND_ALLOWED"]
     if state != expected_states[stage]:
         raise ContractError("rollback attestation is incomplete: rollback state does not fail closed")
 
@@ -301,29 +380,87 @@ def main() -> int:
     parser.add_argument("--attestation", type=Path)
     parser.add_argument("--rollback-attestation", type=Path)
     parser.add_argument("--tuple-sha256")
+    parser.add_argument("--component-commit", choices=tuple(COMPONENT_COMMITS))
     parser.add_argument("--required-rollback-stage", choices=("FRONTEND_ALLOWED", "BACKEND_ALLOWED", "PSAMA_ALLOWED", "COMPLETE"))
     parser.add_argument("--deployment", choices=("BDC", "AIM-AHEAD"))
     parser.add_argument("--operation", choices=("FORWARD", "NON_BANNER_COMPONENTS"), default="FORWARD")
     parser.add_argument("--jenkins-source-commit")
+    parser.add_argument("--release-control-commit")
+    parser.add_argument("--controller-deployment")
+    parser.add_argument("--target-stack")
     parser.add_argument("--run-database-migrations", type=parse_bool)
     parser.add_argument("--include-api", type=parse_bool)
     parser.add_argument("--include-psama", type=parse_bool)
     parser.add_argument("--include-frontend", type=parse_bool)
     args = parser.parse_args()
     try:
+        if args.component_commit:
+            if any(
+                (
+                    args.build_spec,
+                    args.attestation,
+                    args.rollback_attestation,
+                    args.tuple_sha256,
+                    args.required_rollback_stage,
+                    args.deployment,
+                    args.jenkins_source_commit,
+                    args.release_control_commit,
+                    args.controller_deployment,
+                    args.target_stack,
+                    args.run_database_migrations,
+                    args.include_api,
+                    args.include_psama,
+                    args.include_frontend,
+                )
+            ) or args.operation != "FORWARD":
+                raise ContractError("component commit lookup cannot be combined with a release input")
+            print(COMPONENT_COMMITS[args.component_commit])
+            return 0
         if args.rollback_attestation:
-            if args.build_spec or args.attestation or args.tuple_sha256:
+            if any(
+                (
+                    args.build_spec,
+                    args.attestation,
+                    args.tuple_sha256,
+                    args.component_commit,
+                    args.deployment,
+                    args.release_control_commit,
+                    args.run_database_migrations,
+                    args.include_api,
+                    args.include_psama,
+                    args.include_frontend,
+                )
+            ) or args.operation != "FORWARD":
                 raise ContractError("rollback attestation cannot be combined with a release input")
             if not args.jenkins_source_commit:
                 raise ContractError("--jenkins-source-commit is required with --rollback-attestation")
+            if not args.controller_deployment or not args.target_stack:
+                raise ContractError("--controller-deployment and --target-stack are required with --rollback-attestation")
             validate_rollback_attestation(
                 read_json(args.rollback_attestation),
                 args.jenkins_source_commit,
+                args.controller_deployment,
+                args.target_stack,
                 args.required_rollback_stage,
             )
             return 0
         if args.tuple_sha256:
-            if args.build_spec or args.attestation or args.required_rollback_stage:
+            if any(
+                (
+                    args.build_spec,
+                    args.attestation,
+                    args.rollback_attestation,
+                    args.component_commit,
+                    args.required_rollback_stage,
+                    args.release_control_commit,
+                    args.controller_deployment,
+                    args.target_stack,
+                    args.run_database_migrations,
+                    args.include_api,
+                    args.include_psama,
+                    args.include_frontend,
+                )
+            ) or args.operation != "FORWARD":
                 raise ContractError("tuple verification cannot be combined with a release input")
             if not args.deployment or not args.jenkins_source_commit:
                 raise ContractError("--deployment and --jenkins-source-commit are required with --tuple-sha256")
@@ -333,14 +470,15 @@ def main() -> int:
             print(expected_tuple)
             return 0
         if args.attestation and not args.build_spec:
-            validate_attestation(read_json(args.attestation))
-            return 0
+            raise ContractError("--attestation requires the exact --build-spec and release-control binding")
         if not args.build_spec:
             raise ContractError("one of --build-spec, --attestation, or --rollback-attestation is required")
         if not args.deployment:
             raise ContractError("--deployment is required with --build-spec")
         if not args.jenkins_source_commit:
             raise ContractError("--jenkins-source-commit is required with --build-spec")
+        if args.required_rollback_stage or args.target_stack:
+            raise ContractError("rollback-only arguments cannot be combined with --build-spec")
         selections = {
             "--run-database-migrations": args.run_database_migrations,
             "--include-api": args.include_api,
@@ -356,6 +494,9 @@ def main() -> int:
             args.jenkins_source_commit,
             read_json(args.attestation) if args.attestation else None,
             args.operation,
+            args.release_control_commit,
+            args.controller_deployment,
+            hashlib.sha256(args.build_spec.read_bytes()).hexdigest(),
         )
         print(digest)
         return 0

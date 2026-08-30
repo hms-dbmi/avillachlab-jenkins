@@ -20,6 +20,19 @@
           <defaultValue>MANUAL_RUN</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>BANNER_ROLLOUT_RUN_ID</name>
+          <description>Immutable combined-pipeline run identity for banner artifacts.</description>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>BANNER_ROLLBACK</name>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>BANNER_ROLLBACK_ATTESTATION_JSON</name>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -32,12 +45,42 @@
   <triggers/>
   <concurrentBuild>true</concurrentBuild>
   <builders>
+    <hudson.plugins.groovy.SystemGroovy plugin="groovy@457.v99900cb_85593">
+      <source class="hudson.plugins.groovy.StringSystemScriptSource">
+        <script plugin="script-security@1362.v67dc1f0e1b_b_3">
+          <script>def build = Thread.currentThread().executable
+def parameters = build.getAction(hudson.model.ParametersAction)
+def rolloutRunId = parameters?.getParameter(&quot;BANNER_ROLLOUT_RUN_ID&quot;)?.value?.toString()
+if (rolloutRunId) {
+    def cause = build.getCause(hudson.model.Cause.UpstreamCause)
+    if (cause == null || cause.upstreamProject != &quot;PIC-SURE Pipeline Build and Deploy&quot; || rolloutRunId != &quot;combined-${cause.upstreamBuild}&quot;) {
+        throw new hudson.AbortException(&quot;Banner artifact build requires its exact combined-pipeline upstream run&quot;)
+    }
+}</script>
+          <sandbox>false</sandbox>
+        </script>
+      </source>
+    </hudson.plugins.groovy.SystemGroovy>
     <hudson.tasks.Shell>
       <command>#!/bin/bash
 set -euo pipefail
 
 : &quot;${TARGET_STACK:?TARGET_STACK is required}&quot;
 : &quot;${S3_BUCKET_NAME:?S3_BUCKET_NAME is required}&quot;
+
+artifact_prefix=&quot;${TARGET_STACK}/containers&quot;
+if [[ &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot; ]]; then
+  [[ -z &quot;${BANNER_ROLLOUT_RUN_ID:-}&quot; &amp;&amp; -n &quot;${BANNER_ROLLBACK_ATTESTATION_JSON:-}&quot; ]] || { echo &quot;ERROR: rollback image build requires only a BACKEND_ALLOWED attestation.&quot; &gt;&amp;2; exit 2; }
+  rollback_attestation=$(mktemp)
+  trap &apos;rm -f &quot;${rollback_attestation}&quot;&apos; EXIT
+  printf &apos;%s&apos; &quot;${BANNER_ROLLBACK_ATTESTATION_JSON}&quot; &gt; &quot;${rollback_attestation}&quot;
+  python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; --rollback-attestation &quot;${rollback_attestation}&quot; --jenkins-source-commit &quot;${JENKINS_SOURCE_COMMIT}&quot; --controller-deployment &quot;${BANNER_CONTROLLER_DEPLOYMENT}&quot; --target-stack &quot;${TARGET_STACK}&quot; --required-rollback-stage BACKEND_ALLOWED
+  artifact_prefix=$(jq -r &apos;.artifactPrefix&apos; &quot;${rollback_attestation}&quot;)
+  expected_backend_commit=$(jq -r &apos;.artifacts.backendCommit&apos; &quot;${rollback_attestation}&quot;)
+elif [[ -n &quot;${BANNER_ROLLOUT_RUN_ID:-}&quot; ]]; then
+  [[ &quot;${BANNER_ROLLOUT_RUN_ID}&quot; =~ ^combined-[0-9]+$ ]] || { echo &quot;ERROR: invalid banner rollout run identity.&quot; &gt;&amp;2; exit 2; }
+  artifact_prefix=&quot;${TARGET_STACK}/banner-rollout/${BANNER_ROLLOUT_RUN_ID}/containers&quot;
+fi
 
 MAVEN_WS=&quot;/var/jenkins_home/workspace/PIC-SURE Maven Build - ${TARGET_STACK}&quot;
 MODULE=&quot;services/pic-sure-operations-service&quot;
@@ -53,12 +96,17 @@ fi
 # shellcheck source=/dev/null
 . &quot;$STAMP&quot;
 
+if [[ &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot; &amp;&amp; &quot;${GIT_COMMIT_FULL}&quot; != &quot;${expected_backend_commit}&quot; ]]; then
+  echo &quot;ERROR: Maven artifact commit does not match artifacts.backendCommit in the rollback attestation.&quot; &gt;&amp;2
+  exit 2
+fi
+
 docker build --load \
   -t &quot;hms-dbmi/pic-sure-operations-service:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}&quot; \
   &quot;$MAVEN_WS/services/pic-sure-operations-service/&quot;
 
 docker save &quot;hms-dbmi/pic-sure-operations-service:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}&quot; | gzip &gt; pic-sure-operations-service.tar.gz
-aws s3 --sse=AES256 cp pic-sure-operations-service.tar.gz &quot;s3://$S3_BUCKET_NAME/$TARGET_STACK/containers/pic-sure-operations-service.tar.gz&quot; --metadata &quot;git-commit=${GIT_COMMIT_FULL}&quot;</command>
+aws s3 --sse=AES256 cp pic-sure-operations-service.tar.gz &quot;s3://$S3_BUCKET_NAME/$artifact_prefix/pic-sure-operations-service.tar.gz&quot; --metadata &quot;git-commit=${GIT_COMMIT_FULL},rollout-run=${BANNER_ROLLOUT_RUN_ID:-rollback-or-standard}&quot;</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>

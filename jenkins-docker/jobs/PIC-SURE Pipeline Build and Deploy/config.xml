@@ -97,6 +97,11 @@
           <description>Run database migrations</description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>MIGRATIONS_COMPLETED_UPSTREAM</name>
+          <description>True only when Deployment Pipeline already completed its migration stage for this exact release input.</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>DESTIGMATIZED_DATASET_S3_OBJECT_KEY</name>
           <trim>false</trim>
@@ -143,6 +148,7 @@ def pipelineBuildId
 def bannerRolloutPresent = false
 def bannerDeployment
 def bannerRolloutTupleSha = &apos;&apos;
+def bannerRolloutRunId = &apos;&apos;
 
 pipeline {
   agent any
@@ -152,6 +158,20 @@ pipeline {
   }
 
   stages {
+    stage(&apos;Verify Supported Banner Entrypoint&apos;) {
+      steps {
+        script {
+          def causes = currentBuild.getBuildCauses(&apos;hudson.model.Cause$UpstreamCause&apos;)
+          if (params.MIGRATIONS_COMPLETED_UPSTREAM) {
+            if (causes.size() != 1 || causes[0].upstreamProject != &apos;Deployment Pipeline&apos;) {
+              error(&apos;MIGRATIONS_COMPLETED_UPSTREAM requires the exact Deployment Pipeline upstream run&apos;)
+            }
+          }
+          bannerRolloutRunId = &quot;combined-${env.BUILD_NUMBER}&quot;
+        }
+      }
+    }
+
     stage(&apos;Retrieve Build Spec&apos;) {
       steps {
         script {
@@ -174,6 +194,12 @@ pipeline {
             if (!(bannerDeployment in [&apos;BDC&apos;, &apos;AIM-AHEAD&apos;])) {
               error(&quot;Unsupported banner rollout deployment: ${bannerDeployment}&quot;)
             }
+            if (params.BANNER_ROLLOUT_OPERATION == &apos;FORWARD&apos;) {
+              def upstreamCauses = currentBuild.getBuildCauses(&apos;hudson.model.Cause$UpstreamCause&apos;)
+              if (!params.MIGRATIONS_COMPLETED_UPSTREAM || upstreamCauses.size() != 1 || upstreamCauses[0].upstreamProject != &apos;Deployment Pipeline&apos;) {
+                error(&apos;Forward banner rollout requires the exact Deployment Pipeline upstream run&apos;)
+              }
+            }
             def aimAttestation = bannerDeployment == &apos;AIM-AHEAD&apos; ? &apos;--attestation banner-rollout-attestation.json&apos; : &apos;&apos;
             bannerRolloutTupleSha = sh(
               script: &quot;&quot;&quot;python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; \
@@ -181,6 +207,8 @@ pipeline {
                 --operation &apos;${params.BANNER_ROLLOUT_OPERATION}&apos; \
                 --build-spec build-spec.json \
                 --jenkins-source-commit &apos;${env.JENKINS_SOURCE_COMMIT}&apos; \
+                --release-control-commit &apos;${pipelineBuildId}&apos; \
+                --controller-deployment &apos;${env.BANNER_CONTROLLER_DEPLOYMENT}&apos; \
                 ${aimAttestation} \
                 --run-database-migrations &apos;${params.RUN_DATABASE_MIGRATIONS}&apos; \
                 --include-api &apos;${params.INCLUDE_PIC_SURE_API}&apos; \
@@ -224,7 +252,7 @@ pipeline {
 
     stage(&apos;Database Migrations (once)&apos;) {
       when {
-        expression { return params.RUN_DATABASE_MIGRATIONS &amp;&amp; (params.INCLUDE_PIC_SURE_API || params.INCLUDE_PIC_SURE_AUTH_MICRO_APP || params.INCLUDE_PIC_SURE_VISUALIZATION) }
+        expression { return params.RUN_DATABASE_MIGRATIONS &amp;&amp; !params.MIGRATIONS_COMPLETED_UPSTREAM &amp;&amp; (params.INCLUDE_PIC_SURE_API || params.INCLUDE_PIC_SURE_AUTH_MICRO_APP || params.INCLUDE_PIC_SURE_VISUALIZATION) }
       }
       steps {
         script {
@@ -253,16 +281,20 @@ pipeline {
             }
             def imageParams = [
               [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-              [$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId]
+              [$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],
+              [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: String.valueOf(params.STACK_S3_BUCKET)]
+            ]
+            def bannerImageParams = imageParams + [
+              [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_RUN_ID&apos;, value: bannerRolloutPresent ? bannerRolloutRunId : &apos;&apos;]
             ]
             def branches = [:]
             if (params.INCLUDE_PIC_SURE_API) {
-              branches[&apos;gateway&apos;]    = { build job: &apos;PIC-SURE Gateway Image&apos;, parameters: imageParams }
-              branches[&apos;operations&apos;] = { build job: &apos;PIC-SURE Operations Service Image&apos;, parameters: imageParams }
-              branches[&apos;query&apos;]      = { build job: &apos;PIC-SURE HPDS Query Service Image&apos;, parameters: imageParams }
+              branches[&apos;gateway&apos;]    = { build job: &apos;PIC-SURE Gateway Image&apos;, parameters: bannerImageParams }
+              branches[&apos;operations&apos;] = { build job: &apos;PIC-SURE Operations Service Image&apos;, parameters: bannerImageParams }
+              branches[&apos;query&apos;]      = { build job: &apos;PIC-SURE HPDS Query Service Image&apos;, parameters: bannerImageParams }
             }
             if (params.INCLUDE_PIC_SURE_HPDS_AUTH || params.INCLUDE_PIC_SURE_HPDS_OPEN) { branches[&apos;hpds&apos;] = { build job: &apos;PIC-SURE HPDS Image&apos;, parameters: imageParams } }
-            if (params.INCLUDE_PIC_SURE_AUTH_MICRO_APP) { branches[&apos;psama&apos;] = { build job: &apos;PIC-SURE Auth Micro App Image&apos;, parameters: imageParams } }
+            if (params.INCLUDE_PIC_SURE_AUTH_MICRO_APP) { branches[&apos;psama&apos;] = { build job: &apos;PIC-SURE Auth Micro App Image&apos;, parameters: bannerImageParams } }
             if (params.INCLUDE_PIC_SURE_VISUALIZATION)  { branches[&apos;visualization&apos;] = { build job: &apos;PIC-SURE Visualization Image&apos;, parameters: imageParams } }
             if (params.INCLUDE_PIC_SURE_DICTIONARY)     { branches[&apos;dictionary&apos;] = { build job: &apos;PIC-SURE Dictionary Image&apos;, parameters: imageParams } }
             if (params.INCLUDE_PIC_SURE_LOGGING)        { branches[&apos;logging&apos;] = { build job: &apos;PIC-SURE Logging Image&apos;, parameters: imageParams } }
@@ -270,7 +302,9 @@ pipeline {
               branches[&apos;frontend&apos;] = {
                 build job: &apos;PIC-SURE Frontend Build&apos;, parameters: [
                   [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSF&apos;]]
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSF&apos;]],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: String.valueOf(params.STACK_S3_BUCKET)],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_RUN_ID&apos;, value: bannerRolloutPresent ? bannerRolloutRunId : &apos;&apos;]
                 ]
               }
             }
@@ -289,6 +323,7 @@ pipeline {
               if (shouldDeploy) {
                 build job: &apos;PIC-SURE Wildfly Stack Deploy&apos;, parameters: [
                   [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: String.valueOf(params.STACK_S3_BUCKET)],
                   [$class: &apos;StringParameterValue&apos;, name: &apos;DATASET_S3_OBJECT_KEY&apos;, value: String.valueOf(params.DATASET_S3_OBJECT_KEY)],
                   [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_GATEWAY&apos;, value: params.INCLUDE_PIC_SURE_API],
                   [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_OPERATIONS&apos;, value: params.INCLUDE_PIC_SURE_API],
@@ -298,7 +333,8 @@ pipeline {
                   [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_VISUALIZATION&apos;, value: params.INCLUDE_PIC_SURE_VISUALIZATION],
                   [$class: &apos;BooleanParameterValue&apos;, name: &apos;BANNER_ROLLOUT&apos;, value: bannerRolloutPresent],
                   [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_DEPLOYMENT&apos;, value: bannerDeployment ?: &apos;&apos;],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_TUPLE_SHA256&apos;, value: bannerRolloutTupleSha]
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_TUPLE_SHA256&apos;, value: bannerRolloutTupleSha],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_RUN_ID&apos;, value: bannerRolloutPresent ? bannerRolloutRunId : &apos;&apos;]
                 ]
               } else {
                 echo &apos;Skipping Wildfly Stack Deploy (no wildfly-host components selected)&apos;
@@ -306,10 +342,12 @@ pipeline {
               if (params.INCLUDE_PIC_SURE_FRONTEND) {
                 build job: &apos;PIC-SURE Frontend Deploy&apos;, parameters: [
                   [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: String.valueOf(params.STACK_S3_BUCKET)],
                   [$class: &apos;BooleanParameterValue&apos;, name: &apos;BANNER_ROLLOUT&apos;, value: bannerRolloutPresent],
                   [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_DEPLOYMENT&apos;, value: bannerDeployment ?: &apos;&apos;],
                   [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_TUPLE_SHA256&apos;, value: bannerRolloutTupleSha],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_BACKEND_HEALTH_RECEIPT&apos;, value: bannerRolloutPresent ? &apos;BACKEND_AGGREGATE_HEALTH_VERIFIED&apos; : &apos;&apos;]
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_BACKEND_HEALTH_RECEIPT&apos;, value: bannerRolloutPresent ? bannerRolloutRunId : &apos;&apos;],
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_RUN_ID&apos;, value: bannerRolloutPresent ? bannerRolloutRunId : &apos;&apos;]
                 ]
               } else {
                 echo &apos;Skipping PIC-SURE Frontend Deploy&apos;

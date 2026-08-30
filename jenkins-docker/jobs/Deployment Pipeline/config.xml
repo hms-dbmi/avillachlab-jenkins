@@ -30,6 +30,25 @@
           <name>genomic_dataset_s3_object_key</name>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>BANNER_ROLLOUT</name>
+          <description>Set by Check For Updates when the exact release input contains banner rollout metadata.</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.ChoiceParameterDefinition>
+          <name>BANNER_ROLLOUT_OPERATION</name>
+          <choices class="java.util.Arrays$ArrayList">
+            <a class="string-array">
+              <string>FORWARD</string>
+              <string>NON_BANNER_COMPONENTS</string>
+            </a>
+          </choices>
+        </hudson.model.ChoiceParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>STACK_S3_BUCKET</name>
+          <description>Exact artifact bucket propagated to every banner build and deploy leaf.</description>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -41,6 +60,9 @@ def stacksJson
 def target_stack
 def live_stack
 def infrastructure_git_hash
+def banner_deployment
+def banner_rollout_present = false
+def release_control_commit
 
 pipeline {
     agent any
@@ -53,7 +75,7 @@ pipeline {
         stage(&apos;Retrieve Build Spec&apos;) {
             steps {
                 script {
-                    def result = build job: &apos;Retrieve Build Spec&apos;
+                    def result = build job: &apos;Retrieve Build Spec&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;RELEASE_CONTROL_BRANCH&apos;, value: params.deployment_git_hash]]
                     retrieveBuildSpecId = result.number
                 }
                 script {
@@ -64,6 +86,36 @@ pipeline {
                     def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/Deployment Pipeline/build-spec.json&apos;))
                     println(buildSpec)
                     infrastructure_git_hash = buildSpec.infrastructure_git_hash
+                    banner_deployment = buildSpec.banner_rollout?.deployment?.toString()
+                    banner_rollout_present = buildSpec.banner_rollout != null
+                    release_control_commit = readFile(&apos;pipeline_git_commit.txt&apos;).trim()
+                }
+            }
+        }
+        stage(&apos;Validate Banner Rollout Input&apos;) {
+            steps {
+                script {
+                    if (banner_rollout_present != params.BANNER_ROLLOUT) {
+                        error(&apos;BANNER_ROLLOUT must match the exact retrieved release input&apos;)
+                    }
+                    if (banner_rollout_present) {
+                        if (!(banner_deployment in [&apos;BDC&apos;, &apos;AIM-AHEAD&apos;])) {
+                            error(&quot;Unsupported banner rollout deployment: ${banner_deployment}&quot;)
+                        }
+                        def aim_attestation = banner_deployment == &apos;AIM-AHEAD&apos; ? &apos;--attestation banner-rollout-attestation.json&apos; : &apos;&apos;
+                        sh &quot;&quot;&quot;python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; \
+                            --deployment &apos;${banner_deployment}&apos; \
+                            --operation &apos;${params.BANNER_ROLLOUT_OPERATION}&apos; \
+                            --build-spec build-spec.json \
+                            --jenkins-source-commit &apos;${env.JENKINS_SOURCE_COMMIT}&apos; \
+                            --release-control-commit &apos;${release_control_commit}&apos; \
+                            --controller-deployment &apos;${env.BANNER_CONTROLLER_DEPLOYMENT}&apos; \
+                            ${aim_attestation} \
+                            --run-database-migrations true \
+                            --include-api true \
+                            --include-psama true \
+                            --include-frontend true&quot;&quot;&quot;
+                    }
                 }
             }
         }
@@ -142,6 +194,29 @@ pipeline {
             steps {
                 script {
                     def result = build job: &apos;Await Initialization&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack], [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: infrastructure_git_hash]]
+                }
+            }
+        }
+        stage(&apos;Banner Rollout: Build, Backend, then Frontend&apos;) {
+            when {
+                expression { return params.BANNER_ROLLOUT }
+            }
+            steps {
+                script {
+                    build job: &apos;PIC-SURE Pipeline Build and Deploy&apos;, parameters: [
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;RELEASE_CONTROL_BRANCH&apos;, value: params.deployment_git_hash],
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: &apos;staging&apos;],
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;DATASET_S3_OBJECT_KEY&apos;, value: params.dataset_s3_object_key],
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;DESTIGMATIZED_DATASET_S3_OBJECT_KEY&apos;, value: params.destigmatized_dataset_s3_object_key],
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;GENOMIC_DATASET_S3_OBJECT_KEY&apos;, value: params.genomic_dataset_s3_object_key],
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;STACK_S3_BUCKET&apos;, value: params.STACK_S3_BUCKET],
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_OPERATION&apos;, value: params.BANNER_ROLLOUT_OPERATION],
+                        [$class: &apos;BooleanParameterValue&apos;, name: &apos;MIGRATIONS_COMPLETED_UPSTREAM&apos;, value: true],
+                        [$class: &apos;BooleanParameterValue&apos;, name: &apos;RUN_DATABASE_MIGRATIONS&apos;, value: true],
+                        [$class: &apos;BooleanParameterValue&apos;, name: &apos;INCLUDE_PIC_SURE_API&apos;, value: true],
+                        [$class: &apos;BooleanParameterValue&apos;, name: &apos;INCLUDE_PIC_SURE_AUTH_MICRO_APP&apos;, value: true],
+                        [$class: &apos;BooleanParameterValue&apos;, name: &apos;INCLUDE_PIC_SURE_FRONTEND&apos;, value: true]
+                    ]
                 }
             }
         }

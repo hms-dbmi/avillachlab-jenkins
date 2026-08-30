@@ -35,6 +35,11 @@
           <description>Set by the combined pipeline after the backend aggregate health probe passes.</description>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>BANNER_ROLLOUT_RUN_ID</name>
+          <description>Exact combined-pipeline run that built this frontend artifact.</description>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
           <name>BANNER_ROLLBACK</name>
           <description>Use only for the frontend-first rollback path with a validated FRONTEND_ALLOWED attestation.</description>
@@ -57,6 +62,22 @@
   <triggers/>
   <concurrentBuild>true</concurrentBuild>
   <builders>
+    <hudson.plugins.groovy.SystemGroovy plugin="groovy@457.v99900cb_85593">
+      <source class="hudson.plugins.groovy.StringSystemScriptSource">
+        <script plugin="script-security@1362.v67dc1f0e1b_b_3">
+          <script>def build = Thread.currentThread().executable
+def parameters = build.getAction(hudson.model.ParametersAction)
+def rolloutRunId = parameters?.getParameter(&quot;BANNER_ROLLOUT_RUN_ID&quot;)?.value?.toString()
+if (rolloutRunId) {
+    def cause = build.getCause(hudson.model.Cause.UpstreamCause)
+    if (cause == null || cause.upstreamProject != &quot;PIC-SURE Pipeline Build and Deploy&quot; || rolloutRunId != &quot;combined-${cause.upstreamBuild}&quot;) {
+        throw new hudson.AbortException(&quot;Banner frontend deploy requires its exact combined-pipeline upstream run&quot;)
+    }
+}</script>
+          <sandbox>false</sandbox>
+        </script>
+      </source>
+    </hudson.plugins.groovy.SystemGroovy>
     <hudson.tasks.Shell>
       <command>#!/usr/bin/env bash
 set -euo pipefail
@@ -76,11 +97,13 @@ if [[ &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot; ]]; then
   python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; \
     --rollback-attestation &quot;${rollback_attestation}&quot; \
     --jenkins-source-commit &quot;${JENKINS_SOURCE_COMMIT}&quot; \
+    --controller-deployment &quot;${BANNER_CONTROLLER_DEPLOYMENT}&quot; \
+    --target-stack &quot;${TARGET_STACK}&quot; \
     --required-rollback-stage FRONTEND_ALLOWED
 fi
 
 if [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; ]]; then
-  if [[ &quot;${BANNER_BACKEND_HEALTH_RECEIPT:-}&quot; != &quot;BACKEND_AGGREGATE_HEALTH_VERIFIED&quot; ]]; then
+  if [[ -z &quot;${BANNER_ROLLOUT_RUN_ID:-}&quot; || &quot;${BANNER_BACKEND_HEALTH_RECEIPT:-}&quot; != &quot;${BANNER_ROLLOUT_RUN_ID}&quot; ]]; then
     echo &quot;ERROR: banner frontend publication requires the backend health receipt.&quot; &gt;&amp;2
     exit 2
   fi
@@ -93,6 +116,15 @@ fi
 : &quot;${TARGET_STACK:?TARGET_STACK is required}&quot;
 : &quot;${S3_BUCKET_NAME:?S3_BUCKET_NAME is required}&quot;
 stack_s3_bucket=&quot;${S3_BUCKET_NAME}&quot;
+artifact_prefix=&quot;${TARGET_STACK}/containers&quot;
+expected_frontend_commit=$(python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; --component-commit frontend)
+if [[ &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot; ]]; then
+  artifact_prefix=$(jq -r &apos;.artifactPrefix&apos; &quot;${rollback_attestation}&quot;)
+  expected_frontend_commit=$(jq -r &apos;.artifacts.frontendCommit&apos; &quot;${rollback_attestation}&quot;)
+elif [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; ]]; then
+  [[ &quot;${BANNER_ROLLOUT_RUN_ID}&quot; =~ ^combined-[0-9]+$ ]] || { echo &quot;ERROR: invalid banner rollout run identity.&quot; &gt;&amp;2; exit 2; }
+  artifact_prefix=&quot;${TARGET_STACK}/banner-rollout/${BANNER_ROLLOUT_RUN_ID}/containers&quot;
+fi
 
 # Source folder containing the scripts
 source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
@@ -121,14 +153,14 @@ assume_role
 
 frontend_commit=$(aws s3api head-object \
   --bucket &quot;${stack_s3_bucket}&quot; \
-  --key &quot;${TARGET_STACK}/containers/pic-sure-frontend.tar.gz&quot; \
+  --key &quot;${artifact_prefix}/pic-sure-frontend.tar.gz&quot; \
   --query &apos;Metadata.&quot;git-commit&quot;&apos; \
   --output text)
-if [[ &quot;${frontend_commit}&quot; == &quot;7b69aa960ff98f97c1a2d026b7137b0e3dcdf603&quot; &amp;&amp; &quot;${BANNER_ROLLOUT:-false}&quot; != &quot;true&quot; ]]; then
+if [[ &quot;${frontend_commit}&quot; == &quot;${expected_frontend_commit}&quot; &amp;&amp; &quot;${BANNER_ROLLOUT:-false}&quot; != &quot;true&quot; &amp;&amp; &quot;${BANNER_ROLLBACK:-false}&quot; != &quot;true&quot; ]]; then
   echo &quot;ERROR: reviewed banner frontend artifact requires the combined banner pipeline.&quot; &gt;&amp;2
   exit 2
 fi
-if [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; &amp;&amp; &quot;${frontend_commit}&quot; != &quot;7b69aa960ff98f97c1a2d026b7137b0e3dcdf603&quot; ]]; then
+if [[ (&quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; || &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot;) &amp;&amp; &quot;${frontend_commit}&quot; != &quot;${expected_frontend_commit}&quot; ]]; then
   echo &quot;ERROR: frontend artifact does not match the reviewed banner commit.&quot; &gt;&amp;2
   exit 2
 fi
@@ -142,7 +174,7 @@ echo &quot;Extract HTTPD instance ID for $TARGET_STACK stack&quot;
 httpd_instance_id=$(jq -r &apos;.outputs[&quot;httpd-ec2-id&quot;].value&apos; terraform.tfstate)
 echo &quot;${httpd_instance_id}&quot;
 
-update_httpd_container=&quot;sudo sh /opt/picsure/deploy-httpd.sh --stack_s3_bucket $stack_s3_bucket --target_stack $TARGET_STACK&quot;
+update_httpd_container=&quot;sudo sh /opt/picsure/deploy-httpd.sh --stack_s3_bucket $stack_s3_bucket --target_stack $TARGET_STACK --artifact_prefix $artifact_prefix&quot;
 echo &quot;$update_httpd_container&quot;
 
 update_httpd_container_json=$(jq -n --arg cmd &quot;$update_httpd_container&quot; &apos;{commands: [$cmd]}&apos;)

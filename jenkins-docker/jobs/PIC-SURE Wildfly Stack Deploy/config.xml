@@ -76,6 +76,11 @@ startup on all enabled containers in parallel.</description>
           <description>Deployment whose exact tuple was validated by the combined pipeline.</description>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>BANNER_ROLLOUT_RUN_ID</name>
+          <description>Exact combined-pipeline run that built the selected backend artifacts.</description>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
           <name>BANNER_ROLLBACK</name>
           <description>Use for attested backend or PSAMA rollback stages.</description>
@@ -98,6 +103,22 @@ startup on all enabled containers in parallel.</description>
   <triggers/>
   <concurrentBuild>false</concurrentBuild>
   <builders>
+    <hudson.plugins.groovy.SystemGroovy plugin="groovy@457.v99900cb_85593">
+      <source class="hudson.plugins.groovy.StringSystemScriptSource">
+        <script plugin="script-security@1362.v67dc1f0e1b_b_3">
+          <script>def build = Thread.currentThread().executable
+def parameters = build.getAction(hudson.model.ParametersAction)
+def rolloutRunId = parameters?.getParameter(&quot;BANNER_ROLLOUT_RUN_ID&quot;)?.value?.toString()
+if (rolloutRunId) {
+    def cause = build.getCause(hudson.model.Cause.UpstreamCause)
+    if (cause == null || cause.upstreamProject != &quot;PIC-SURE Pipeline Build and Deploy&quot; || rolloutRunId != &quot;combined-${cause.upstreamBuild}&quot;) {
+        throw new hudson.AbortException(&quot;Banner backend deploy requires its exact combined-pipeline upstream run&quot;)
+    }
+}</script>
+          <sandbox>false</sandbox>
+        </script>
+      </source>
+    </hudson.plugins.groovy.SystemGroovy>
     <hudson.tasks.Shell>
       <command>#!/usr/bin/env bash
 set -euo pipefail
@@ -125,10 +146,16 @@ if [[ &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot; ]]; then
   python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; \
     --rollback-attestation &quot;${rollback_attestation}&quot; \
     --jenkins-source-commit &quot;${JENKINS_SOURCE_COMMIT}&quot; \
+    --controller-deployment &quot;${BANNER_CONTROLLER_DEPLOYMENT}&quot; \
+    --target-stack &quot;${TARGET_STACK}&quot; \
     --required-rollback-stage &quot;${required_rollback_stage}&quot;
 fi
 
 if [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; ]]; then
+  if [[ -z &quot;${BANNER_ROLLOUT_RUN_ID:-}&quot; ]]; then
+    echo &quot;ERROR: banner rollout requires its combined-pipeline run identity.&quot; &gt;&amp;2
+    exit 2
+  fi
   if [[ &quot;${DEPLOY_OPERATIONS:-false}&quot; != &quot;true&quot; || &quot;${DEPLOY_PSAMA:-false}&quot; != &quot;true&quot; || &quot;${DEPLOY_GATEWAY:-false}&quot; != &quot;true&quot; ]]; then
     echo &quot;ERROR: banner rollout requires Operations, PSAMA, and Gateway in one backend deployment.&quot; &gt;&amp;2
     exit 2
@@ -168,6 +195,16 @@ done
 : &quot;${TARGET_STACK:?TARGET_STACK is required}&quot;
 : &quot;${S3_BUCKET_NAME:?S3_BUCKET_NAME is required}&quot;
 
+artifact_prefix=&quot;${TARGET_STACK}/containers&quot;
+expected_backend_commit=$(python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; --component-commit backend)
+if [[ &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot; ]]; then
+  artifact_prefix=$(jq -r &apos;.artifactPrefix&apos; &quot;${rollback_attestation}&quot;)
+  expected_backend_commit=$(jq -r &apos;.artifacts.backendCommit&apos; &quot;${rollback_attestation}&quot;)
+elif [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; ]]; then
+  [[ &quot;${BANNER_ROLLOUT_RUN_ID}&quot; =~ ^combined-[0-9]+$ ]] || { echo &quot;ERROR: invalid banner rollout run identity.&quot; &gt;&amp;2; exit 2; }
+  artifact_prefix=&quot;${TARGET_STACK}/banner-rollout/${BANNER_ROLLOUT_RUN_ID}/containers&quot;
+fi
+
 # Default optional parameters
 DATASET_S3_OBJECT_KEY=&quot;${DATASET_S3_OBJECT_KEY:-}&quot;
 ENABLE_DEBUG=&quot;${ENABLE_DEBUG:-false}&quot;
@@ -179,7 +216,8 @@ banner_backend_seen=false
 for artifact in \
   &quot;${DEPLOY_OPERATIONS}:pic-sure-operations-service.tar.gz&quot; \
   &quot;${DEPLOY_PSAMA}:psama.tar.gz&quot; \
-  &quot;${DEPLOY_GATEWAY}:pic-sure-gateway.tar.gz&quot;; do
+  &quot;${DEPLOY_GATEWAY}:pic-sure-gateway.tar.gz&quot; \
+  &quot;${DEPLOY_QUERY}:pic-sure-hpds-query-service.tar.gz&quot;; do
   selected=&quot;${artifact%%:*}&quot;
   object_name=&quot;${artifact#*:}&quot;
   if [[ &quot;${selected}&quot; != &quot;true&quot; ]]; then
@@ -187,10 +225,10 @@ for artifact in \
   fi
   artifact_commit=$(aws s3api head-object \
     --bucket &quot;${S3_BUCKET_NAME}&quot; \
-    --key &quot;${TARGET_STACK}/containers/${object_name}&quot; \
+    --key &quot;${artifact_prefix}/${object_name}&quot; \
     --query &apos;Metadata.&quot;git-commit&quot;&apos; \
     --output text)
-  if [[ &quot;${artifact_commit}&quot; == &quot;0178bbd2d1753e07dcead77a6d0e8ca37bf76dd8&quot; ]]; then
+  if [[ &quot;${artifact_commit}&quot; == &quot;${expected_backend_commit}&quot; ]]; then
     banner_backend_seen=true
   elif [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; ]]; then
     echo &quot;ERROR: ${object_name} does not match the reviewed banner backend commit.&quot; &gt;&amp;2
@@ -250,6 +288,7 @@ sudo /opt/picsure/deploy-wildfly-stack.sh \
   ${deploy_flags} \
   --stack_s3_bucket &quot;${S3_BUCKET_NAME}&quot; \
   --target_stack &quot;${TARGET_STACK}&quot; \
+  --artifact_prefix &quot;${artifact_prefix}&quot; \
   --dataset_s3_object_key &quot;${DATASET_S3_OBJECT_KEY}&quot; \
   --enable_debug &quot;${ENABLE_DEBUG}&quot; \
   --spring_profile &quot;${SPRING_PROFILE}&quot;
@@ -336,7 +375,14 @@ if [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; ]]; then
     --timeout-seconds 60 \
     --query &quot;Command.CommandId&quot; \
     --output text)
-  wait_for_command &quot;${health_command_id}&quot; &quot;${wildfly_instance_id}&quot;
+  if ! (wait_for_command &quot;${health_command_id}&quot; &quot;${wildfly_instance_id}&quot;); then
+    aws ssm get-command-invocation \
+      --command-id &quot;${health_command_id}&quot; \
+      --instance-id &quot;${wildfly_instance_id}&quot; \
+      --query &apos;{Status:Status,StandardOutputContent:StandardOutputContent,StandardErrorContent:StandardErrorContent}&apos; \
+      --output json &gt;&amp;2 || true
+    exit 1
+  fi
 fi
 
 echo &quot;All wildfly-host containers started successfully.&quot;
