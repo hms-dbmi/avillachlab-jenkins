@@ -48,6 +48,16 @@
           <description>Leave enabled for ordinary rebuilds. Banner Deployment Pipeline runs disable it so EC2 user-data cannot start standard Gateway, Operations, Query, PSAMA, or frontend artifacts.</description>
           <defaultValue>true</defaultValue>
         </hudson.model.BooleanParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>BANNER_VALIDATED_UPSTREAM_RUN_ID</name>
+          <description>Exact validated Deployment Pipeline run allowed to suppress standard critical bootstrap.</description>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>BANNER_VALIDATED_INFRASTRUCTURE_COMMIT</name>
+          <description>Infrastructure commit validated by the trusted upstream banner run.</description>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -76,6 +86,36 @@
   <triggers/>
   <concurrentBuild>false</concurrentBuild>
   <builders>
+    <hudson.plugins.groovy.SystemGroovy plugin="groovy@457.v99900cb_85593">
+      <source class="hudson.plugins.groovy.StringSystemScriptSource">
+        <script plugin="script-security@1362.v67dc1f0e1b_b_3">
+          <script>def build = Thread.currentThread().executable
+def parameters = build.getAction(hudson.model.ParametersAction)
+def bootstrapStandard = parameters?.getParameter(&quot;BOOTSTRAP_STANDARD_CRITICAL_ARTIFACTS&quot;)?.value
+if (bootstrapStandard != null &amp;&amp; !bootstrapStandard.toString().toBoolean()) {
+    def cause = build.getCause(hudson.model.Cause.UpstreamCause)
+    def validatedRunId = parameters?.getParameter(&quot;BANNER_VALIDATED_UPSTREAM_RUN_ID&quot;)?.value?.toString()
+    def deploymentCommit = parameters?.getParameter(&quot;deployment_git_hash&quot;)?.value?.toString()
+    def infrastructureCommit = parameters?.getParameter(&quot;infrastructure_git_hash&quot;)?.value?.toString()
+    def validatedInfrastructureCommit = parameters?.getParameter(&quot;BANNER_VALIDATED_INFRASTRUCTURE_COMMIT&quot;)?.value?.toString()
+    def upstreamBuild = cause == null ? null : jenkins.model.Jenkins.instance.getItemByFullName(cause.upstreamProject)?.getBuildByNumber(cause.upstreamBuild)
+    def upstreamParameters = upstreamBuild?.getAction(hudson.model.ParametersAction)
+    def upstreamBanner = upstreamParameters?.getParameter(&quot;BANNER_ROLLOUT&quot;)?.value
+    def upstreamOperation = upstreamParameters?.getParameter(&quot;BANNER_ROLLOUT_OPERATION&quot;)?.value?.toString()
+    def upstreamDeploymentCommit = upstreamParameters?.getParameter(&quot;deployment_git_hash&quot;)?.value?.toString()
+    def upstreamBannerForward = upstreamBanner != null &amp;&amp; upstreamBanner.toString().toBoolean() &amp;&amp; upstreamOperation == &quot;FORWARD&quot;
+    if (cause == null || cause.upstreamProject != &quot;Deployment Pipeline&quot; ||
+        validatedRunId != &quot;deployment-${cause.upstreamBuild}&quot; ||
+        upstreamBuild == null || !upstreamBannerForward ||
+        !deploymentCommit || deploymentCommit != upstreamDeploymentCommit ||
+        !infrastructureCommit || infrastructureCommit != validatedInfrastructureCommit) {
+        throw new hudson.AbortException(&quot;Critical bootstrap suppression requires the exact validated forward Deployment Pipeline run&quot;)
+    }
+}</script>
+          <sandbox>false</sandbox>
+        </script>
+      </source>
+    </hudson.plugins.groovy.SystemGroovy>
     <hudson.tasks.Shell>
       <command># json tag schema.  Used to uniquely identify a projects staging instances.
 cat &lt;&lt;EOF &gt; staging_httpd_tags_file.json

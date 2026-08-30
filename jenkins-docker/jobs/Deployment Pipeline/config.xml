@@ -73,6 +73,7 @@ def live_stack
 def infrastructure_git_hash
 def banner_deployment
 def banner_rollout_present = false
+def banner_forward = false
 def release_control_commit
 
 pipeline {
@@ -126,6 +127,7 @@ pipeline {
                             --include-psama true \
                             --include-frontend true&quot;&quot;&quot;
                     }
+                    banner_forward = banner_rollout_present &amp;&amp; params.BANNER_ROLLOUT_OPERATION == &apos;FORWARD&apos;
                 }
             }
         }
@@ -196,14 +198,14 @@ pipeline {
         stage(&apos;Teardown and Rebuild Stage Environment&apos;) {
             steps {
                 script {
-                    def result = build job: &apos;Teardown and Rebuild Stage Environment&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;live_stack&apos;, value: live_stack], [$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack], [$class: &apos;StringParameterValue&apos;, name: &apos;dataset_s3_object_key&apos;, value: env.dataset_s3_object_key], [$class: &apos;StringParameterValue&apos;, name: &apos;destigmatized_dataset_s3_object_key&apos;, value: env.destigmatized_dataset_s3_object_key], [$class: &apos;StringParameterValue&apos;, name: &apos;genomic_dataset_s3_object_key&apos;, value: env.genomic_dataset_s3_object_key], [$class: &apos;StringParameterValue&apos;, name: &apos;deployment_git_hash&apos;, value: env.deployment_git_hash], [$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash], [$class: &apos;BooleanParameterValue&apos;, name: &apos;BOOTSTRAP_STANDARD_CRITICAL_ARTIFACTS&apos;, value: !params.BANNER_ROLLOUT]]
+                    def result = build job: &apos;Teardown and Rebuild Stage Environment&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;live_stack&apos;, value: live_stack], [$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack], [$class: &apos;StringParameterValue&apos;, name: &apos;dataset_s3_object_key&apos;, value: env.dataset_s3_object_key], [$class: &apos;StringParameterValue&apos;, name: &apos;destigmatized_dataset_s3_object_key&apos;, value: env.destigmatized_dataset_s3_object_key], [$class: &apos;StringParameterValue&apos;, name: &apos;genomic_dataset_s3_object_key&apos;, value: env.genomic_dataset_s3_object_key], [$class: &apos;StringParameterValue&apos;, name: &apos;deployment_git_hash&apos;, value: env.deployment_git_hash], [$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash], [$class: &apos;BooleanParameterValue&apos;, name: &apos;BOOTSTRAP_STANDARD_CRITICAL_ARTIFACTS&apos;, value: !banner_forward], [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_VALIDATED_UPSTREAM_RUN_ID&apos;, value: banner_forward ? &quot;deployment-${env.BUILD_NUMBER}&quot; : &apos;&apos;], [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_VALIDATED_INFRASTRUCTURE_COMMIT&apos;, value: banner_forward ? infrastructure_git_hash : &apos;&apos;]]
                 }
             }
         }
         stage(&apos;Await Initialization&apos;) {
             steps {
                 script {
-                    def result = build job: &apos;Await Initialization&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack], [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: infrastructure_git_hash]]
+                    def result = build job: &apos;Await Initialization&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack], [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: infrastructure_git_hash], [$class: &apos;BooleanParameterValue&apos;, name: &apos;WAIT_FOR_TARGET_GROUP_HEALTH&apos;, value: !banner_forward]]
                 }
             }
         }
@@ -227,6 +229,16 @@ pipeline {
                         [$class: &apos;BooleanParameterValue&apos;, name: &apos;INCLUDE_PIC_SURE_AUTH_MICRO_APP&apos;, value: true],
                         [$class: &apos;BooleanParameterValue&apos;, name: &apos;INCLUDE_PIC_SURE_FRONTEND&apos;, value: true]
                     ]
+                }
+            }
+        }
+        stage(&apos;Banner Rollout: Confirm Final Health&apos;) {
+            when {
+                expression { return banner_forward }
+            }
+            steps {
+                script {
+                    build job: &apos;Await Initialization&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;target_stack&apos;, value: target_stack], [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: infrastructure_git_hash], [$class: &apos;BooleanParameterValue&apos;, name: &apos;WAIT_FOR_TARGET_GROUP_HEALTH&apos;, value: true]]
                 }
             }
         }

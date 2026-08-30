@@ -14,6 +14,11 @@
           <name>git_hash</name>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>WAIT_FOR_TARGET_GROUP_HEALTH</name>
+          <description>Keep enabled for ordinary initialization. Banner rollout first waits only for initialized SSM-ready hosts, deploys immutable artifacts, then runs final target health.</description>
+          <defaultValue>true</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -103,6 +108,22 @@ for output_name in $output_names; do
   done
 
   echo &quot;${output_name} EC2 Initialization Complete&quot;
+
+  if [ &quot;$WAIT_FOR_TARGET_GROUP_HEALTH&quot; != &quot;true&quot; ]; then
+    while true; do
+      ssm_status=$(aws --region=us-east-1 ssm describe-instance-information \
+        --filters &quot;Key=InstanceIds,Values=${INSTANCE_ID}&quot; \
+        --query &apos;InstanceInformationList[0].PingStatus&apos; --output text || echo &quot;None&quot;)
+      if [ &quot;$ssm_status&quot; = &quot;Online&quot; ]; then
+        break
+      fi
+      reset_role
+      assume_role
+      echo &quot;${output_name} EC2 waiting for SSM Online status&quot;
+      sleep 15
+    done
+    echo &quot;${output_name} EC2 SSM Ready&quot;
+  fi
 done
 </command>
       <configuredLocalRules/>
@@ -141,6 +162,11 @@ for script_file in &quot;$source_scripts_folder&quot;*.sh; do
         source &quot;$script_file&quot;
     fi
 done
+
+if [ &quot;$WAIT_FOR_TARGET_GROUP_HEALTH&quot; != &quot;true&quot; ]; then
+  echo &quot;Skipping target registration until immutable banner artifacts are deployed.&quot;
+  exit 0
+fi
 
 cd &quot;$WORKSPACE&quot;
 

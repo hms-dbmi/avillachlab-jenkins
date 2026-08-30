@@ -17,6 +17,7 @@ PIPELINE = ROOT / "jenkins-docker/jobs/PIC-SURE Pipeline Build and Deploy/config
 LEGACY_PIPELINE = ROOT / "jenkins-docker/jobs/PIC-SURE Pipeline/config.xml"
 DEPLOYMENT_PIPELINE = ROOT / "jenkins-docker/jobs/Deployment Pipeline/config.xml"
 TEARDOWN_REBUILD = ROOT / "jenkins-docker/jobs/Teardown and Rebuild Stage Environment/config.xml"
+AWAIT_INITIALIZATION = ROOT / "jenkins-docker/jobs/Await Initialization/config.xml"
 CHECK_FOR_UPDATES = ROOT / "jenkins-docker/jobs/Check For Updates/config.xml"
 RETRIEVE_BUILD_SPEC = ROOT / "jenkins-docker/jobs/Retrieve Build Spec/config.xml"
 FRONTEND_BUILD = ROOT / "jenkins-docker/jobs/PIC-SURE Frontend Build/config.xml"
@@ -51,6 +52,11 @@ def xml_shell(path: Path) -> str:
     if command is None or command.text is None:
         raise AssertionError(f"Missing shell command in {path}")
     return command.text
+
+
+def xml_shells(path: Path) -> list[str]:
+    root = ET.parse(path).getroot()
+    return [node.text for node in root.findall(".//hudson.tasks.Shell/command") if node.text]
 
 
 def xml_system_scripts(path: Path) -> list[str]:
@@ -118,6 +124,74 @@ def run_shell_guard(
 
 
 class JenkinsOrderTest(unittest.TestCase):
+    def test_suppressed_hosts_are_ready_before_immutable_deploy_and_final_health(self):
+        deployment = xml_script(DEPLOYMENT_PIPELINE)
+        await_job = AWAIT_INITIALIZATION.read_text(encoding="utf-8")
+        await_shell = "\n".join(xml_shells(AWAIT_INITIALIZATION))
+
+        self.assertIn("WAIT_FOR_TARGET_GROUP_HEALTH", await_job)
+        self.assertIn("describe-instance-information", await_job)
+        self.assertIn("PingStatus", await_job)
+        self.assertIn(
+            'if [ "$WAIT_FOR_TARGET_GROUP_HEALTH" != "true" ]; then',
+            await_shell,
+        )
+        self.assertIn(
+            "Skipping target registration until immutable banner artifacts are deployed.",
+            await_shell,
+        )
+        self.assertIn(
+            "name: 'WAIT_FOR_TARGET_GROUP_HEALTH', value: !banner_forward",
+            deployment,
+        )
+        self.assertIn("stage('Banner Rollout: Confirm Final Health')", deployment)
+        self.assertIn(
+            "name: 'WAIT_FOR_TARGET_GROUP_HEALTH', value: true",
+            deployment,
+        )
+
+        rebuild = deployment.index("stage('Teardown and Rebuild Stage Environment')")
+        host_ready = deployment.index("stage('Await Initialization')")
+        immutable = deployment.index("stage('Banner Rollout: Build, Backend, then Frontend')")
+        final_health = deployment.index("stage('Banner Rollout: Confirm Final Health')")
+        sensor = deployment.index("stage('Falcon Sensor Check')")
+        self.assertLess(rebuild, host_ready)
+        self.assertLess(host_ready, immutable)
+        self.assertLess(immutable, final_health)
+        self.assertLess(final_health, sensor)
+
+    def test_false_bootstrap_suppression_requires_validated_deployment_upstream(self):
+        deployment = xml_script(DEPLOYMENT_PIPELINE)
+        teardown = TEARDOWN_REBUILD.read_text(encoding="utf-8")
+        guards = xml_system_scripts(TEARDOWN_REBUILD)
+
+        self.assertIn("BANNER_VALIDATED_UPSTREAM_RUN_ID", deployment)
+        self.assertIn("BANNER_VALIDATED_UPSTREAM_RUN_ID", teardown)
+        validation = deployment.index("stage('Validate Banner Rollout Input')")
+        validated_forward = deployment.index("banner_forward = banner_rollout_present")
+        rebuild = deployment.index("stage('Teardown and Rebuild Stage Environment')")
+        self.assertLess(validation, validated_forward)
+        self.assertLess(validated_forward, rebuild)
+        suppression_parameter = teardown.index(
+            "<name>BOOTSTRAP_STANDARD_CRITICAL_ARTIFACTS</name>"
+        )
+        self.assertIn(
+            "<defaultValue>true</defaultValue>",
+            teardown[suppression_parameter : suppression_parameter + 500],
+        )
+        self.assertEqual(1, len(guards))
+        guard = guards[0]
+        self.assertIn("BOOTSTRAP_STANDARD_CRITICAL_ARTIFACTS", guard)
+        self.assertIn("!bootstrapStandard.toString().toBoolean()", guard)
+        self.assertIn("Cause.UpstreamCause", guard)
+        self.assertIn('cause.upstreamProject != "Deployment Pipeline"', guard)
+        self.assertIn('"deployment-${cause.upstreamBuild}"', guard)
+        self.assertIn('getParameter("BANNER_ROLLOUT")', guard)
+        self.assertIn('getParameter("BANNER_ROLLOUT_OPERATION")', guard)
+        self.assertIn('getParameter("deployment_git_hash")', guard)
+        self.assertIn('getParameter("infrastructure_git_hash")', guard)
+        self.assertIn("AbortException", guard)
+
     def test_intervening_standard_writer_cannot_reach_banner_bootstrap(self):
         legacy = xml_script(LEGACY_PIPELINE)
         deployment = xml_script(DEPLOYMENT_PIPELINE)
@@ -139,7 +213,7 @@ class JenkinsOrderTest(unittest.TestCase):
 
         bootstrap_parameter = "BOOTSTRAP_STANDARD_CRITICAL_ARTIFACTS"
         self.assertIn(
-            f"name: '{bootstrap_parameter}', value: !params.BANNER_ROLLOUT",
+            f"name: '{bootstrap_parameter}', value: !banner_forward",
             deployment,
         )
         self.assertIn(f"<name>{bootstrap_parameter}</name>", teardown)
