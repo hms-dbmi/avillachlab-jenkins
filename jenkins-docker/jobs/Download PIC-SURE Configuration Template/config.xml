@@ -63,6 +63,23 @@ pipeline {
     stage(&apos;Download Template&apos;) {
       steps {
         script {
+          def templates = [
+            &apos;Gateway&apos;: [&apos;gateway.env.tftpl&apos;, &apos;configs/gateway/templates&apos;],
+            &apos;Operations&apos;: [&apos;operations.env.tftpl&apos;, &apos;configs/operations/templates&apos;],
+            &apos;Query&apos;: [&apos;query.env.tftpl&apos;, &apos;configs/query/templates&apos;],
+            &apos;HPDS Auth&apos;: [&apos;hpds-auth.env.tftpl&apos;, &apos;configs/hpds/templates&apos;],
+            &apos;HPDS Open&apos;: [&apos;hpds-open.env.tftpl&apos;, &apos;configs/hpds/templates&apos;],
+            &apos;Visualization&apos;: [&apos;visualization.env.tftpl&apos;, &apos;configs/pic-sure-visualization/templates&apos;]
+          ]
+
+          def selected = templates[params.SERVICE]
+          if (selected == null) {
+            error(&quot;Unsupported SERVICE selection: ${params.SERVICE}&quot;)
+          }
+
+          env.TEMPLATE_FILE = selected[0]
+          env.TEMPLATE_PREFIX = selected[1]
+
           def s3Status = sh(script: &apos;&apos;&apos;#!/bin/bash
 set -euo pipefail
 
@@ -83,39 +100,12 @@ for fn in assume_role reset_role; do
     fi
 done
 
-: &quot;${SERVICE:?SERVICE is required}&quot;
 : &quot;${stack_s3_bucket:?stack_s3_bucket is required}&quot;
+: &quot;${TEMPLATE_FILE:?TEMPLATE_FILE is required}&quot;
+: &quot;${TEMPLATE_PREFIX:?TEMPLATE_PREFIX is required}&quot;
 
-case &quot;$SERVICE&quot; in
-    Gateway)
-        template_file=&quot;gateway.env.tftpl&quot;
-        template_prefix=&quot;configs/gateway/templates&quot;
-        ;;
-    Operations)
-        template_file=&quot;operations.env.tftpl&quot;
-        template_prefix=&quot;configs/operations/templates&quot;
-        ;;
-    Query)
-        template_file=&quot;query.env.tftpl&quot;
-        template_prefix=&quot;configs/query/templates&quot;
-        ;;
-    &quot;HPDS Auth&quot;)
-        template_file=&quot;hpds-auth.env.tftpl&quot;
-        template_prefix=&quot;configs/hpds/templates&quot;
-        ;;
-    &quot;HPDS Open&quot;)
-        template_file=&quot;hpds-open.env.tftpl&quot;
-        template_prefix=&quot;configs/hpds/templates&quot;
-        ;;
-    Visualization)
-        template_file=&quot;visualization.env.tftpl&quot;
-        template_prefix=&quot;configs/pic-sure-visualization/templates&quot;
-        ;;
-    *)
-        echo &quot;Error: unsupported SERVICE selection.&quot; &gt;&amp;2
-        exit 1
-        ;;
-esac
+template_file=&quot;$TEMPLATE_FILE&quot;
+template_prefix=&quot;$TEMPLATE_PREFIX&quot;
 
 TARGET_STACK=&quot;${TARGET_STACK:-}&quot;
 role_assumed=false
@@ -189,7 +179,6 @@ else
 fi
 
 echo &quot;No S3 template found, using repo version of $template_file&quot;
-printf &apos;%s\n&apos; &quot;$template_file&quot; &gt; .template-file
 exit 3
 &apos;&apos;&apos;, returnStatus: true)
 
@@ -211,27 +200,21 @@ exit 3
                 url: &quot;${infrastructure_git_repo}&quot;,
                 credentialsId: &quot;${git_credentials_id}&quot;
               ]],
-              branches: [[name: infrastructure_git_hash]]
+              branches: [[name: infrastructure_git_hash]],
+              extensions: [[$class: &apos;RelativeTargetDirectory&apos;, relativeTargetDir: &apos;infra&apos;]]
             ])
 
             sh &apos;&apos;&apos;#!/bin/bash
 set -euo pipefail
 
-template_file=$(&lt;.template-file)
-case &quot;$template_file&quot; in
-    gateway.env.tftpl|operations.env.tftpl|query.env.tftpl|hpds-auth.env.tftpl|hpds-open.env.tftpl|visualization.env.tftpl) ;;
-    *)
-        echo &quot;Error: invalid repository fallback template filename.&quot; &gt;&amp;2
-        exit 1
-        ;;
-esac
+: &quot;${TEMPLATE_FILE:?TEMPLATE_FILE is required}&quot;
 
-repo_template=&quot;app-infrastructure/template-renderer/templates/$template_file&quot;
+repo_template=&quot;infra/app-infrastructure/template-renderer/templates/$TEMPLATE_FILE&quot;
 if [[ ! -s &quot;$repo_template&quot; ]]; then
-    echo &quot;Error: repository fallback $template_file is missing or empty.&quot; &gt;&amp;2
+    echo &quot;Error: repository fallback $TEMPLATE_FILE is missing or empty.&quot; &gt;&amp;2
     exit 1
 fi
-cp &quot;$repo_template&quot; &quot;$template_file&quot;
+cp &quot;$repo_template&quot; &quot;$TEMPLATE_FILE&quot;
 &apos;&apos;&apos;
           } else if (s3Status != 0) {
             error(&quot;Template download failed before repository fallback (exit ${s3Status}).&quot;)
