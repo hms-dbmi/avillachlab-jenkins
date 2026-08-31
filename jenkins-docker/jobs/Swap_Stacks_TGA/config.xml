@@ -23,7 +23,7 @@ add this work when moving to modular composition approach.</description>
         <hudson.model.StringParameterDefinition>
           <name>fail_empty_stacks</name>
           <description>Fail the swap if either stack resolves to no HTTPD instances. Keep true for established environments so a no-op swap cannot flip the state file.</description>
-          <defaultValue>true</defaultValue>
+          <defaultValue>false</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
