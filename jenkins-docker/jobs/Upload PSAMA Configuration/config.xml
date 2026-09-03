@@ -1,7 +1,7 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
   <actions/>
-  <description>Validates a psama.env against PSAMA&apos;s required-key rules and, only if it passes, uploads it to S3. The check is fail-closed: it requires every key PSAMA cannot start or authorize without, requires each identity provider&apos;s credentials whenever that provider&apos;s IS_ENABLED flag is true, and requires ENABLE_PUBLIC_ACCESS, TOS_ENABLED, CONSENT_BASED_AUTHORIZATION_ENABLED and APPLICATION_CLIENT_SECRET_IS_BASE_64 to read exactly true or false, because Spring also reads yes, on and 1 as true. An empty STRICT_AUTHORIZATION_APPLICATIONS is rejected as well: it makes no connection strict, and an empty merged access-rule set then grants rather than denies. Failures name the offending key only, never its value. An uploaded change takes effect only after redeploying PSAMA; the container bakes its env at create time.</description>
+  <description>Validates a psama.env against PSAMA&apos;s required-key rules and, only if it passes, uploads it to S3. The check is fail-closed: it requires every key PSAMA cannot start or authorize without, requires each identity provider&apos;s credentials whenever that provider&apos;s IS_ENABLED flag is true, and requires ENABLE_PUBLIC_ACCESS, TOS_ENABLED, CONSENT_BASED_AUTHORIZATION_ENABLED and APPLICATION_CLIENT_SECRET_IS_BASE_64 to read exactly true or false, because Spring also reads yes, on and 1 as true. An empty STRICT_AUTHORIZATION_APPLICATIONS is rejected as well: it makes no connection strict, and an empty merged access-rule set then grants rather than denies. Failures name the offending key only, never its value. An uploaded change takes effect only after redeploying PSAMA; the container bakes its env at create time. The rules are derived from PSAMA&apos;s own application.properties rather than from a live file, so run this job once per environment with VALIDATE_ONLY set against the current live psama.env before relying on the gate; that reports what the rules would reject without changing anything.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
@@ -10,6 +10,11 @@
           <name>psama.env</name>
           <description>Upload a psama.env file that has been configured and will be used to configure the pic-sure-auth-micro-app.</description>
         </hudson.model.FileParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>VALIDATE_ONLY</name>
+          <description>Run every validation rule and report the verdict without uploading. A file that fails still fails the build; this only suppresses the upload on success, so s3://.../configs/psama/psama.env is left untouched. Use it as a pre-flight: download the live psama.env, run it through here once per environment, and fix what it names before relying on the gate for a real upload.</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -40,6 +45,7 @@ shopt -u nullglob
 : &quot;${stack_s3_bucket:?stack_s3_bucket is required}&quot;
 
 ENV_FILE=&quot;psama.env&quot;
+validate_only=&quot;${VALIDATE_ONLY:-false}&quot;
 
 # psama.env carries live Okta, Fence and RAS client secrets. Every message below names
 # the offending key and, at most, the shape of its value. No value is ever echoed.
@@ -168,6 +174,15 @@ done
 if [[ &quot;$mail_keys_set&quot; -eq 1 ]]; then
     echo &quot;Error: EMAIL_ADDRESS and EMAIL_PASSWORD are a pair; set both to enable notification mail or leave both empty; refusing to upload.&quot; &gt;&amp;2
     exit 1
+fi
+
+# VALIDATE_ONLY is the pre-flight: it stops here, before the upload, so an operator can run the
+# live psama.env through every rule above without changing what PSAMA is running. A file that
+# fails still fails the build in both modes; the flag suppresses the upload, not the verdict.
+if [[ &quot;$validate_only&quot; == &quot;true&quot; ]]; then
+    echo &quot;$ENV_FILE passed every PSAMA required-key rule.&quot;
+    echo &quot;VALIDATE_ONLY is true, so nothing was uploaded and s3://$stack_s3_bucket/configs/psama/psama.env is unchanged.&quot;
+    exit 0
 fi
 
 echo &quot;Validated $ENV_FILE against the PSAMA required-key rules; uploading.&quot;

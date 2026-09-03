@@ -125,7 +125,9 @@ pipeline {
                         [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_QUERY&apos;, value: true],
                         [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_AUTH_HPDS&apos;, value: true],
                         [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPEN_HPDS&apos;, value: true],
-                        [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_VISUALIZATION&apos;, value: true]
+                        [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_VISUALIZATION&apos;, value: true],
+                        [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_LOGGING&apos;, value: true],
+                        [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_DICTIONARY&apos;, value: true]
                     ]
                 }
             }
