@@ -1,7 +1,7 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
   <actions/>
-  <description>Renders the env files for the selected PIC-SURE services for one target stack from the shared .tftpl templates and uploads them to S3. The .tftpl is the file people edit: pull it with Download PIC-SURE Configuration Template, change it, and push it back with Upload PIC-SURE Configuration Template. PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT are read back out of the env files currently rendered for the stack and reused, so re-rendering one service no longer rotates the values the other two are still running with. ROTATE_SHARED_SECRETS mints new ones instead; it requires RENDER_GATEWAY, RENDER_OPERATIONS and RENDER_QUERY all true, and all three services must be redeployed afterwards.</description>
+  <description>Renders the env files for the selected PIC-SURE services for one target stack from the shared .tftpl templates and uploads them to S3. The .tftpl is the file people edit: pull it with Download PIC-SURE Configuration Template, change it, and push it back with Upload PIC-SURE Configuration Template. PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT are read back out of the env files currently rendered for the stack and reused, so re-rendering one service no longer rotates the values the other two are still running with. ROTATE_SHARED_SECRETS mints new ones instead; it requires RENDER_GATEWAY, RENDER_OPERATIONS and RENDER_QUERY all true, and all three services must be redeployed afterwards. LOGGING_API_KEY is read back out of the rendered logging.env the same way; pic-sure-logging, the gateway and the visualization service all carry it, so a run that would have to mint one requires RENDER_LOGGING, RENDER_GATEWAY and RENDER_VISUALIZATION all true. picsure-dictionary's DATASOURCE_URL and DATASOURCE_USERNAME are read back out of the rendered picsure-dictionary.env and can never be generated: a run that cannot read them back stops. One logging service and one dictionary service serve every stack, so neither of those two objects carries a stack segment.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
@@ -44,6 +44,16 @@
         <hudson.model.BooleanParameterDefinition>
           <name>RENDER_VISUALIZATION</name>
           <description>Render and upload the visualization env file</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>RENDER_LOGGING</name>
+          <description>Render and upload the pic-sure-logging env file. One logging service serves every stack, so this object carries no stack segment.</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>RENDER_DICTIONARY</name>
+          <description>Render and upload the picsure-dictionary env file. One dictionary service serves every stack, so this object carries no stack segment. DATASOURCE_URL and DATASOURCE_USERNAME must already exist in the rendered object; this job cannot generate them.</description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
@@ -114,6 +124,8 @@ render_query=&quot;${RENDER_QUERY:-false}&quot;
 render_auth_hpds=&quot;${RENDER_AUTH_HPDS:-false}&quot;
 render_open_hpds=&quot;${RENDER_OPEN_HPDS:-false}&quot;
 render_visualization=&quot;${RENDER_VISUALIZATION:-false}&quot;
+render_logging=&quot;${RENDER_LOGGING:-false}&quot;
+render_dictionary=&quot;${RENDER_DICTIONARY:-false}&quot;
 rotate_shared_secrets=&quot;${ROTATE_SHARED_SECRETS:-false}&quot;
 
 if [ &quot;$render_gateway&quot; != &quot;true&quot; ] &amp;&amp;
@@ -121,9 +133,11 @@ if [ &quot;$render_gateway&quot; != &quot;true&quot; ] &amp;&amp;
    [ &quot;$render_query&quot; != &quot;true&quot; ] &amp;&amp;
    [ &quot;$render_auth_hpds&quot; != &quot;true&quot; ] &amp;&amp;
    [ &quot;$render_open_hpds&quot; != &quot;true&quot; ] &amp;&amp;
-   [ &quot;$render_visualization&quot; != &quot;true&quot; ]; then
+   [ &quot;$render_visualization&quot; != &quot;true&quot; ] &amp;&amp;
+   [ &quot;$render_logging&quot; != &quot;true&quot; ] &amp;&amp;
+   [ &quot;$render_dictionary&quot; != &quot;true&quot; ]; then
   echo &quot;Error: no service was selected to render.&quot; &gt;&amp;2
-  echo &quot;Set at least one of RENDER_GATEWAY, RENDER_OPERATIONS, RENDER_QUERY, RENDER_AUTH_HPDS, RENDER_OPEN_HPDS or RENDER_VISUALIZATION to true, then re-run this job.&quot; &gt;&amp;2
+  echo &quot;Set at least one of RENDER_GATEWAY, RENDER_OPERATIONS, RENDER_QUERY, RENDER_AUTH_HPDS, RENDER_OPEN_HPDS, RENDER_VISUALIZATION, RENDER_LOGGING or RENDER_DICTIONARY to true, then re-run this job.&quot; &gt;&amp;2
   exit 1
 fi
 
@@ -135,6 +149,11 @@ fi
 all_picsure_services_selected=false
 if [ &quot;$render_gateway&quot; = &quot;true&quot; ] &amp;&amp; [ &quot;$render_operations&quot; = &quot;true&quot; ] &amp;&amp; [ &quot;$render_query&quot; = &quot;true&quot; ]; then
   all_picsure_services_selected=true
+fi
+
+all_logging_consumers_selected=false
+if [ &quot;$render_logging&quot; = &quot;true&quot; ] &amp;&amp; [ &quot;$render_gateway&quot; = &quot;true&quot; ] &amp;&amp; [ &quot;$render_visualization&quot; = &quot;true&quot; ]; then
+  all_logging_consumers_selected=true
 fi
 
 # PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT are
@@ -208,43 +227,6 @@ if [ &quot;$render_gateway&quot; = &quot;true&quot; ]; then
   if [ -z &quot;$picsure_token_introspection_token&quot; ]; then
     echo &quot;Error: no introspection token found for application ${application_id_for_base_query}.&quot; &gt;&amp;2
     echo &quot;Run the Update PIC-SURE Token Introspection Token job to mint one, then re-run this job.&quot; &gt;&amp;2
-    exit 1
-  fi
-fi
-
-logging_api_key=&quot;&quot;
-if [ &quot;$render_gateway&quot; = &quot;true&quot; ] || [ &quot;$render_visualization&quot; = &quot;true&quot; ]; then
-  logging_key_consumers=&quot;&quot;
-  if [ &quot;$render_gateway&quot; = &quot;true&quot; ]; then
-    logging_key_consumers=&quot;gateway.env&quot;
-  fi
-  if [ &quot;$render_visualization&quot; = &quot;true&quot; ]; then
-    if [ -n &quot;$logging_key_consumers&quot; ]; then
-      logging_key_consumers=&quot;${logging_key_consumers} and visualization.env&quot;
-    else
-      logging_key_consumers=&quot;visualization.env&quot;
-    fi
-  fi
-
-  # Get logging API key from logging.env in S3 (same derivation as Teardown and Rebuild).
-  # The key is never echoed: it is a live credential.
-  new_temp_file &quot;logging.env&quot;
-  logging_env=&quot;$temp_file_path&quot;
-  if ! aws s3 cp &quot;s3://$stack_s3_bucket/configs/pic-sure-logging/logging.env&quot; &quot;$logging_env&quot; &gt;/dev/null; then
-    rm -f &quot;$logging_env&quot; 2&gt;/dev/null || true
-    echo &quot;Error: could not read s3://$stack_s3_bucket/configs/pic-sure-logging/logging.env.&quot; &gt;&amp;2
-    echo &quot;That object is hand-maintained (there is no terraform template for it); confirm it exists, then re-run this job.&quot; &gt;&amp;2
-    exit 1
-  fi
-  logging_api_key=$(grep -oP &apos;^LOGGING_API_KEY=\K.*&apos; &quot;$logging_env&quot; || true)
-  rm -f &quot;$logging_env&quot; 2&gt;/dev/null || true
-
-  # Fail closed, like the introspection token above. This previously defaulted to the literal
-  # string &quot;disabled&quot;, which rendered a gateway.env whose audit events pic-sure-logging
-  # rejects with 401 -- silently, because the logging client logs the failure and drops the event.
-  if [ -z &quot;$logging_api_key&quot; ]; then
-    echo &quot;Error: logging.env defines no non-empty LOGGING_API_KEY.&quot; &gt;&amp;2
-    echo &quot;Rendering would ship ${logging_key_consumers} whose audit events pic-sure-logging rejects with 401. Fix logging.env, then re-run this job.&quot; &gt;&amp;2
     exit 1
   fi
 fi
@@ -329,6 +311,14 @@ fi
 
 if [ &quot;$render_visualization&quot; = &quot;true&quot; ]; then
   resolve_template &quot;configs/pic-sure-visualization/templates&quot; &quot;visualization.env.tftpl&quot;
+fi
+
+if [ &quot;$render_logging&quot; = &quot;true&quot; ]; then
+  resolve_template &quot;configs/pic-sure-logging/templates&quot; &quot;logging.env.tftpl&quot;
+fi
+
+if [ &quot;$render_dictionary&quot; = &quot;true&quot; ]; then
+  resolve_template &quot;configs/picsure-dictionary/templates&quot; &quot;picsure-dictionary.env.tftpl&quot;
 fi
 
 # Read one KEY=VALUE out of a rendered env file, anchored at the start of the line, taking
@@ -513,13 +503,117 @@ if [ &quot;$render_services&quot; = &quot;true&quot; ]; then
   echo &quot;  AGGREGATE_OBFUSCATION_SALT: ${aggregate_obfuscation_salt_origin}&quot;
 fi
 
+# LOGGING_API_KEY is presented on POST /audit by the gateway and the visualization service and
+# checked by pic-sure-logging, so all three env files have to carry the same value. This job
+# used to read it out of logging.env purely as an input, because that object was
+# hand-maintained; it renders that object now, so the key is read back out of it exactly as
+# the shared service secrets are read back out of the rendered service env files. logging.env
+# carries no stack segment: one logging service serves every stack. The key is never echoed:
+# it is a live credential. It previously defaulted to the literal string &quot;disabled&quot;, which
+# rendered a gateway.env whose audit events pic-sure-logging rejects with 401 -- silently,
+# because the logging client logs the failure and drops the event. A first render, where there
+# is nothing to read back, therefore has to render all three consumers together so one minted
+# key reaches all of them. A logging.env that exists but carries a blank key is already
+# rejecting every consumer, so that case mints and warns instead of refusing to move, the same
+# way a blank AGGREGATE_OBFUSCATION_SALT in an existing query.env does.
+logging_api_key=&quot;&quot;
+if [ &quot;$render_logging&quot; = &quot;true&quot; ] || [ &quot;$render_gateway&quot; = &quot;true&quot; ] || [ &quot;$render_visualization&quot; = &quot;true&quot; ]; then
+  logging_env_key=&quot;configs/pic-sure-logging/logging.env&quot;
+  logging_env_copy=&quot;&quot;
+  new_temp_file &quot;logging.env&quot;
+  logging_env_candidate=&quot;$temp_file_path&quot;
+  if download_s3_template &quot;$logging_env_key&quot; &quot;$logging_env_candidate&quot;; then
+    echo &quot;Reading LOGGING_API_KEY back from s3://${stack_s3_bucket}/${logging_env_key}&quot;
+    logging_env_copy=&quot;$logging_env_candidate&quot;
+  else
+    download_status=$?
+    if [ &quot;$download_status&quot; -ne 1 ]; then
+      echo &quot;Error: the message above is from the shared S3 download helper. It was reading the rendered logging env back from s3://${stack_s3_bucket}/${logging_env_key} to recover LOGGING_API_KEY, and there is no template or repository fallback for a rendered env file, so this run stops.&quot; &gt;&amp;2
+      exit &quot;$download_status&quot;
+    fi
+    echo &quot;s3://${stack_s3_bucket}/${logging_env_key} is not rendered yet&quot;
+  fi
+
+  resolve_shared_value &quot;LOGGING_API_KEY&quot; &quot;$logging_env_copy&quot;
+  logging_api_key=&quot;$resolved_value&quot;
+  logging_api_key_origin=&quot;$resolved_origin&quot;
+
+  if [ &quot;$logging_api_key_origin&quot; = &quot;generate&quot; ]; then
+    if [ -z &quot;$logging_env_copy&quot; ] &amp;&amp; [ &quot;$all_logging_consumers_selected&quot; != &quot;true&quot; ]; then
+      echo &quot;Error: nothing is rendered at s3://${stack_s3_bucket}/${logging_env_key}, so this run would have to mint LOGGING_API_KEY.&quot; &gt;&amp;2
+      echo &quot;That value is shared by the pic-sure-logging, gateway and visualization services: set RENDER_LOGGING, RENDER_GATEWAY and RENDER_VISUALIZATION all true so all three render together on a first render.&quot; &gt;&amp;2
+      exit 1
+    fi
+    generate_shared_token
+    logging_api_key=&quot;$generated_value&quot;
+    logging_api_key_origin=generated
+    if [ -n &quot;$logging_env_copy&quot; ]; then
+      echo &quot;Warning: logging.env already existed but carried no LOGGING_API_KEY. A new key was minted; whichever of the gateway and visualization services this run does not also re-render and redeploy keeps sending audit events pic-sure-logging rejects with 401.&quot; &gt;&amp;2
+    fi
+  fi
+
+  echo &quot;Logging key resolution:&quot;
+  echo &quot;  LOGGING_API_KEY: ${logging_api_key_origin}&quot;
+fi
+
+# DATASOURCE_URL and DATASOURCE_USERNAME are read back and never minted. Unlike the shared
+# service secrets they are not values this job is free to choose: the URL is the bare host of
+# a database that already exists and the username is a Secrets Manager secret id whose secret
+# holds the real username and password. A generated value would render a
+# picsure-dictionary.env that cannot open a connection at all, so a run that cannot read one
+# back stops rather than shipping a guess. Neither value is echoed, matching how
+# app_user_secret_name is handled.
+dictionary_datasource_url=&quot;&quot;
+dictionary_datasource_username=&quot;&quot;
+if [ &quot;$render_dictionary&quot; = &quot;true&quot; ]; then
+  dictionary_env_key=&quot;configs/picsure-dictionary/picsure-dictionary.env&quot;
+  dictionary_env_copy=&quot;&quot;
+  new_temp_file &quot;picsure-dictionary.env&quot;
+  dictionary_env_candidate=&quot;$temp_file_path&quot;
+  if download_s3_template &quot;$dictionary_env_key&quot; &quot;$dictionary_env_candidate&quot;; then
+    echo &quot;Reading the datasource settings back from s3://${stack_s3_bucket}/${dictionary_env_key}&quot;
+    dictionary_env_copy=&quot;$dictionary_env_candidate&quot;
+  else
+    download_status=$?
+    if [ &quot;$download_status&quot; -ne 1 ]; then
+      echo &quot;Error: the message above is from the shared S3 download helper. It was reading the rendered dictionary env back from s3://${stack_s3_bucket}/${dictionary_env_key} to recover DATASOURCE_URL and DATASOURCE_USERNAME, and there is no template or repository fallback for a rendered env file, so this run stops.&quot; &gt;&amp;2
+      exit &quot;$download_status&quot;
+    fi
+    echo &quot;s3://${stack_s3_bucket}/${dictionary_env_key} is not rendered yet&quot;
+  fi
+
+  for dictionary_key in DATASOURCE_URL DATASOURCE_USERNAME; do
+    env_value=&quot;&quot;
+    if [ -n &quot;$dictionary_env_copy&quot; ]; then
+      read_env_value &quot;$dictionary_env_copy&quot; &quot;$dictionary_key&quot;
+    fi
+    if [ -z &quot;$env_value&quot; ]; then
+      echo &quot;Error: s3://${stack_s3_bucket}/${dictionary_env_key} carries no non-empty ${dictionary_key}.&quot; &gt;&amp;2
+      echo &quot;${dictionary_key} names infrastructure that already exists, so this job cannot generate one the way it mints the shared service secrets: the value has to be present in that object before picsure-dictionary can be rendered. Put it there, then re-run this job.&quot; &gt;&amp;2
+      exit 1
+    fi
+    case &quot;$dictionary_key&quot; in
+      DATASOURCE_URL)
+        dictionary_datasource_url=&quot;$env_value&quot;
+        ;;
+      DATASOURCE_USERNAME)
+        dictionary_datasource_username=&quot;$env_value&quot;
+        ;;
+    esac
+  done
+
+  echo &quot;Dictionary datasource resolution:&quot;
+  echo &quot;  DATASOURCE_URL: reused&quot;
+  echo &quot;  DATASOURCE_USERNAME: reused&quot;
+fi
+
 # Every sensitive value reaches Terraform through the environment. A -var argument would be
 # readable in the process list of a shared Jenkins agent for the length of the apply.
 if [ &quot;$render_gateway&quot; = &quot;true&quot; ]; then
   export TF_VAR_picsure_token_introspection_token=&quot;$picsure_token_introspection_token&quot;
 fi
 
-if [ &quot;$render_gateway&quot; = &quot;true&quot; ] || [ &quot;$render_visualization&quot; = &quot;true&quot; ]; then
+if [ &quot;$render_logging&quot; = &quot;true&quot; ] || [ &quot;$render_gateway&quot; = &quot;true&quot; ] || [ &quot;$render_visualization&quot; = &quot;true&quot; ]; then
   export TF_VAR_logging_api_key=&quot;$logging_api_key&quot;
 fi
 
@@ -536,6 +630,11 @@ if [ &quot;$render_query&quot; = &quot;true&quot; ]; then
   export TF_VAR_aggregate_obfuscation_salt=&quot;$aggregate_obfuscation_salt&quot;
 fi
 
+if [ &quot;$render_dictionary&quot; = &quot;true&quot; ]; then
+  export TF_VAR_dictionary_datasource_url=&quot;$dictionary_datasource_url&quot;
+  export TF_VAR_dictionary_datasource_username=&quot;$dictionary_datasource_username&quot;
+fi
+
 apply_args=(
   -auto-approve
   -input=false
@@ -549,6 +648,8 @@ apply_args=(
   -var=&quot;render_auth_hpds=${render_auth_hpds}&quot;
   -var=&quot;render_open_hpds=${render_open_hpds}&quot;
   -var=&quot;render_visualization=${render_visualization}&quot;
+  -var=&quot;render_logging=${render_logging}&quot;
+  -var=&quot;render_dictionary=${render_dictionary}&quot;
 )
 
 # include_open_hpds is read only by the gateway template, and its value comes from a Jenkins
