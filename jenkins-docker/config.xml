@@ -216,6 +216,7 @@
         <string>PIC-SURE HPDS Query Service Build and Deploy</string>
         <string>PIC-SURE Visualization Build and Deploy</string>
         <string>Render PIC-SURE Configuration</string>
+        <string>Rotate PIC-SURE Shared Service Secrets</string>
         <string>Upload PIC-SURE Configuration Template</string>
         <string>Download PIC-SURE Configuration Template</string>
       </jobNames>

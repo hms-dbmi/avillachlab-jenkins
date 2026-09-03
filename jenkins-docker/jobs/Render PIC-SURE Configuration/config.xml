@@ -502,6 +502,9 @@ if [ &quot;$render_services&quot; = &quot;true&quot; ]; then
     generate_obfuscation_salt
     aggregate_obfuscation_salt=&quot;$generated_value&quot;
     aggregate_obfuscation_salt_origin=generated
+    if [ -n &quot;$query_env_copy&quot; ]; then
+      echo &quot;Warning: query.env for stack ${TARGET_STACK} already existed but carried no AGGREGATE_OBFUSCATION_SALT. A new salt was minted; reported aggregate counts for existing queries will shift.&quot; &gt;&amp;2
+    fi
   fi
 
   echo &quot;Shared value resolution for stack ${TARGET_STACK}:&quot;
@@ -523,6 +526,9 @@ fi
 if [ &quot;$render_services&quot; = &quot;true&quot; ]; then
   export TF_VAR_picsure_application_token=&quot;$picsure_application_token&quot;
   export TF_VAR_query_service_internal_token=&quot;$query_service_internal_token&quot;
+fi
+
+if [ &quot;$render_operations&quot; = &quot;true&quot; ]; then
   export TF_VAR_app_user_secret_name=&quot;$database_app_user_secret_name&quot;
 fi
 
@@ -545,9 +551,9 @@ apply_args=(
   -var=&quot;render_visualization=${render_visualization}&quot;
 )
 
-# include_open_hpds is read only by the gateway template and its value comes from a Jenkins
-# global, so passing it on a run that never needed it would turn an unset global into a
-# Terraform bool parse failure. The Terraform default is false.
+# include_open_hpds is read only by the gateway template, and its value comes from a Jenkins
+# global. Passing it on a non-gateway run would still reference that global, and set -u would
+# abort the run on a controller where the global is unset. The Terraform default is false.
 if [ &quot;$render_gateway&quot; = &quot;true&quot; ]; then
   apply_args+=(-var=&quot;include_open_hpds=${include_open_hpds}&quot;)
 fi

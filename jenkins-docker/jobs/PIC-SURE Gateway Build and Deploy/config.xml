@@ -122,6 +122,9 @@ pipeline {
                         build_hashes = parseBuildHashes(readFile(&apos;build-spec.json&apos;))
                         pipelineBuildId = readFile(&apos;pipeline_git_commit.txt&apos;).trim()
                         infrastructure_git_hash = parseInfrastructureGitHash(readFile(&apos;build-spec.json&apos;))
+                        if (!infrastructure_git_hash) {
+                            error(&quot;No infrastructure_git_hash in build-spec.json; cannot render configuration.&quot;)
+                        }
 
                         build job: &apos;PIC-SURE Maven Build&apos;, parameters: [
                             [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: params.git_hash ?: build_hashes[&apos;PSA&apos;]],

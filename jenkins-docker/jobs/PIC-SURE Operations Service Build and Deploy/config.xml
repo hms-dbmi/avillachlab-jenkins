@@ -128,6 +128,9 @@ pipeline {
                     build_hashes = parseBuildHashes(readFile(&apos;build-spec.json&apos;))
                     pipelineBuildId = readFile(&apos;pipeline_git_commit.txt&apos;).trim()
                     infrastructure_git_hash = parseInfrastructureGitHash(readFile(&apos;build-spec.json&apos;))
+                    if (!infrastructure_git_hash) {
+                        error(&quot;No infrastructure_git_hash in build-spec.json; cannot render configuration.&quot;)
+                    }
 
                     // Retrieve Build Spec now runs on every build, so infrastructure_git_hash is
                     // always resolved by the time this check runs. It stays because passing null
