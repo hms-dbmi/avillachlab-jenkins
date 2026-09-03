@@ -1,7 +1,7 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
   <actions/>
-  <description>Renders the env files for the selected PIC-SURE services for one target stack from the shared .tftpl templates and uploads them to S3. The .tftpl is the file people edit: pull it with Download PIC-SURE Configuration Template, change it, and push it back with Upload PIC-SURE Configuration Template. PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT are read back out of the env files currently rendered for the stack and reused, so re-rendering one service no longer rotates the values the other two are still running with. LOGGING_API_KEY is read back out of the rendered logging.env the same way; pic-sure-logging, the gateway and the visualization service all carry it, so any run that would have to mint one requires RENDER_LOGGING, RENDER_GATEWAY and RENDER_VISUALIZATION all true. ROTATE_SHARED_SECRETS mints new values for all four instead; it is one switch with no partial states, requiring RENDER_GATEWAY, RENDER_OPERATIONS, RENDER_QUERY, RENDER_LOGGING and RENDER_VISUALIZATION all true, and all five services must be redeployed afterwards. picsure-dictionary's DATASOURCE_URL and DATASOURCE_USERNAME are read back out of the rendered picsure-dictionary.env and can never be generated: a run that cannot read them back stops. One logging service and one dictionary service serve every stack, so neither of those two objects carries a stack segment.</description>
+  <description>Renders the env files for the selected PIC-SURE services for one target stack from the shared .tftpl templates and uploads them to S3. The .tftpl is the file people edit: pull it with Download PIC-SURE Configuration Template, change it, and push it back with Upload PIC-SURE Configuration Template. PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT are read back out of the env files currently rendered for the stack and reused, so re-rendering one service no longer rotates the values the other two are still running with. LOGGING_API_KEY is read back out of the rendered logging.env the same way, but that object carries no stack segment, so a key minted here reaches the live stack too: a first render, where the object does not exist yet, mints one and requires RENDER_LOGGING, RENDER_GATEWAY and RENDER_VISUALIZATION all true, while an existing logging.env holding a blank key aborts and refers you to the rotation job. ROTATE_SHARED_SECRETS mints new values for all four instead; it is one switch with no partial states, requiring RENDER_GATEWAY, RENDER_OPERATIONS, RENDER_QUERY, RENDER_LOGGING and RENDER_VISUALIZATION all true, and all five services must be redeployed afterwards. picsure-dictionary's DATASOURCE_URL and DATASOURCE_USERNAME are read back out of the rendered picsure-dictionary.env and can never be generated: a run that cannot read them back stops. One logging service and one dictionary service serve every stack, so neither of those two objects carries a stack segment.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
@@ -524,9 +524,17 @@ fi
 # salt, are the precedent for the gate below: the salt has a single consumer, the query
 # service, so a run that rewrites query.env can mint one freely, while a minted LOGGING_API_KEY
 # that reaches only some of its three consumers leaves the rest sending audit events
-# pic-sure-logging answers with 401. Any run that has to mint the key -- because nothing
-# carries one, or because the rendered logging.env carries a blank one -- therefore has to
-# render all three consumers together.
+# pic-sure-logging answers with 401. It goes further than those two, though, because logging.env
+# is the only one of the four shared secrets whose object carries no stack segment: the other
+# three live under configs/&lt;service&gt;/${TARGET_STACK}/, so minting one touches only the stack
+# being rendered, while minting this one rewrites the single object every stack reads. BDC runs
+# blue/green, so during a pipeline run one stack is live while the other is rebuilt, and a new
+# key would leave the live stack&apos;s gateway and visualization presenting the old one. An absent
+# object is therefore a bootstrap -- nothing running can hold a key from an object that never
+# existed -- and mints, subject to the all-three gate. A present object with a blank key aborts
+# instead, whatever the flags are: changing a key a live stack may be using is a both-stacks
+# operation, which is what ROTATE_SHARED_SECRETS is for, since it redeploys all five consumers
+# together.
 logging_api_key=&quot;&quot;
 if [ &quot;$render_logging&quot; = &quot;true&quot; ] || [ &quot;$render_gateway&quot; = &quot;true&quot; ] || [ &quot;$render_visualization&quot; = &quot;true&quot; ]; then
   logging_env_key=&quot;configs/pic-sure-logging/logging.env&quot;
@@ -555,17 +563,20 @@ if [ &quot;$render_logging&quot; = &quot;true&quot; ] || [ &quot;$render_gateway
   logging_api_key_origin=&quot;$resolved_origin&quot;
 
   if [ &quot;$logging_api_key_origin&quot; = &quot;generate&quot; ]; then
+    if [ &quot;$rotate_shared_secrets&quot; != &quot;true&quot; ] &amp;&amp; [ -n &quot;$logging_env_copy&quot; ]; then
+      echo &quot;Error: s3://${stack_s3_bucket}/${logging_env_key} exists but carries no non-empty LOGGING_API_KEY.&quot; &gt;&amp;2
+      echo &quot;That object has no stack segment -- one logging service serves every stack -- so minting a key here would leave any live stack&apos;s gateway and visualization presenting the old one, and pic-sure-logging answers those with 401 while the logging client drops the audit event.&quot; &gt;&amp;2
+      echo &quot;Run the Rotate PIC-SURE Shared Service Secrets job to change this value: that path redeploys all five consumers together, which is what makes a new key safe.&quot; &gt;&amp;2
+      exit 1
+    fi
     if [ &quot;$all_logging_consumers_selected&quot; != &quot;true&quot; ]; then
-      echo &quot;Error: s3://${stack_s3_bucket}/${logging_env_key} carries no non-empty LOGGING_API_KEY, so this run would have to mint one.&quot; &gt;&amp;2
-      echo &quot;That value is shared by the pic-sure-logging, gateway and visualization services: set RENDER_LOGGING, RENDER_GATEWAY and RENDER_VISUALIZATION all true so all three render together.&quot; &gt;&amp;2
+      echo &quot;Error: nothing is rendered at s3://${stack_s3_bucket}/${logging_env_key}, so this run would have to mint LOGGING_API_KEY.&quot; &gt;&amp;2
+      echo &quot;That value is shared by the pic-sure-logging, gateway and visualization services: set RENDER_LOGGING, RENDER_GATEWAY and RENDER_VISUALIZATION all true so all three render together on a first render.&quot; &gt;&amp;2
       exit 1
     fi
     generate_shared_token
     logging_api_key=&quot;$generated_value&quot;
     logging_api_key_origin=generated
-    if [ -n &quot;$logging_env_copy&quot; ]; then
-      echo &quot;Warning: logging.env already existed but carried no LOGGING_API_KEY. A new key was minted; pic-sure-logging, the gateway and the visualization service must all be redeployed before audit events are accepted again.&quot; &gt;&amp;2
-    fi
   fi
 
   echo &quot;Logging key resolution:&quot;
