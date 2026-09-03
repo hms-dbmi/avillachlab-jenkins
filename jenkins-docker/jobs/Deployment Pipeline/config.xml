@@ -117,17 +117,16 @@ pipeline {
                 script {
                     target_stack = new JsonSlurper().parseText(stacksJson).environments.next_prod
                     live_stack = new JsonSlurper().parseText(stacksJson).environments.prod
-                    parallel(
-                        hpds: {
-                            build job: &apos;Render HPDS Config Templates&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;INFRASTRUCTURE_GIT_HASH&apos;, value: infrastructure_git_hash], [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: target_stack], [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_AUTH_HPDS&apos;, value: true], [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPEN_HPDS&apos;, value: true]]
-                        },
-                        visualization: {
-                            build job: &apos;Render PIC-SURE Visualization Config Template&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;INFRASTRUCTURE_GIT_HASH&apos;, value: infrastructure_git_hash], [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: target_stack]]
-                        },
-                        picsure_services: {
-                            build job: &apos;Render PIC-SURE Service Config Templates&apos;, parameters: [[$class: &apos;StringParameterValue&apos;, name: &apos;INFRASTRUCTURE_GIT_HASH&apos;, value: infrastructure_git_hash], [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: target_stack]]
-                        }
-                    )
+                    build job: &apos;Render PIC-SURE Configuration&apos;, parameters: [
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;INFRASTRUCTURE_GIT_HASH&apos;, value: infrastructure_git_hash],
+                        [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: target_stack],
+                        [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_GATEWAY&apos;, value: true],
+                        [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPERATIONS&apos;, value: true],
+                        [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_QUERY&apos;, value: true],
+                        [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_AUTH_HPDS&apos;, value: true],
+                        [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPEN_HPDS&apos;, value: true],
+                        [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_VISUALIZATION&apos;, value: true]
+                    ]
                 }
             }
         }

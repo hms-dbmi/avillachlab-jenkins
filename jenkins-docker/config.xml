@@ -215,7 +215,7 @@
         <string>PIC-SURE Operations Service Build and Deploy</string>
         <string>PIC-SURE HPDS Query Service Build and Deploy</string>
         <string>PIC-SURE Visualization Build and Deploy</string>
-        <string>Render PIC-SURE Visualization Config Template</string>
+        <string>Render PIC-SURE Configuration</string>
         <string>Upload PIC-SURE Configuration Template</string>
         <string>Download PIC-SURE Configuration Template</string>
       </jobNames>

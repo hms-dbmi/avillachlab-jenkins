@@ -112,18 +112,16 @@ pipeline {
             steps {
                 script {
                     lock(&quot;stack-${targetStack}&quot;) {
-                        if (params.git_hash == &apos;&apos;) {
-                            def result = build job: &apos;Retrieve Build Spec&apos;
-                            retrieveBuildSpecId = result.number
+                        def result = build job: &apos;Retrieve Build Spec&apos;
+                        retrieveBuildSpecId = result.number
 
-                            copyArtifacts filter: &apos;*&apos;, projectName: &apos;Retrieve Build Spec&apos;, selector: specific(&quot;&quot;+retrieveBuildSpecId)
-                            sh &apos;cat build-spec.json&apos;
-                            sh &apos;cat pipeline_git_commit.txt&apos;
-                            sh &apos;pwd&apos;
-                            build_hashes = parseBuildHashes(readFile(&apos;build-spec.json&apos;))
-                            pipelineBuildId = readFile(&apos;pipeline_git_commit.txt&apos;).trim()
-                            infrastructure_git_hash = parseInfrastructureGitHash(readFile(&apos;build-spec.json&apos;))
-                        }
+                        copyArtifacts filter: &apos;*&apos;, projectName: &apos;Retrieve Build Spec&apos;, selector: specific(&quot;&quot;+retrieveBuildSpecId)
+                        sh &apos;cat build-spec.json&apos;
+                        sh &apos;cat pipeline_git_commit.txt&apos;
+                        sh &apos;pwd&apos;
+                        build_hashes = parseBuildHashes(readFile(&apos;build-spec.json&apos;))
+                        pipelineBuildId = readFile(&apos;pipeline_git_commit.txt&apos;).trim()
+                        infrastructure_git_hash = parseInfrastructureGitHash(readFile(&apos;build-spec.json&apos;))
 
                         build job: &apos;PIC-SURE Maven Build&apos;, parameters: [
                             [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: params.git_hash ?: build_hashes[&apos;PSA&apos;]],
@@ -135,6 +133,17 @@ pipeline {
                         build job: &apos;PIC-SURE HPDS Query Service Image&apos;, parameters: [
                             [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
                             [$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId ?: &apos;MANUAL_RUN&apos;]
+                        ]
+
+                        build job: &apos;Render PIC-SURE Configuration&apos;, parameters: [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;INFRASTRUCTURE_GIT_HASH&apos;, value: infrastructure_git_hash],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_GATEWAY&apos;, value: false],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPERATIONS&apos;, value: false],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_QUERY&apos;, value: true],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_AUTH_HPDS&apos;, value: false],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPEN_HPDS&apos;, value: false],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_VISUALIZATION&apos;, value: false]
                         ]
 
                         build job: &apos;PIC-SURE HPDS Query Service Deploy&apos;, parameters: [
