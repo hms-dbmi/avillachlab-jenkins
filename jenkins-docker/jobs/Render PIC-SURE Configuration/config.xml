@@ -577,7 +577,12 @@ fi
 # a database that already exists and the username is a Secrets Manager secret id whose secret
 # holds the real username and password. A generated value would render a
 # picsure-dictionary.env that cannot open a connection at all, so a run that cannot read one
-# back stops rather than shipping a guess. Neither value is echoed, matching how
+# back stops rather than shipping a guess. Both are currently supplied by the container image
+# rather than by this file -- bdc.Dockerfile promotes them from build arguments to ENV, and the
+# PIC-SURE Dictionary Image job passes them from parameters of the same names -- so the rendered
+# object may not carry them yet. That makes stopping more important, not less: podman
+# --env-file overrides the image ENV, so a blank or guessed value would not leave the working
+# datasource settings alone, it would take them away. Neither value is echoed, matching how
 # app_user_secret_name is handled.
 dictionary_datasource_url=&quot;&quot;
 dictionary_datasource_username=&quot;&quot;
@@ -605,7 +610,8 @@ if [ &quot;$render_dictionary&quot; = &quot;true&quot; ]; then
     fi
     if [ -z &quot;$env_value&quot; ]; then
       echo &quot;Error: s3://${stack_s3_bucket}/${dictionary_env_key} carries no non-empty ${dictionary_key}.&quot; &gt;&amp;2
-      echo &quot;${dictionary_key} names infrastructure that already exists, so this job cannot generate one the way it mints the shared service secrets: the value has to be present in that object before picsure-dictionary can be rendered. Put it there, then re-run this job.&quot; &gt;&amp;2
+      echo &quot;${dictionary_key} names infrastructure that already exists, so this job cannot mint one the way it mints the shared service secrets. The value is currently supplied by the container image: picsure-dictionary&apos;s bdc.Dockerfile promotes it to an ENV, and the PIC-SURE Dictionary Image job passes it as a build argument from its own ${dictionary_key} parameter.&quot; &gt;&amp;2
+      echo &quot;Seed that object with the same value the running image was built with, then re-run this job. Rendering picsure-dictionary.env without it would take the setting away rather than leave it alone, because podman --env-file overrides the image ENV.&quot; &gt;&amp;2
       exit 1
     fi
     case &quot;$dictionary_key&quot; in
@@ -619,8 +625,8 @@ if [ &quot;$render_dictionary&quot; = &quot;true&quot; ]; then
   done
 
   echo &quot;Dictionary datasource resolution:&quot;
-  echo &quot;  DATASOURCE_URL: reused&quot;
-  echo &quot;  DATASOURCE_USERNAME: reused&quot;
+  echo &quot;  DATASOURCE_URL: read back&quot;
+  echo &quot;  DATASOURCE_USERNAME: read back&quot;
 fi
 
 # Every sensitive value reaches Terraform through the environment. A -var argument would be
