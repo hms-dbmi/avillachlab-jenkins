@@ -6,12 +6,6 @@
   <properties>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
-        <hudson.model.StringParameterDefinition>
-          <name>INFRASTRUCTURE_GIT_HASH</name>
-          <description>Infrastructure repository revision to render the rotated configuration from. Leave empty to resolve it from build-spec.json.</description>
-          <defaultValue></defaultValue>
-          <trim>true</trim>
-        </hudson.model.StringParameterDefinition>
         <hudson.model.ChoiceParameterDefinition>
           <name>TARGET_STACK</name>
           <description>Based on selection we determine if is a or b stack.</description>
@@ -20,6 +14,17 @@
             <string>live</string>
           </choices>
         </hudson.model.ChoiceParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>INFRASTRUCTURE_GIT_HASH</name>
+          <description>Infrastructure repository revision to render the rotated configuration from. Leave empty to resolve it from build-spec.json.</description>
+          <defaultValue></defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>S3_BUCKET_NAME</name>
+          <defaultValue>${stack_s3_bucket}</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -99,7 +104,7 @@ pipeline {
                         ]
 
                         build job: &apos;PIC-SURE Wildfly Stack Deploy&apos;, parameters: [
-                            [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: &quot;${stack_s3_bucket}&quot;],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: params.S3_BUCKET_NAME],
                             [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_GATEWAY&apos;, value: true],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_OPERATIONS&apos;, value: true],
