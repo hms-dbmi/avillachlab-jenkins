@@ -1,0 +1,549 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description>Renders the env files for the selected PIC-SURE services for one target stack from the shared .tftpl templates and uploads them to S3. The .tftpl is the file people edit: pull it with Download PIC-SURE Configuration Template, change it, and push it back with Upload PIC-SURE Configuration Template. PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT are read back out of the env files currently rendered for the stack and reused, so re-rendering one service no longer rotates the values the other two are still running with. ROTATE_SHARED_SECRETS mints new ones instead; it requires RENDER_GATEWAY, RENDER_OPERATIONS and RENDER_QUERY all true, and all three services must be redeployed afterwards.</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>INFRASTRUCTURE_GIT_HASH</name>
+          <description>Git hash of the infrastructure repo to checkout</description>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>TARGET_STACK</name>
+          <description>Target stack identifier (e.g., a, b)</description>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>RENDER_GATEWAY</name>
+          <description>Render and upload the gateway env file</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>RENDER_OPERATIONS</name>
+          <description>Render and upload the operations env file</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>RENDER_QUERY</name>
+          <description>Render and upload the query env file</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>RENDER_AUTH_HPDS</name>
+          <description>Render and upload the auth HPDS env file</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>RENDER_OPEN_HPDS</name>
+          <description>Render and upload the open HPDS env file</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>RENDER_VISUALIZATION</name>
+          <description>Render and upload the visualization env file</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>ROTATE_SHARED_SECRETS</name>
+          <description>Mint new values for PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT instead of reusing the rendered ones. Requires RENDER_GATEWAY, RENDER_OPERATIONS and RENDER_QUERY all true, and all three services must be redeployed afterwards.</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.2.1">
+    <configVersion>2</configVersion>
+    <userRemoteConfigs>
+      <hudson.plugins.git.UserRemoteConfig>
+        <url>${infrastructure_git_repo}</url>
+        <credentialsId>${git_credentials_id}</credentialsId>
+      </hudson.plugins.git.UserRemoteConfig>
+    </userRemoteConfigs>
+    <branches>
+      <hudson.plugins.git.BranchSpec>
+        <name>${INFRASTRUCTURE_GIT_HASH}</name>
+      </hudson.plugins.git.BranchSpec>
+    </branches>
+    <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+    <submoduleCfg class="empty-list"/>
+    <extensions/>
+  </scm>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <jdk>(System)</jdk>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+set -euo pipefail
+
+# Source folder containing the scripts
+source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+
+# Iterate through the files in the folder and source them
+shopt -s nullglob
+for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+    chmod +x &quot;$script_file&quot;
+    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+        echo &quot;sourcing $script_file&quot;
+        source &quot;$script_file&quot;
+    fi
+done
+shopt -u nullglob
+
+for required_function in assume_role reset_role fetch_secret extract_field initialize_shared_db_config get_token_by_uuid unset_shared_db_config; do
+    if ! command -v &quot;$required_function&quot; &gt;/dev/null 2&gt;&amp;1; then
+        echo &quot;Error: required function &apos;$required_function&apos; was not loaded from $source_scripts_folder.&quot; &gt;&amp;2
+        echo &quot;Run the Bash_Functions job, then re-run this job.&quot; &gt;&amp;2
+        exit 1
+    fi
+done
+
+: &quot;${TARGET_STACK:?TARGET_STACK is required}&quot;
+: &quot;${stack_s3_bucket:?stack_s3_bucket is required}&quot;
+
+render_gateway=&quot;${RENDER_GATEWAY:-false}&quot;
+render_operations=&quot;${RENDER_OPERATIONS:-false}&quot;
+render_query=&quot;${RENDER_QUERY:-false}&quot;
+render_auth_hpds=&quot;${RENDER_AUTH_HPDS:-false}&quot;
+render_open_hpds=&quot;${RENDER_OPEN_HPDS:-false}&quot;
+render_visualization=&quot;${RENDER_VISUALIZATION:-false}&quot;
+rotate_shared_secrets=&quot;${ROTATE_SHARED_SECRETS:-false}&quot;
+
+if [ &quot;$render_gateway&quot; != &quot;true&quot; ] &amp;&amp;
+   [ &quot;$render_operations&quot; != &quot;true&quot; ] &amp;&amp;
+   [ &quot;$render_query&quot; != &quot;true&quot; ] &amp;&amp;
+   [ &quot;$render_auth_hpds&quot; != &quot;true&quot; ] &amp;&amp;
+   [ &quot;$render_open_hpds&quot; != &quot;true&quot; ] &amp;&amp;
+   [ &quot;$render_visualization&quot; != &quot;true&quot; ]; then
+  echo &quot;Error: no service was selected to render.&quot; &gt;&amp;2
+  echo &quot;Set at least one of RENDER_GATEWAY, RENDER_OPERATIONS, RENDER_QUERY, RENDER_AUTH_HPDS, RENDER_OPEN_HPDS or RENDER_VISUALIZATION to true, then re-run this job.&quot; &gt;&amp;2
+  exit 1
+fi
+
+render_services=false
+if [ &quot;$render_gateway&quot; = &quot;true&quot; ] || [ &quot;$render_operations&quot; = &quot;true&quot; ] || [ &quot;$render_query&quot; = &quot;true&quot; ]; then
+  render_services=true
+fi
+
+all_picsure_services_selected=false
+if [ &quot;$render_gateway&quot; = &quot;true&quot; ] &amp;&amp; [ &quot;$render_operations&quot; = &quot;true&quot; ] &amp;&amp; [ &quot;$render_query&quot; = &quot;true&quot; ]; then
+  all_picsure_services_selected=true
+fi
+
+# PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT are
+# shared by the gateway, operations and query services. Changing them while only some of the
+# three re-render leaves the others holding the old value: InternalTokenFilter answers the
+# stale token with 403 and the gateway flattens that into an opaque 500 on query downloads.
+if [ &quot;$rotate_shared_secrets&quot; = &quot;true&quot; ] &amp;&amp; [ &quot;$all_picsure_services_selected&quot; != &quot;true&quot; ]; then
+  echo &quot;Error: ROTATE_SHARED_SECRETS changes values that the gateway, operations and query services all share.&quot; &gt;&amp;2
+  echo &quot;Set RENDER_GATEWAY, RENDER_OPERATIONS and RENDER_QUERY all true so the three render together, then redeploy all three.&quot; &gt;&amp;2
+  exit 1
+fi
+
+temp_files=()
+tfstate_dir=&quot;&quot;
+
+new_temp_file() {
+  local name_prefix=$1
+  local created
+
+  if ! created=$(mktemp &quot;${TMPDIR:-/tmp}/${name_prefix}.XXXXXX&quot;); then
+    echo &quot;Error: could not create a temporary file.&quot; &gt;&amp;2
+    return 1
+  fi
+  temp_files+=(&quot;$created&quot;)
+  temp_file_path=&quot;$created&quot;
+}
+
+# The exit handler drops the assumed role and removes everything transient this job writes.
+# The local terraform.tfstate holds live secrets -- the DB app-user credentials, the
+# introspection token, the logging key, the shared service secrets and the full rendered env
+# contents -- and the read-back copies of the rendered env files hold the same shared secrets.
+# Neither may linger in the browsable Jenkins workspace.
+cleanup() {
+  local temp_file
+
+  if [ &quot;${#temp_files[@]}&quot; -gt 0 ]; then
+    for temp_file in &quot;${temp_files[@]}&quot;; do
+      rm -f &quot;$temp_file&quot; 2&gt;/dev/null || true
+    done
+  fi
+  if [ -n &quot;$tfstate_dir&quot; ]; then
+    rm -f &quot;$tfstate_dir&quot;/terraform.tfstate &quot;$tfstate_dir&quot;/terraform.tfstate.backup 2&gt;/dev/null || true
+  fi
+  reset_role
+}
+trap cleanup EXIT
+
+assume_role
+
+picsure_token_introspection_token=&quot;&quot;
+if [ &quot;$render_gateway&quot; = &quot;true&quot; ]; then
+  # Get the introspection token from the PSAMA database (same derivation as Teardown
+  # and Rebuild). The token is never echoed: it is a live credential.
+  db_app_user_json=$(fetch_secret &quot;$database_app_user_secret_name&quot;)
+  picsure_db_username=$(extract_field &quot;$db_app_user_json&quot; &quot;username&quot;)
+  picsure_db_password=$(extract_field &quot;$db_app_user_json&quot; &quot;password&quot;)
+  picsure_db_host=$database_host_address
+
+  if [ -z &quot;$picsure_db_username&quot; ] || [ -z &quot;$picsure_db_password&quot; ] || [ -z &quot;$picsure_db_host&quot; ]; then
+    echo &quot;Error: One or more required database variables are empty.&quot; &gt;&amp;2
+    exit 1
+  fi
+
+  initialize_shared_db_config &quot;${picsure_db_host%:3306}&quot; &quot;$picsure_db_username&quot; &quot;$picsure_db_password&quot;
+  picsure_token_introspection_token=$(get_token_by_uuid &quot;$application_id_for_base_query&quot;)
+  unset_shared_db_config
+
+  # Fail closed: rendering with an empty token produces a gateway.env whose introspection
+  # calls PSAMA rejects with 403, which surfaces to users as 502 on authenticated routes.
+  if [ -z &quot;$picsure_token_introspection_token&quot; ]; then
+    echo &quot;Error: no introspection token found for application ${application_id_for_base_query}.&quot; &gt;&amp;2
+    echo &quot;Run the Update PIC-SURE Token Introspection Token job to mint one, then re-run this job.&quot; &gt;&amp;2
+    exit 1
+  fi
+fi
+
+logging_api_key=&quot;&quot;
+if [ &quot;$render_gateway&quot; = &quot;true&quot; ] || [ &quot;$render_visualization&quot; = &quot;true&quot; ]; then
+  # Get logging API key from logging.env in S3 (same derivation as Teardown and Rebuild).
+  # The key is never echoed: it is a live credential.
+  new_temp_file &quot;logging.env&quot;
+  logging_env=&quot;$temp_file_path&quot;
+  if ! aws s3 cp &quot;s3://$stack_s3_bucket/configs/pic-sure-logging/logging.env&quot; &quot;$logging_env&quot; &gt;/dev/null; then
+    rm -f &quot;$logging_env&quot; 2&gt;/dev/null || true
+    echo &quot;Error: could not read s3://$stack_s3_bucket/configs/pic-sure-logging/logging.env.&quot; &gt;&amp;2
+    echo &quot;That object is hand-maintained (there is no terraform template for it); confirm it exists, then re-run this job.&quot; &gt;&amp;2
+    exit 1
+  fi
+  logging_api_key=$(grep -oP &apos;^LOGGING_API_KEY=\K.*&apos; &quot;$logging_env&quot; || true)
+  rm -f &quot;$logging_env&quot; 2&gt;/dev/null || true
+
+  # Fail closed, like the introspection token above. This previously defaulted to the literal
+  # string &quot;disabled&quot;, which rendered a gateway.env whose audit events pic-sure-logging
+  # rejects with 401 -- silently, because the logging client logs the failure and drops the event.
+  if [ -z &quot;$logging_api_key&quot; ]; then
+    echo &quot;Error: logging.env defines no non-empty LOGGING_API_KEY.&quot; &gt;&amp;2
+    echo &quot;Rendering would ship a gateway.env whose audit events pic-sure-logging rejects with 401. Fix logging.env, then re-run this job.&quot; &gt;&amp;2
+    exit 1
+  fi
+fi
+
+cd app-infrastructure/template-renderer
+tfstate_dir=&quot;$PWD&quot;
+
+# Resolve each editable template independently: shared S3 override, then the
+# checked-out repository version.
+download_s3_template() {
+  local object_key=$1
+  local destination=$2
+  local aws_error
+  local candidate
+
+  if ! candidate=$(mktemp &quot;$(dirname &quot;$destination&quot;)/.template-download.XXXXXX&quot;); then
+    echo &quot;Error: could not create a temporary template file.&quot; &gt;&amp;2
+    return 2
+  fi
+  if aws_error=$(aws s3 cp &quot;s3://${stack_s3_bucket}/${object_key}&quot; &quot;$candidate&quot; 2&gt;&amp;1 &gt;/dev/null); then
+    if [ ! -s &quot;$candidate&quot; ]; then
+      rm -f &quot;$candidate&quot;
+      echo &quot;Error: s3://${stack_s3_bucket}/${object_key} is empty; refusing to use it.&quot; &gt;&amp;2
+      return 2
+    fi
+    if ! mv &quot;$candidate&quot; &quot;$destination&quot; &gt;/dev/null 2&gt;&amp;1; then
+      rm -f &quot;$candidate&quot;
+      echo &quot;Error: could not promote downloaded template to $destination.&quot; &gt;&amp;2
+      return 2
+    fi
+    return 0
+  fi
+
+  rm -f &quot;$candidate&quot;
+  case &quot;$aws_error&quot; in
+    *&quot;An error occurred (404)&quot;*|*&quot;An error occurred (NoSuchKey)&quot;*|*&quot;An error occurred (NotFound)&quot;*)
+      return 1
+      ;;
+  esac
+
+  echo &quot;Error: could not read s3://${stack_s3_bucket}/${object_key}; refusing to fall back after a non-missing-object AWS error.&quot; &gt;&amp;2
+  return 2
+}
+
+resolve_template() {
+  local template_prefix=$1
+  local template_file=$2
+  local download_status
+
+  if download_s3_template &quot;${template_prefix}/${template_file}&quot; &quot;templates/${template_file}&quot;; then
+    echo &quot;Using shared S3 template for ${template_file}&quot;
+    return 0
+  else
+    download_status=$?
+    if [ &quot;$download_status&quot; -ne 1 ]; then
+      return &quot;$download_status&quot;
+    fi
+  fi
+
+  echo &quot;No S3 template found, using repo version of ${template_file}&quot;
+}
+
+if [ &quot;$render_gateway&quot; = &quot;true&quot; ]; then
+  resolve_template &quot;configs/gateway/templates&quot; &quot;gateway.env.tftpl&quot;
+fi
+
+if [ &quot;$render_operations&quot; = &quot;true&quot; ]; then
+  resolve_template &quot;configs/operations/templates&quot; &quot;operations.env.tftpl&quot;
+fi
+
+if [ &quot;$render_query&quot; = &quot;true&quot; ]; then
+  resolve_template &quot;configs/query/templates&quot; &quot;query.env.tftpl&quot;
+fi
+
+if [ &quot;$render_auth_hpds&quot; = &quot;true&quot; ]; then
+  resolve_template &quot;configs/hpds/templates&quot; &quot;hpds-auth.env.tftpl&quot;
+fi
+
+if [ &quot;$render_open_hpds&quot; = &quot;true&quot; ]; then
+  resolve_template &quot;configs/hpds/templates&quot; &quot;hpds-open.env.tftpl&quot;
+fi
+
+if [ &quot;$render_visualization&quot; = &quot;true&quot; ]; then
+  resolve_template &quot;configs/pic-sure-visualization/templates&quot; &quot;visualization.env.tftpl&quot;
+fi
+
+# Read one KEY=VALUE out of a rendered env file, anchored at the start of the line, taking
+# everything after the first &apos;=&apos; as the value. The value is returned in the env_value global
+# rather than on stdout so that no caller can leak it into the build log.
+read_env_value() {
+  local env_file=$1
+  local key=$2
+  local line
+
+  env_value=&quot;&quot;
+  while IFS= read -r line || [ -n &quot;$line&quot; ]; do
+    case &quot;$line&quot; in
+      &quot;${key}=&quot;*)
+        env_value=&quot;${line#*=}&quot;
+        return 0
+        ;;
+    esac
+  done &lt; &quot;$env_file&quot;
+}
+
+# Decide one shared value from the env files that are currently rendered for this stack.
+# Exactly one distinct non-empty value across them is reused; none means this run has to
+# mint one; more than one means the stack is already inconsistent and only the rotation job
+# can put it right. This replaces the random_password resources that used to mint all three
+# on every apply: the renderer keeps no Terraform state, so every apply started from empty
+# state, and re-rendering one service silently rotated the value the other two were running
+# with. Neither the values nor any comparison of them is ever echoed.
+resolve_shared_value() {
+  local key=$1
+  local first_source=${2:-}
+  local second_source=${3:-}
+  local third_source=${4:-}
+  local source_file
+  local candidate
+  local first_value=&quot;&quot;
+  local distinct=0
+
+  resolved_value=&quot;&quot;
+  resolved_origin=generate
+
+  for source_file in &quot;$first_source&quot; &quot;$second_source&quot; &quot;$third_source&quot;; do
+    if [ -z &quot;$source_file&quot; ]; then
+      continue
+    fi
+    read_env_value &quot;$source_file&quot; &quot;$key&quot;
+    candidate=&quot;$env_value&quot;
+    if [ -z &quot;$candidate&quot; ]; then
+      continue
+    fi
+    if [ &quot;$distinct&quot; -eq 0 ]; then
+      first_value=&quot;$candidate&quot;
+      distinct=1
+    elif [ &quot;$candidate&quot; != &quot;$first_value&quot; ]; then
+      distinct=2
+    fi
+  done
+
+  if [ &quot;$distinct&quot; -gt 1 ]; then
+    echo &quot;Error: the env files rendered for stack ${TARGET_STACK} hold different values for ${key}.&quot; &gt;&amp;2
+    echo &quot;Run the Rotate PIC-SURE Shared Service Secrets job to put one value back across gateway, operations and query, then re-run this job.&quot; &gt;&amp;2
+    return 1
+  fi
+
+  if [ &quot;$distinct&quot; -eq 1 ]; then
+    resolved_value=&quot;$first_value&quot;
+    resolved_origin=reused
+  fi
+}
+
+# Both shapes have to match the random_password resources they replace: the two tokens are
+# 43 characters of [A-Za-z0-9] and the salt is 32 characters of [a-z0-9]. head closes the
+# pipe as soon as it has its bytes, so pipefail is dropped for the pipeline only, and the
+# length is asserted because a short read would otherwise pass silently.
+generate_shared_token() {
+  generated_value=$(set +o pipefail; LC_ALL=C tr -dc &apos;A-Za-z0-9&apos; &lt; /dev/urandom | head -c 43)
+  if [ &quot;${#generated_value}&quot; -ne 43 ]; then
+    echo &quot;Error: generated a ${#generated_value} character token; expected 43.&quot; &gt;&amp;2
+    return 1
+  fi
+}
+
+generate_obfuscation_salt() {
+  generated_value=$(set +o pipefail; LC_ALL=C tr -dc &apos;a-z0-9&apos; &lt; /dev/urandom | head -c 32)
+  if [ &quot;${#generated_value}&quot; -ne 32 ]; then
+    echo &quot;Error: generated a ${#generated_value} character salt; expected 32.&quot; &gt;&amp;2
+    return 1
+  fi
+}
+
+picsure_application_token=&quot;&quot;
+query_service_internal_token=&quot;&quot;
+aggregate_obfuscation_salt=&quot;&quot;
+
+if [ &quot;$render_services&quot; = &quot;true&quot; ]; then
+  gateway_env_copy=&quot;&quot;
+  operations_env_copy=&quot;&quot;
+  query_env_copy=&quot;&quot;
+
+  if [ &quot;$rotate_shared_secrets&quot; = &quot;true&quot; ]; then
+    echo &quot;ROTATE_SHARED_SECRETS is true: minting new shared values for gateway, operations and query.&quot;
+  else
+    for rendered_service in gateway operations query; do
+      rendered_key=&quot;configs/${rendered_service}/${TARGET_STACK}/${rendered_service}.env&quot;
+      new_temp_file &quot;${rendered_service}.env&quot;
+      rendered_copy=&quot;$temp_file_path&quot;
+      if download_s3_template &quot;$rendered_key&quot; &quot;$rendered_copy&quot;; then
+        echo &quot;Reading shared values back from s3://${stack_s3_bucket}/${rendered_key}&quot;
+        case &quot;$rendered_service&quot; in
+          gateway)
+            gateway_env_copy=&quot;$rendered_copy&quot;
+            ;;
+          operations)
+            operations_env_copy=&quot;$rendered_copy&quot;
+            ;;
+          query)
+            query_env_copy=&quot;$rendered_copy&quot;
+            ;;
+        esac
+      else
+        download_status=$?
+        if [ &quot;$download_status&quot; -ne 1 ]; then
+          exit &quot;$download_status&quot;
+        fi
+        echo &quot;s3://${stack_s3_bucket}/${rendered_key} is not rendered yet&quot;
+      fi
+    done
+  fi
+
+  resolve_shared_value &quot;PICSURE_APPLICATION_TOKEN&quot; &quot;$gateway_env_copy&quot; &quot;$operations_env_copy&quot; &quot;$query_env_copy&quot;
+  picsure_application_token=&quot;$resolved_value&quot;
+  picsure_application_token_origin=&quot;$resolved_origin&quot;
+
+  resolve_shared_value &quot;QUERY_SERVICE_INTERNAL_TOKEN&quot; &quot;$gateway_env_copy&quot; &quot;$operations_env_copy&quot; &quot;$query_env_copy&quot;
+  query_service_internal_token=&quot;$resolved_value&quot;
+  query_service_internal_token_origin=&quot;$resolved_origin&quot;
+
+  resolve_shared_value &quot;AGGREGATE_OBFUSCATION_SALT&quot; &quot;$query_env_copy&quot;
+  aggregate_obfuscation_salt=&quot;$resolved_value&quot;
+  aggregate_obfuscation_salt_origin=&quot;$resolved_origin&quot;
+
+  if [ &quot;$picsure_application_token_origin&quot; = &quot;generate&quot; ] || [ &quot;$query_service_internal_token_origin&quot; = &quot;generate&quot; ]; then
+    if [ &quot;$all_picsure_services_selected&quot; != &quot;true&quot; ]; then
+      echo &quot;Error: nothing rendered for stack ${TARGET_STACK} carries PICSURE_APPLICATION_TOKEN or QUERY_SERVICE_INTERNAL_TOKEN, so this run would have to mint one.&quot; &gt;&amp;2
+      echo &quot;That value is shared by the gateway, operations and query services: set RENDER_GATEWAY, RENDER_OPERATIONS and RENDER_QUERY all true so all three render together on a first render.&quot; &gt;&amp;2
+      exit 1
+    fi
+  fi
+
+  if [ &quot;$picsure_application_token_origin&quot; = &quot;generate&quot; ]; then
+    generate_shared_token
+    picsure_application_token=&quot;$generated_value&quot;
+    picsure_application_token_origin=generated
+  fi
+
+  if [ &quot;$query_service_internal_token_origin&quot; = &quot;generate&quot; ]; then
+    generate_shared_token
+    query_service_internal_token=&quot;$generated_value&quot;
+    query_service_internal_token_origin=generated
+  fi
+
+  if [ &quot;$aggregate_obfuscation_salt_origin&quot; = &quot;generate&quot; ]; then
+    generate_obfuscation_salt
+    aggregate_obfuscation_salt=&quot;$generated_value&quot;
+    aggregate_obfuscation_salt_origin=generated
+  fi
+
+  echo &quot;Shared value resolution for stack ${TARGET_STACK}:&quot;
+  echo &quot;  PICSURE_APPLICATION_TOKEN: ${picsure_application_token_origin}&quot;
+  echo &quot;  QUERY_SERVICE_INTERNAL_TOKEN: ${query_service_internal_token_origin}&quot;
+  echo &quot;  AGGREGATE_OBFUSCATION_SALT: ${aggregate_obfuscation_salt_origin}&quot;
+fi
+
+# Every sensitive value reaches Terraform through the environment. A -var argument would be
+# readable in the process list of a shared Jenkins agent for the length of the apply.
+if [ &quot;$render_gateway&quot; = &quot;true&quot; ]; then
+  export TF_VAR_picsure_token_introspection_token=&quot;$picsure_token_introspection_token&quot;
+fi
+
+if [ &quot;$render_gateway&quot; = &quot;true&quot; ] || [ &quot;$render_visualization&quot; = &quot;true&quot; ]; then
+  export TF_VAR_logging_api_key=&quot;$logging_api_key&quot;
+fi
+
+if [ &quot;$render_services&quot; = &quot;true&quot; ]; then
+  export TF_VAR_picsure_application_token=&quot;$picsure_application_token&quot;
+  export TF_VAR_query_service_internal_token=&quot;$query_service_internal_token&quot;
+  export TF_VAR_aggregate_obfuscation_salt=&quot;$aggregate_obfuscation_salt&quot;
+  export TF_VAR_app_user_secret_name=&quot;$database_app_user_secret_name&quot;
+fi
+
+apply_args=(
+  -auto-approve
+  -input=false
+  -var=&quot;stack_s3_bucket=${stack_s3_bucket}&quot;
+  -var=&quot;environment_name=${environment_name}&quot;
+  -var=&quot;target_stack=${TARGET_STACK}&quot;
+  -var=&quot;env_private_dns_name=${env_private_dns_name}&quot;
+  -var=&quot;render_gateway=${render_gateway}&quot;
+  -var=&quot;render_operations=${render_operations}&quot;
+  -var=&quot;render_query=${render_query}&quot;
+  -var=&quot;render_auth_hpds=${render_auth_hpds}&quot;
+  -var=&quot;render_open_hpds=${render_open_hpds}&quot;
+  -var=&quot;render_visualization=${render_visualization}&quot;
+)
+
+# include_open_hpds is read only by the gateway template and its value comes from a Jenkins
+# global, so passing it on a run that never needed it would turn an unset global into a
+# Terraform bool parse failure. The Terraform default is false.
+if [ &quot;$render_gateway&quot; = &quot;true&quot; ]; then
+  apply_args+=(-var=&quot;include_open_hpds=${include_open_hpds}&quot;)
+fi
+
+terraform init -input=false
+
+terraform apply &quot;${apply_args[@]}&quot;
+
+reset_role
+</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.46">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
+</project>
