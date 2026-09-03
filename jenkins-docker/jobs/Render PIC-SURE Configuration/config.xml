@@ -162,11 +162,12 @@ new_temp_file() {
   temp_file_path=&quot;$created&quot;
 }
 
-# The exit handler drops the assumed role and removes everything transient this job writes.
-# The local terraform.tfstate holds live secrets -- the DB app-user credentials, the
-# introspection token, the logging key, the shared service secrets and the full rendered env
-# contents -- and the read-back copies of the rendered env files hold the same shared secrets.
-# Neither may linger in the browsable Jenkins workspace.
+# This render job is stateless (each run inits from empty state), but the local
+# terraform.tfstate transiently holds live secrets -- DB app-user credentials, the
+# introspection token, the logging key, the shared service secrets, and the full rendered env
+# contents. Remove it on exit so it never lingers in the browsable Jenkins workspace. The
+# read-back copies of the rendered env files carry the same shared secrets and live under
+# ${TMPDIR:-/tmp}; the same handler removes them, and drops the assumed role.
 cleanup() {
   local temp_file
 
@@ -213,6 +214,18 @@ fi
 
 logging_api_key=&quot;&quot;
 if [ &quot;$render_gateway&quot; = &quot;true&quot; ] || [ &quot;$render_visualization&quot; = &quot;true&quot; ]; then
+  logging_key_consumers=&quot;&quot;
+  if [ &quot;$render_gateway&quot; = &quot;true&quot; ]; then
+    logging_key_consumers=&quot;gateway.env&quot;
+  fi
+  if [ &quot;$render_visualization&quot; = &quot;true&quot; ]; then
+    if [ -n &quot;$logging_key_consumers&quot; ]; then
+      logging_key_consumers=&quot;${logging_key_consumers} and visualization.env&quot;
+    else
+      logging_key_consumers=&quot;visualization.env&quot;
+    fi
+  fi
+
   # Get logging API key from logging.env in S3 (same derivation as Teardown and Rebuild).
   # The key is never echoed: it is a live credential.
   new_temp_file &quot;logging.env&quot;
@@ -231,7 +244,7 @@ if [ &quot;$render_gateway&quot; = &quot;true&quot; ] || [ &quot;$render_visuali
   # rejects with 401 -- silently, because the logging client logs the failure and drops the event.
   if [ -z &quot;$logging_api_key&quot; ]; then
     echo &quot;Error: logging.env defines no non-empty LOGGING_API_KEY.&quot; &gt;&amp;2
-    echo &quot;Rendering would ship a gateway.env whose audit events pic-sure-logging rejects with 401. Fix logging.env, then re-run this job.&quot; &gt;&amp;2
+    echo &quot;Rendering would ship ${logging_key_consumers} whose audit events pic-sure-logging rejects with 401. Fix logging.env, then re-run this job.&quot; &gt;&amp;2
     exit 1
   fi
 fi
@@ -438,6 +451,7 @@ if [ &quot;$render_services&quot; = &quot;true&quot; ]; then
       else
         download_status=$?
         if [ &quot;$download_status&quot; -ne 1 ]; then
+          echo &quot;Error: the message above is from the shared S3 download helper. It was reading the rendered ${rendered_service} env back from s3://${stack_s3_bucket}/${rendered_key} to recover the shared values, and there is no template or repository fallback for a rendered env file, so this run stops.&quot; &gt;&amp;2
           exit &quot;$download_status&quot;
         fi
         echo &quot;s3://${stack_s3_bucket}/${rendered_key} is not rendered yet&quot;
@@ -453,9 +467,16 @@ if [ &quot;$render_services&quot; = &quot;true&quot; ]; then
   query_service_internal_token=&quot;$resolved_value&quot;
   query_service_internal_token_origin=&quot;$resolved_origin&quot;
 
-  resolve_shared_value &quot;AGGREGATE_OBFUSCATION_SALT&quot; &quot;$query_env_copy&quot;
-  aggregate_obfuscation_salt=&quot;$resolved_value&quot;
-  aggregate_obfuscation_salt_origin=&quot;$resolved_origin&quot;
+  # The salt lives only in query.env, so only a run that rewrites query.env can change it.
+  # Resolving it on a gateway-only or operations-only render would mint a value nothing
+  # writes and report it as generated, which reads as though the query service now needs a
+  # redeploy.
+  aggregate_obfuscation_salt_origin=&quot;not rendered by this run&quot;
+  if [ &quot;$render_query&quot; = &quot;true&quot; ]; then
+    resolve_shared_value &quot;AGGREGATE_OBFUSCATION_SALT&quot; &quot;$query_env_copy&quot;
+    aggregate_obfuscation_salt=&quot;$resolved_value&quot;
+    aggregate_obfuscation_salt_origin=&quot;$resolved_origin&quot;
+  fi
 
   if [ &quot;$picsure_application_token_origin&quot; = &quot;generate&quot; ] || [ &quot;$query_service_internal_token_origin&quot; = &quot;generate&quot; ]; then
     if [ &quot;$all_picsure_services_selected&quot; != &quot;true&quot; ]; then
@@ -477,7 +498,7 @@ if [ &quot;$render_services&quot; = &quot;true&quot; ]; then
     query_service_internal_token_origin=generated
   fi
 
-  if [ &quot;$aggregate_obfuscation_salt_origin&quot; = &quot;generate&quot; ]; then
+  if [ &quot;$render_query&quot; = &quot;true&quot; ] &amp;&amp; [ &quot;$aggregate_obfuscation_salt_origin&quot; = &quot;generate&quot; ]; then
     generate_obfuscation_salt
     aggregate_obfuscation_salt=&quot;$generated_value&quot;
     aggregate_obfuscation_salt_origin=generated
@@ -502,8 +523,11 @@ fi
 if [ &quot;$render_services&quot; = &quot;true&quot; ]; then
   export TF_VAR_picsure_application_token=&quot;$picsure_application_token&quot;
   export TF_VAR_query_service_internal_token=&quot;$query_service_internal_token&quot;
-  export TF_VAR_aggregate_obfuscation_salt=&quot;$aggregate_obfuscation_salt&quot;
   export TF_VAR_app_user_secret_name=&quot;$database_app_user_secret_name&quot;
+fi
+
+if [ &quot;$render_query&quot; = &quot;true&quot; ]; then
+  export TF_VAR_aggregate_obfuscation_salt=&quot;$aggregate_obfuscation_salt&quot;
 fi
 
 apply_args=(
