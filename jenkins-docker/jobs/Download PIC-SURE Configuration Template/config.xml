@@ -30,6 +30,8 @@
             <string>HPDS Auth</string>
             <string>HPDS Open</string>
             <string>Visualization</string>
+            <string>Logging</string>
+            <string>Dictionary</string>
           </choices>
         </hudson.model.ChoiceParameterDefinition>
       </parameterDefinitions>
@@ -63,7 +65,9 @@ pipeline {
             &apos;Query&apos;: [&apos;query.env.tftpl&apos;, &apos;configs/query/templates&apos;],
             &apos;HPDS Auth&apos;: [&apos;hpds-auth.env.tftpl&apos;, &apos;configs/hpds/templates&apos;],
             &apos;HPDS Open&apos;: [&apos;hpds-open.env.tftpl&apos;, &apos;configs/hpds/templates&apos;],
-            &apos;Visualization&apos;: [&apos;visualization.env.tftpl&apos;, &apos;configs/pic-sure-visualization/templates&apos;]
+            &apos;Visualization&apos;: [&apos;visualization.env.tftpl&apos;, &apos;configs/pic-sure-visualization/templates&apos;],
+            &apos;Logging&apos;: [&apos;logging.env.tftpl&apos;, &apos;configs/pic-sure-logging/templates&apos;],
+            &apos;Dictionary&apos;: [&apos;picsure-dictionary.env.tftpl&apos;, &apos;configs/picsure-dictionary/templates&apos;]
           ]
 
           def selected = templates[params.SERVICE]

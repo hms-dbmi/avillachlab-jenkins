@@ -16,6 +16,8 @@
             <string>HPDS Auth</string>
             <string>HPDS Open</string>
             <string>Visualization</string>
+            <string>Logging</string>
+            <string>Dictionary</string>
           </choices>
         </hudson.model.ChoiceParameterDefinition>
         <hudson.model.FileParameterDefinition>
@@ -83,6 +85,14 @@ case &quot;$SERVICE&quot; in
     Visualization)
         template_file=&quot;visualization.env.tftpl&quot;
         template_prefix=&quot;configs/pic-sure-visualization/templates&quot;
+        ;;
+    Logging)
+        template_file=&quot;logging.env.tftpl&quot;
+        template_prefix=&quot;configs/pic-sure-logging/templates&quot;
+        ;;
+    Dictionary)
+        template_file=&quot;picsure-dictionary.env.tftpl&quot;
+        template_prefix=&quot;configs/picsure-dictionary/templates&quot;
         ;;
     *)
         echo &quot;Error: unsupported SERVICE selection.&quot; &gt;&amp;2

@@ -1,7 +1,7 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <flow-definition plugin="workflow-job@1540.v295eccc9778f">
   <actions/>
-  <description>Rotates PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT, the three values the gateway, operations and query services share, then always redeploys all three. There is no option to render without redeploying: a rotation without a redeploy leaves InternalTokenFilter answering the stale value with 403, which the gateway flattens into an opaque 500 on query downloads while every other endpoint keeps working. Rotating AGGREGATE_OBFUSCATION_SALT also shifts reported aggregate counts for the same query.</description>
+  <description>Rotates PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN, AGGREGATE_OBFUSCATION_SALT and LOGGING_API_KEY, the four values the gateway, operations, query, pic-sure-logging and visualization services share between them, then always redeploys all five. There is no option to render without redeploying: a rotation without a redeploy leaves InternalTokenFilter answering the stale value with 403, which the gateway flattens into an opaque 500 on query downloads while every other endpoint keeps working, and leaves the gateway and the visualization service authenticating to pic-sure-logging with a stale LOGGING_API_KEY. Rotating AGGREGATE_OBFUSCATION_SALT also shifts reported aggregate counts for the same query. The redeploy takes two calls because PIC-SURE Wildfly Stack Deploy has no DEPLOY_LOGGING parameter; pic-sure-logging deploys through PIC-SURE Logging Deploy.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
@@ -99,7 +99,9 @@ pipeline {
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_QUERY&apos;, value: true],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_AUTH_HPDS&apos;, value: false],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPEN_HPDS&apos;, value: false],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_VISUALIZATION&apos;, value: false],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_VISUALIZATION&apos;, value: true],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_LOGGING&apos;, value: true],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_DICTIONARY&apos;, value: false],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;ROTATE_SHARED_SECRETS&apos;, value: true]
                         ]
 
@@ -108,7 +110,13 @@ pipeline {
                             [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_GATEWAY&apos;, value: true],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_OPERATIONS&apos;, value: true],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_QUERY&apos;, value: true]
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_QUERY&apos;, value: true],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_VISUALIZATION&apos;, value: true]
+                        ]
+
+                        build job: &apos;PIC-SURE Logging Deploy&apos;, parameters: [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: params.S3_BUCKET_NAME],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
                         ]
                     }
                 }
