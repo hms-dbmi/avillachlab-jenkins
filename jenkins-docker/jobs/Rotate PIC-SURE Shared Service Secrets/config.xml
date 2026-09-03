@@ -1,7 +1,7 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <flow-definition plugin="workflow-job@1540.v295eccc9778f">
   <actions/>
-  <description>Rotates PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN, AGGREGATE_OBFUSCATION_SALT and LOGGING_API_KEY, the four values the gateway, operations, query, pic-sure-logging and visualization services share between them, then always redeploys all five. There is no option to render without redeploying: a rotation without a redeploy leaves InternalTokenFilter answering the stale value with 403, which the gateway flattens into an opaque 500 on query downloads while every other endpoint keeps working, and leaves the gateway and the visualization service authenticating to pic-sure-logging with a stale LOGGING_API_KEY. Rotating AGGREGATE_OBFUSCATION_SALT also shifts reported aggregate counts for the same query. The redeploy takes two calls because PIC-SURE Wildfly Stack Deploy has no DEPLOY_LOGGING parameter; pic-sure-logging deploys through PIC-SURE Logging Deploy.</description>
+  <description>Rotates PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN, AGGREGATE_OBFUSCATION_SALT and LOGGING_API_KEY, the four values the gateway, operations, query, pic-sure-logging and visualization services share between them, then always redeploys all five. There is no option to render without redeploying: a rotation without a redeploy leaves InternalTokenFilter answering the stale value with 403, which the gateway flattens into an opaque 500 on query downloads while every other endpoint keeps working, and leaves the gateway and the visualization service authenticating to pic-sure-logging with a stale LOGGING_API_KEY. Rotating AGGREGATE_OBFUSCATION_SALT also shifts reported aggregate counts for the same query. The redeploy takes two calls because PIC-SURE Wildfly Stack Deploy has no DEPLOY_LOGGING parameter; pic-sure-logging deploys through PIC-SURE Logging Deploy. This job touches BOTH stacks, including the one currently serving live traffic. LOGGING_API_KEY lives in configs/pic-sure-logging/logging.env, an object with no stack segment that every stack's deploy pulls, so a new key is presented by both stacks or by neither. Once the target stack is done, this job renders gateway.env, visualization.env and logging.env for the other stack -- without rotating, so it reads the key just minted back rather than minting a second one -- and then redeploys that stack's gateway, visualization and pic-sure-logging containers. Choosing the staging stack does not spare the live one: it will be redeployed. Expect a brief audit-drop window on each stack between the Wildfly deploy and the logging deploy, while the gateway and visualization services are already on the new key and pic-sure-logging is still checking the old one: it answers those events with 401 and the logging client drops them. One key is presented by all three services, so the two sides cannot cut over at the same instant; the window is a known cost of the single-key design rather than a defect.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
@@ -117,6 +117,62 @@ pipeline {
                         build job: &apos;PIC-SURE Logging Deploy&apos;, parameters: [
                             [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: params.S3_BUCKET_NAME],
                             [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
+                        ]
+                    }
+                }
+            }
+        }
+
+        /*
+         * The three shared service secrets live under configs/&lt;service&gt;/&lt;stack&gt;/, so rotating
+         * them touches only the stack above. LOGGING_API_KEY does not: its object,
+         * configs/pic-sure-logging/logging.env, carries no stack segment, so every stack&apos;s
+         * deploy pulls the same file. The stage above has already rewritten that one object
+         * with the new key, which leaves the other stack running gateway, visualization and
+         * pic-sure-logging containers that all still present the old one -- self-consistent
+         * for now, but the next render on that stack would read the new key back, deploy only
+         * what that run selected, and silently 401 the rest. This stage closes that gap by
+         * rendering and redeploying the other stack&apos;s three logging-key consumers. The render
+         * deliberately does not rotate: it reads the key just minted back rather than minting
+         * a second one, which would put the two stacks straight back out of step.
+         */
+        stage(&apos;Reconcile Other Stack&apos;) {
+            steps {
+                script {
+                    if (targetStack != &apos;a&apos; &amp;&amp; targetStack != &apos;b&apos;) {
+                        error(&quot;Resolved stack &apos;${targetStack}&apos; is neither a nor b, so the other stack cannot be derived. LOGGING_API_KEY has already been rotated in an S3 object that every stack reads; stopping here leaves the other stack presenting the old key, and pic-sure-logging answers those audit events with 401 while the logging client drops them. Reconcile that stack by hand before it is deployed again.&quot;)
+                    }
+
+                    def otherStack = targetStack == &apos;a&apos; ? &apos;b&apos; : &apos;a&apos;
+                    echo &quot;Reconciling stack ${otherStack} onto the rotated LOGGING_API_KEY&quot;
+
+                    lock(&quot;stack-${otherStack}&quot;) {
+                        build job: &apos;Render PIC-SURE Configuration&apos;, parameters: [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;INFRASTRUCTURE_GIT_HASH&apos;, value: infrastructureGitHash],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: otherStack],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_GATEWAY&apos;, value: true],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPERATIONS&apos;, value: false],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_QUERY&apos;, value: false],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_AUTH_HPDS&apos;, value: false],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPEN_HPDS&apos;, value: false],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_VISUALIZATION&apos;, value: true],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_LOGGING&apos;, value: true],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_DICTIONARY&apos;, value: false],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;ROTATE_SHARED_SECRETS&apos;, value: false]
+                        ]
+
+                        build job: &apos;PIC-SURE Wildfly Stack Deploy&apos;, parameters: [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: params.S3_BUCKET_NAME],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: otherStack],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_GATEWAY&apos;, value: true],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_OPERATIONS&apos;, value: false],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_QUERY&apos;, value: false],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_VISUALIZATION&apos;, value: true]
+                        ]
+
+                        build job: &apos;PIC-SURE Logging Deploy&apos;, parameters: [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: params.S3_BUCKET_NAME],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: otherStack]
                         ]
                     }
                 }

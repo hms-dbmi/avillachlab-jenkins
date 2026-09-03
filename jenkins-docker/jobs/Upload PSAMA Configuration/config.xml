@@ -66,9 +66,13 @@ value_shape() {
     printf &apos;%s\n&apos; &quot;$1&quot; | LC_ALL=C sed -e &apos;s/[A-Za-z]/a/g&apos; -e &apos;s/[0-9]/9/g&apos; -e &apos;s/[^a9]/./g&apos;
 }
 
+# A value has to carry at least one non-whitespace character. Matching any character after
+# the &apos;=&apos; would accept a key set to a single space, which this gate exists to reject: a
+# whitespace-only client secret or STRICT_AUTHORIZATION_APPLICATIONS reads as configured here
+# and as blank to PSAMA.
 require_single_non_empty() {
     local key=$1
-    if [[ &quot;$(definition_count &quot;$key&quot;)&quot; -ne 1 ]] || ! grep -q &quot;^${key}=.&quot; &quot;$ENV_FILE&quot;; then
+    if [[ &quot;$(definition_count &quot;$key&quot;)&quot; -ne 1 ]] || ! grep -q &quot;^${key}=[[:space:]]*[^[:space:]]&quot; &quot;$ENV_FILE&quot;; then
         return 1
     fi
     return 0
@@ -167,7 +171,7 @@ for key in EMAIL_ADDRESS EMAIL_PASSWORD; do
         echo &quot;Error: $ENV_FILE defines $key more than once; refusing to upload.&quot; &gt;&amp;2
         exit 1
     fi
-    if grep -q &quot;^${key}=.&quot; &quot;$ENV_FILE&quot;; then
+    if grep -q &quot;^${key}=[[:space:]]*[^[:space:]]&quot; &quot;$ENV_FILE&quot;; then
         mail_keys_set=$((mail_keys_set + 1))
     fi
 done
