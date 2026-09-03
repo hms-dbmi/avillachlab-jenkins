@@ -428,7 +428,7 @@ if [ &quot;$render_services&quot; = &quot;true&quot; ]; then
   query_env_copy=&quot;&quot;
 
   if [ &quot;$rotate_shared_secrets&quot; = &quot;true&quot; ]; then
-    echo &quot;ROTATE_SHARED_SECRETS is true: minting new shared values for gateway, operations and query.&quot;
+    echo &quot;ROTATE_SHARED_SECRETS is true: minting new PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN, AGGREGATE_OBFUSCATION_SALT and LOGGING_API_KEY values. All five of the gateway, operations, query, logging and visualization services must be redeployed afterwards.&quot;
   else
     for rendered_service in gateway operations query; do
       rendered_key=&quot;configs/${rendered_service}/${TARGET_STACK}/${rendered_service}.env&quot;
