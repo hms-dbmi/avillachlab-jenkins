@@ -1,0 +1,135 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job@1540.v295eccc9778f">
+  <actions/>
+  <description>Mints new PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT values for one stack, then redeploys that stack&apos;s gateway, operations and query containers. Rotating and redeploying are a single operation; there is no option to render without deploying.
+
+Only the selected stack is touched. All three values live in per-stack objects, configs/gateway/&lt;stack&gt;/gateway.env and its operations and query siblings, and no request crosses between stacks, so the other stack keeps running its own values and is never rendered, redeployed or read.
+
+Why the redeploy is not optional: containers bake their env at create time, so a rotated QUERY_SERVICE_INTERNAL_TOKEN that no container has picked up leaves InternalTokenFilter rejecting the stale value with 403, which the gateway flattens into an opaque 500 on query downloads while every other endpoint keeps working.
+
+AGGREGATE_OBFUSCATION_SALT changes with them, so this stack&apos;s reported aggregate counts shift for queries run before and after. The two stacks already carry different salts and report slightly different counts for the same query; that is a property of per-stack salts rather than a fault.
+
+Two shared secrets are deliberately out of scope. LOGGING_API_KEY lives in a stack-independent object, so rotating it is fleet-wide: use Rotate PIC-SURE Logging API Key. TOKEN_INTROSPECTION_TOKEN is held in PSAMA&apos;s application table and validated against that single row, so it is fleet-wide too: it is minted by Update PIC-SURE Token Introspection Token.</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.ChoiceParameterDefinition>
+          <name>TARGET_STACK</name>
+          <description>The stack to rotate. Based on selection we determine if is a or b stack. No other stack is touched.</description>
+          <choices>
+            <string>staging</string>
+            <string>live</string>
+          </choices>
+        </hudson.model.ChoiceParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>INFRASTRUCTURE_GIT_HASH</name>
+          <description>Infrastructure repository revision to render the rotated configuration from. Leave empty to resolve it from build-spec.json.</description>
+          <defaultValue></defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>S3_BUCKET_NAME</name>
+          <defaultValue>${stack_s3_bucket}</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@4183.v94b_6fd39da_c1">
+    <script>import groovy.json.JsonSlurper;
+
+def targetStack
+def infrastructureGitHash
+
+pipeline {
+    agent any
+
+    environment {
+        SOURCE_SCRIPTS_FOLDER = &quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+    }
+
+    stages {
+        stage(&apos;Retrieve Stack&apos;) {
+            steps {
+                script {
+                    targetStack = sh(script: &quot;&quot;&quot;
+                    bash -c &apos;
+                    set +x
+
+                    if [ ! -d &quot;$SOURCE_SCRIPTS_FOLDER&quot; ]; then
+                        echo &quot;Error: Source folder does not exist: $SOURCE_SCRIPTS_FOLDER&quot;
+                        exit 1
+                    fi
+
+                    for script_file in &quot;$SOURCE_SCRIPTS_FOLDER&quot;*.sh; do
+                        chmod +x &quot;\$script_file&quot;
+                        if [ -f &quot;\$script_file&quot; ] &amp;&amp; [ -x &quot;\$script_file&quot; ]; then
+                            . &quot;\$script_file&quot;
+                        fi
+                    done
+
+                    get_stack \&quot;${TARGET_STACK}\&quot;
+                    &apos;
+                    &quot;&quot;&quot;, returnStdout: true).trim()
+
+                    println &quot;TARGET_STACK: $targetStack&quot;
+                }
+            }
+        }
+
+        stage(&apos;Resolve Infrastructure Git Hash&apos;) {
+            steps {
+                script {
+                    if (params.INFRASTRUCTURE_GIT_HASH?.trim()) {
+                        infrastructureGitHash = params.INFRASTRUCTURE_GIT_HASH.trim()
+                        echo &quot;Using provided INFRASTRUCTURE_GIT_HASH: ${infrastructureGitHash}&quot;
+                    } else {
+                        def result = build job: &apos;Retrieve Build Spec&apos;
+                        copyArtifacts filter: &apos;build-spec.json&apos;, projectName: &apos;Retrieve Build Spec&apos;, selector: specific(&quot;&quot; + result.number)
+                        def buildSpec = new JsonSlurper().parse(new File(&quot;${env.WORKSPACE}/build-spec.json&quot;))
+                        infrastructureGitHash = buildSpec.infrastructure_git_hash
+                        echo &quot;Resolved INFRASTRUCTURE_GIT_HASH from release control: ${infrastructureGitHash}&quot;
+                    }
+                }
+            }
+        }
+
+        stage(&apos;Rotate Stack Secrets and Redeploy&apos;) {
+            steps {
+                script {
+                    lock(&quot;stack-${targetStack}&quot;) {
+                        build job: &apos;Render PIC-SURE Configuration&apos;, parameters: [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;INFRASTRUCTURE_GIT_HASH&apos;, value: infrastructureGitHash],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_GATEWAY&apos;, value: true],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPERATIONS&apos;, value: true],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_QUERY&apos;, value: true],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_AUTH_HPDS&apos;, value: false],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPEN_HPDS&apos;, value: false],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_VISUALIZATION&apos;, value: false],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_LOGGING&apos;, value: false],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_DICTIONARY&apos;, value: false],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;ROTATE_STACK_SECRETS&apos;, value: true],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;ROTATE_LOGGING_API_KEY&apos;, value: false]
+                        ]
+
+                        build job: &apos;PIC-SURE Wildfly Stack Deploy&apos;, parameters: [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: params.S3_BUCKET_NAME],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_GATEWAY&apos;, value: true],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_OPERATIONS&apos;, value: true],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_QUERY&apos;, value: true],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_VISUALIZATION&apos;, value: false]
+                        ]
+                    }
+                }
+            }
+        }
+    }
+}</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>

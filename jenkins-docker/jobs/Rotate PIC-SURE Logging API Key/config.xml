@@ -1,26 +1,22 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <flow-definition plugin="workflow-job@1540.v295eccc9778f">
   <actions/>
-  <description>Mints new values for the four secrets the PIC-SURE services share, then redeploys every service that carries one. Rotating and redeploying are a single operation; there is no option to render without deploying.
+  <description>Mints a new LOGGING_API_KEY and rolls it out to both stacks. This is a fleet-wide change and it redeploys the live stack. There is no single-stack version of it.
 
-Rotates:
-  PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT, shared by gateway, operations and query.
-  LOGGING_API_KEY, shared by gateway, visualization and pic-sure-logging.
+configs/pic-sure-logging/logging.env carries no stack segment, so one object serves every stack and only one key can exist at a time. TARGET_STACK selects which stack cuts over first, not which stack is affected.
 
-BOTH STACKS ARE REDEPLOYED, including the one serving live traffic. LOGGING_API_KEY lives in configs/pic-sure-logging/logging.env, an object with no stack segment that every stack's deploy pulls, so a new key is presented by both stacks or by neither. Once the target stack is done, this job renders gateway.env, visualization.env and logging.env for the other stack, reading the key just minted back rather than minting a second one, and redeploys that stack's gateway, visualization and pic-sure-logging containers. Choosing the staging stack does not spare the live one.
+The key is presented by the gateway and the visualization service and checked by pic-sure-logging, so all three are rendered and redeployed on each stack. Expect a short window per stack, between the Wildfly deploy and the logging deploy, where the gateway and visualization already present the new key and pic-sure-logging still checks the old one. It answers those audit events with 401 and the logging client drops them. One key covers all three services, so the two sides cannot cut over at the same instant; the window is a cost of the single-key design rather than a defect.
 
-During the run, expect on each stack a short window between the Wildfly deploy and the logging deploy where the gateway and visualization services already present the new key and pic-sure-logging still checks the old one. It answers those audit events with 401 and the logging client drops them. One key covers all three services, so the two sides cannot cut over at the same instant; the window is a cost of the single-key design rather than a defect. Reported aggregate counts also shift for queries run before and after, because AGGREGATE_OBFUSCATION_SALT changed.
+Both stacks must complete. Stopping after the first leaves the second stack&apos;s rendered gateway.env and visualization.env holding a key the shared object no longer carries. Its containers keep working on the old key, because they hold it in memory, until something redeploys them; then its logging container comes up on the new key while its gateway and visualization come up on the old one. That is the 401 case above, triggered later by an unrelated deploy with no obvious connection to this job.
 
-Why the redeploy is not optional: containers bake their env at create time, so a rotated QUERY_SERVICE_INTERNAL_TOKEN that no container has picked up leaves InternalTokenFilter rejecting the stale value with 403, which the gateway flattens into an opaque 500 on query downloads while every other endpoint keeps working. It takes two deploy calls because PIC-SURE Wildfly Stack Deploy has no DEPLOY_LOGGING parameter; pic-sure-logging deploys through PIC-SURE Logging Deploy.
-
-Run this when a shared secret has been exposed, or when Render PIC-SURE Configuration aborts on a logging.env whose LOGGING_API_KEY is blank.</description>
+Per-stack secrets are not touched. PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT are read back out of each stack&apos;s own rendered env files and preserved. Rotate those with Rotate PIC-SURE Stack Secrets.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.ChoiceParameterDefinition>
           <name>TARGET_STACK</name>
-          <description>Based on selection we determine if is a or b stack.</description>
+          <description>The stack that cuts over to the new key first. Based on selection we determine if is a or b stack. The other stack follows in the second stage; both are always rolled out.</description>
           <choices>
             <string>staging</string>
             <string>live</string>
@@ -99,7 +95,7 @@ pipeline {
             }
         }
 
-        stage(&apos;Rotate Shared Secrets and Redeploy&apos;) {
+        stage(&apos;Rotate Logging API Key and Redeploy&apos;) {
             steps {
                 script {
                     lock(&quot;stack-${targetStack}&quot;) {
@@ -107,22 +103,23 @@ pipeline {
                             [$class: &apos;StringParameterValue&apos;, name: &apos;INFRASTRUCTURE_GIT_HASH&apos;, value: infrastructureGitHash],
                             [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_GATEWAY&apos;, value: true],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPERATIONS&apos;, value: true],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_QUERY&apos;, value: true],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPERATIONS&apos;, value: false],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_QUERY&apos;, value: false],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_AUTH_HPDS&apos;, value: false],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPEN_HPDS&apos;, value: false],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_VISUALIZATION&apos;, value: true],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_LOGGING&apos;, value: true],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_DICTIONARY&apos;, value: false],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;ROTATE_SHARED_SECRETS&apos;, value: true]
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;ROTATE_STACK_SECRETS&apos;, value: false],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;ROTATE_LOGGING_API_KEY&apos;, value: true]
                         ]
 
                         build job: &apos;PIC-SURE Wildfly Stack Deploy&apos;, parameters: [
                             [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: params.S3_BUCKET_NAME],
                             [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_GATEWAY&apos;, value: true],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_OPERATIONS&apos;, value: true],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_QUERY&apos;, value: true],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_OPERATIONS&apos;, value: false],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_QUERY&apos;, value: false],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_VISUALIZATION&apos;, value: true]
                         ]
 
@@ -135,21 +132,15 @@ pipeline {
             }
         }
 
-        /*
-         * configs/pic-sure-logging/logging.env carries no stack segment, so the stage above rewrote
-         * the one object both stacks read. The other stack still runs gateway, visualization and
-         * pic-sure-logging on the old key, so this stage renders and redeploys those three there.
-         * That render does not rotate: it reads the key just minted back rather than minting another.
-         */
-        stage(&apos;Reconcile Other Stack&apos;) {
+        stage(&apos;Roll Out To Other Stack&apos;) {
             steps {
                 script {
                     if (targetStack != &apos;a&apos; &amp;&amp; targetStack != &apos;b&apos;) {
-                        error(&quot;Resolved stack &apos;${targetStack}&apos; is neither a nor b, so the other stack cannot be derived. LOGGING_API_KEY has already been rotated in an S3 object that every stack reads; stopping here leaves the other stack presenting the old key, and pic-sure-logging answers those audit events with 401 while the logging client drops them. Reconcile that stack by hand before it is deployed again.&quot;)
+                        error(&quot;Resolved stack &apos;${targetStack}&apos; is neither a nor b, so the other stack cannot be derived. The new LOGGING_API_KEY is already in configs/pic-sure-logging/logging.env, which every stack reads, so the other stack&apos;s rendered gateway.env and visualization.env now hold a key that object no longer carries. Render and redeploy its gateway, visualization and pic-sure-logging by hand before anything else deploys that stack.&quot;)
                     }
 
                     def otherStack = targetStack == &apos;a&apos; ? &apos;b&apos; : &apos;a&apos;
-                    echo &quot;Reconciling stack ${otherStack} onto the rotated LOGGING_API_KEY&quot;
+                    echo &quot;Rolling stack ${otherStack} onto the new LOGGING_API_KEY&quot;
 
                     lock(&quot;stack-${otherStack}&quot;) {
                         build job: &apos;Render PIC-SURE Configuration&apos;, parameters: [
@@ -163,7 +154,8 @@ pipeline {
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_VISUALIZATION&apos;, value: true],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_LOGGING&apos;, value: true],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_DICTIONARY&apos;, value: false],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;ROTATE_SHARED_SECRETS&apos;, value: false]
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;ROTATE_STACK_SECRETS&apos;, value: false],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;ROTATE_LOGGING_API_KEY&apos;, value: false]
                         ]
 
                         build job: &apos;PIC-SURE Wildfly Stack Deploy&apos;, parameters: [
