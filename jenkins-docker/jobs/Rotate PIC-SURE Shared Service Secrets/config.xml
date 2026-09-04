@@ -124,17 +124,10 @@ pipeline {
         }
 
         /*
-         * The three shared service secrets live under configs/&lt;service&gt;/&lt;stack&gt;/, so rotating
-         * them touches only the stack above. LOGGING_API_KEY does not: its object,
-         * configs/pic-sure-logging/logging.env, carries no stack segment, so every stack&apos;s
-         * deploy pulls the same file. The stage above has already rewritten that one object
-         * with the new key, which leaves the other stack running gateway, visualization and
-         * pic-sure-logging containers that all still present the old one -- self-consistent
-         * for now, but the next render on that stack would read the new key back, deploy only
-         * what that run selected, and silently 401 the rest. This stage closes that gap by
-         * rendering and redeploying the other stack&apos;s three logging-key consumers. The render
-         * deliberately does not rotate: it reads the key just minted back rather than minting
-         * a second one, which would put the two stacks straight back out of step.
+         * configs/pic-sure-logging/logging.env carries no stack segment, so the stage above rewrote
+         * the one object both stacks read. The other stack still runs gateway, visualization and
+         * pic-sure-logging on the old key, so this stage renders and redeploys those three there.
+         * That render does not rotate: it reads the key just minted back rather than minting another.
          */
         stage(&apos;Reconcile Other Stack&apos;) {
             steps {

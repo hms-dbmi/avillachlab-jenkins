@@ -47,8 +47,6 @@ shopt -u nullglob
 ENV_FILE=&quot;psama.env&quot;
 validate_only=&quot;${VALIDATE_ONLY:-false}&quot;
 
-# psama.env carries live Okta, Fence and RAS client secrets. Every message below names
-# the offending key and, at most, the shape of its value. No value is ever echoed.
 if [[ ! -f &quot;$ENV_FILE&quot; || ! -s &quot;$ENV_FILE&quot; ]]; then
     echo &quot;Error: $ENV_FILE is missing or empty; refusing to upload.&quot; &gt;&amp;2
     exit 1
@@ -66,10 +64,8 @@ value_shape() {
     printf &apos;%s\n&apos; &quot;$1&quot; | LC_ALL=C sed -e &apos;s/[A-Za-z]/a/g&apos; -e &apos;s/[0-9]/9/g&apos; -e &apos;s/[^a9]/./g&apos;
 }
 
-# A value has to carry at least one non-whitespace character. Matching any character after
-# the &apos;=&apos; would accept a key set to a single space, which this gate exists to reject: a
-# whitespace-only client secret or STRICT_AUTHORIZATION_APPLICATIONS reads as configured here
-# and as blank to PSAMA.
+# The pattern requires a non-whitespace character after the =. A key set to a single space
+# reads as configured to a plain presence test and as blank to PSAMA.
 require_single_non_empty() {
     local key=$1
     if [[ &quot;$(definition_count &quot;$key&quot;)&quot; -ne 1 ]] || ! grep -q &quot;^${key}=[[:space:]]*[^[:space:]]&quot; &quot;$ENV_FILE&quot;; then
@@ -103,7 +99,6 @@ provider_is_enabled() {
     [[ &quot;$(definition_value &quot;$1&quot;)&quot; == &quot;true&quot; ]]
 }
 
-# Group A1: required present and non-empty on every upload, whatever the deployment enables.
 required_keys=(
     APPLICATION_CLIENT_SECRET
     APPLICATION_CLIENT_SECRET_IS_BASE_64
@@ -130,21 +125,18 @@ for key in &quot;${required_keys[@]}&quot;; do
     fi
 done
 
-# Value checks rather than presence checks: Spring also reads yes, on and 1 as true, so a
-# non-canonical value silently changes PSAMA&apos;s security posture while passing a presence test.
 for key in ENABLE_PUBLIC_ACCESS TOS_ENABLED CONSENT_BASED_AUTHORIZATION_ENABLED APPLICATION_CLIENT_SECRET_IS_BASE_64; do
     require_canonical_boolean &quot;$key&quot;
 done
 
-# The provider flags decide which credentials below are required, so a non-canonical value here
-# would enable a provider in Spring while this check skipped that provider&apos;s keys. An absent
-# flag stays legal and means the provider is off.
+# A non-canonical flag here would enable a provider in Spring while this check skipped that
+# provider&apos;s keys. An absent flag stays legal and means the provider is off.
 for key in OPEN_IDP_PROVIDER_IS_ENABLED A4_OKTA_IDP_PROVIDER_IS_ENABLED FENCE_IDP_PROVIDER_IS_ENABLED AUTH0_IDP_PROVIDER_IS_ENABLED RAS_OKTA_IDP_PROVIDER_IS_ENABLED; do
     require_canonical_boolean &quot;$key&quot;
 done
 
-# Group A2: an identity provider&apos;s credentials are required only while that provider is on.
-# Okta, Fence and RAS issue these secrets, so this check can only ever verify presence.
+# An identity provider&apos;s credentials are required only while its flag is true. Okta, Fence
+# and RAS issue those secrets, so this check can only ever verify presence.
 idp_requirements=(
     &quot;A4_OKTA_IDP_PROVIDER_IS_ENABLED A4_OKTA_CLIENT_ID A4_OKTA_CLIENT_SECRET A4_OKTA_CONNECTION_ID A4_OKTA_IDP_PROVIDER_URI&quot;
     &quot;FENCE_IDP_PROVIDER_IS_ENABLED FENCE_CLIENT_ID FENCE_CLIENT_SECRET FENCE_IDP_PROVIDER_URI&quot;
@@ -164,7 +156,7 @@ for requirement in &quot;${idp_requirements[@]}&quot;; do
     done
 done
 
-# Group A3: notification mail has no enable flag, so the pair itself is the switch.
+# Notification mail has no enable flag, so the pair itself is the switch.
 mail_keys_set=0
 for key in EMAIL_ADDRESS EMAIL_PASSWORD; do
     if [[ &quot;$(definition_count &quot;$key&quot;)&quot; -gt 1 ]]; then
@@ -180,9 +172,6 @@ if [[ &quot;$mail_keys_set&quot; -eq 1 ]]; then
     exit 1
 fi
 
-# VALIDATE_ONLY is the pre-flight: it stops here, before the upload, so an operator can run the
-# live psama.env through every rule above without changing what PSAMA is running. A file that
-# fails still fails the build in both modes; the flag suppresses the upload, not the verdict.
 if [[ &quot;$validate_only&quot; == &quot;true&quot; ]]; then
     echo &quot;$ENV_FILE passed every PSAMA required-key rule.&quot;
     echo &quot;VALIDATE_ONLY is true, so nothing was uploaded and s3://$stack_s3_bucket/configs/psama/psama.env is unchanged.&quot;

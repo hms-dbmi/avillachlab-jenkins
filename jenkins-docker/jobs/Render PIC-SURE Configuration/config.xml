@@ -93,10 +93,8 @@
       <command>#!/bin/bash
 set -euo pipefail
 
-# Source folder containing the scripts
 source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
 
-# Iterate through the files in the folder and source them
 shopt -s nullglob
 for script_file in &quot;$source_scripts_folder&quot;*.sh; do
     chmod +x &quot;$script_file&quot;
@@ -161,14 +159,12 @@ if [ &quot;$all_picsure_services_selected&quot; = &quot;true&quot; ] &amp;&amp; 
   all_shared_secret_consumers_selected=true
 fi
 
-# PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT are
-# shared by the gateway, operations and query services, and LOGGING_API_KEY is shared by
-# pic-sure-logging, the gateway and the visualization service. Changing any of them while only
-# some of that value&apos;s consumers re-render leaves the rest holding the old one:
-# InternalTokenFilter answers the stale token with 403 and the gateway flattens that into an
-# opaque 500 on query downloads, and pic-sure-logging answers a stale key with 401 while the
-# logging client drops the event. Rotation is one switch over all four values, so it needs the
-# union of their consumers -- all five services.
+# The gateway, operations and query services share PICSURE_APPLICATION_TOKEN,
+# QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT. pic-sure-logging, the gateway
+# and the visualization service share LOGGING_API_KEY. When only some of a value&apos;s
+# consumers re-render, the rest keep the old one: InternalTokenFilter answers the stale token
+# with 403, which the gateway flattens into an opaque 500 on query downloads, and
+# pic-sure-logging answers a stale key with 401 while the logging client drops the event.
 if [ &quot;$rotate_shared_secrets&quot; = &quot;true&quot; ] &amp;&amp; [ &quot;$all_shared_secret_consumers_selected&quot; != &quot;true&quot; ]; then
   echo &quot;Error: ROTATE_SHARED_SECRETS changes values that the gateway, operations, query, logging and visualization services share between them.&quot; &gt;&amp;2
   echo &quot;Set RENDER_GATEWAY, RENDER_OPERATIONS, RENDER_QUERY, RENDER_LOGGING and RENDER_VISUALIZATION all true so the five render together, then redeploy all five.&quot; &gt;&amp;2
@@ -190,12 +186,9 @@ new_temp_file() {
   temp_file_path=&quot;$created&quot;
 }
 
-# This render job is stateless (each run inits from empty state), but the local
-# terraform.tfstate transiently holds live secrets -- DB app-user credentials, the
-# introspection token, the logging key, the shared service secrets, and the full rendered env
-# contents. Remove it on exit so it never lingers in the browsable Jenkins workspace. The
-# read-back copies of the rendered env files carry the same shared secrets and live under
-# ${TMPDIR:-/tmp}; the same handler removes them, and drops the assumed role.
+# The local terraform.tfstate and the read-back copies of the rendered env files hold live
+# secrets, and the Jenkins workspace is browsable, so this handler removes them on exit. The
+# render itself keeps no state: every run inits from empty.
 cleanup() {
   local temp_file
 
@@ -215,8 +208,7 @@ assume_role
 
 picsure_token_introspection_token=&quot;&quot;
 if [ &quot;$render_gateway&quot; = &quot;true&quot; ]; then
-  # Get the introspection token from the PSAMA database (same derivation as Teardown
-  # and Rebuild). The token is never echoed: it is a live credential.
+  # Same derivation as the Teardown and Rebuild job.
   db_app_user_json=$(fetch_secret &quot;$database_app_user_secret_name&quot;)
   picsure_db_username=$(extract_field &quot;$db_app_user_json&quot; &quot;username&quot;)
   picsure_db_password=$(extract_field &quot;$db_app_user_json&quot; &quot;password&quot;)
@@ -243,8 +235,6 @@ fi
 cd app-infrastructure/template-renderer
 tfstate_dir=&quot;$PWD&quot;
 
-# Resolve each editable template independently: shared S3 override, then the
-# checked-out repository version.
 download_s3_template() {
   local object_key=$1
   local destination=$2
@@ -330,9 +320,8 @@ if [ &quot;$render_dictionary&quot; = &quot;true&quot; ]; then
   resolve_template &quot;configs/picsure-dictionary/templates&quot; &quot;picsure-dictionary.env.tftpl&quot;
 fi
 
-# Read one KEY=VALUE out of a rendered env file, anchored at the start of the line, taking
-# everything after the first &apos;=&apos; as the value. The value is returned in the env_value global
-# rather than on stdout so that no caller can leak it into the build log.
+# The value comes back in the env_value global rather than on stdout so that no caller can
+# leak it into the build log.
 read_env_value() {
   local env_file=$1
   local key=$2
@@ -349,13 +338,9 @@ read_env_value() {
   done &lt; &quot;$env_file&quot;
 }
 
-# Decide one shared value from the env files that are currently rendered for this stack.
-# Exactly one distinct non-empty value across them is reused; none means this run has to
-# mint one; more than one means the stack is already inconsistent and only the rotation job
-# can put it right. This replaces the random_password resources that used to mint all three
-# on every apply: the renderer keeps no Terraform state, so every apply started from empty
-# state, and re-rendering one service silently rotated the value the other two were running
-# with. Neither the values nor any comparison of them is ever echoed.
+# Decide one shared value from the env files currently rendered for this stack. Exactly one
+# distinct non-empty value across them is reused; none means this run has to mint one; more
+# than one means the stack is already inconsistent and only the rotation job can put it right.
 resolve_shared_value() {
   local key=$1
   local first_source=${2:-}
@@ -398,10 +383,10 @@ resolve_shared_value() {
   fi
 }
 
-# Both shapes have to match the random_password resources they replace: the two tokens are
-# 43 characters of [A-Za-z0-9] and the salt is 32 characters of [a-z0-9]. head closes the
-# pipe as soon as it has its bytes, so pipefail is dropped for the pipeline only, and the
-# length is asserted because a short read would otherwise pass silently.
+# The two tokens are 43 characters of [A-Za-z0-9] and the salt 32 of [a-z0-9], matching the
+# random_password resources they replace. head closes the pipe as soon as it has its bytes, so
+# pipefail is dropped for that pipeline only, and the length is asserted because a short read
+# would otherwise pass silently.
 generate_shared_token() {
   generated_value=$(set +o pipefail; LC_ALL=C tr -dc &apos;A-Za-z0-9&apos; &lt; /dev/urandom | head -c 43)
   if [ &quot;${#generated_value}&quot; -ne 43 ]; then
@@ -467,9 +452,8 @@ if [ &quot;$render_services&quot; = &quot;true&quot; ]; then
   query_service_internal_token_origin=&quot;$resolved_origin&quot;
 
   # The salt lives only in query.env, so only a run that rewrites query.env can change it.
-  # Resolving it on a gateway-only or operations-only render would mint a value nothing
-  # writes and report it as generated, which reads as though the query service now needs a
-  # redeploy.
+  # Resolving it on a gateway-only or operations-only render would mint a value nothing writes
+  # and report it as generated, which reads as though the query service needs a redeploy.
   aggregate_obfuscation_salt_origin=&quot;not rendered by this run&quot;
   if [ &quot;$render_query&quot; = &quot;true&quot; ]; then
     resolve_shared_value &quot;AGGREGATE_OBFUSCATION_SALT&quot; &quot;$query_env_copy&quot;
@@ -512,31 +496,12 @@ if [ &quot;$render_services&quot; = &quot;true&quot; ]; then
   echo &quot;  AGGREGATE_OBFUSCATION_SALT: ${aggregate_obfuscation_salt_origin}&quot;
 fi
 
-# LOGGING_API_KEY is presented on POST /audit by the gateway and the visualization service and
-# checked by pic-sure-logging, so all three env files have to carry the same value. This job
-# used to read it out of logging.env purely as an input, because that object was
-# hand-maintained; it renders that object now, so the key is read back out of it exactly as
-# the shared service secrets are read back out of the rendered service env files. What is shared
-# is the S3 object rather than the service: logging.env carries no stack segment, so every
-# stack&apos;s deploy pulls the same file, while each stack still runs its own pic-sure-logging
-# container on its own wildfly host. The key is never echoed:
-# it is a live credential. It previously defaulted to the literal string &quot;disabled&quot;, which
-# rendered a gateway.env whose audit events pic-sure-logging rejects with 401 -- silently,
-# because the logging client logs the failure and drops the event. The two tokens, not the
-# salt, are the precedent for the gate below: the salt has a single consumer, the query
-# service, so a run that rewrites query.env can mint one freely, while a minted LOGGING_API_KEY
-# that reaches only some of its three consumers leaves the rest sending audit events
-# pic-sure-logging answers with 401. It goes further than those two, though, because logging.env
-# is the only one of the four shared secrets whose object carries no stack segment: the other
-# three live under configs/&lt;service&gt;/${TARGET_STACK}/, so minting one touches only the stack
-# being rendered, while minting this one rewrites the single object every stack reads. BDC runs
-# blue/green, so during a pipeline run one stack is live while the other is rebuilt, and a new
-# key would leave the live stack&apos;s gateway and visualization presenting the old one. An absent
-# object is therefore a bootstrap -- nothing running can hold a key from an object that never
-# existed -- and mints, subject to the all-three gate. A present object with a blank key aborts
-# instead, whatever the flags are: changing a key a live stack may be using is a both-stacks
-# operation, which is what ROTATE_SHARED_SECRETS is for, since it redeploys all five consumers
-# together.
+# LOGGING_API_KEY is checked by pic-sure-logging and presented by the gateway and the
+# visualization service, so all three env files must carry the same value. logging.env
+# carries no stack segment, so one object serves both stacks and minting a key rewrites
+# what a live stack is already using. An absent object is a bootstrap and mints under the
+# all-three gate; a present object with a blank key aborts, because changing the value is
+# a both-stacks operation and that is what ROTATE_SHARED_SECRETS does.
 logging_api_key=&quot;&quot;
 if [ &quot;$render_logging&quot; = &quot;true&quot; ] || [ &quot;$render_gateway&quot; = &quot;true&quot; ] || [ &quot;$render_visualization&quot; = &quot;true&quot; ]; then
   logging_env_key=&quot;configs/pic-sure-logging/logging.env&quot;
@@ -585,25 +550,12 @@ if [ &quot;$render_logging&quot; = &quot;true&quot; ] || [ &quot;$render_gateway
   echo &quot;  LOGGING_API_KEY: ${logging_api_key_origin}&quot;
 fi
 
-# DATASOURCE_URL and DATASOURCE_USERNAME are never minted. Unlike the shared service secrets
-# they are not values this job is free to choose: the URL is the bare host of a database that
-# already exists and the username is a Secrets Manager secret id whose secret holds the real
-# username and password. A generated value would render a picsure-dictionary.env that cannot
-# open a connection at all. Both are currently supplied by the container image rather than by
-# this file -- bdc.Dockerfile promotes them from build arguments to ENV, and the PIC-SURE
-# Dictionary Image job passes them from parameters of the same names -- so the rendered object
-# may never have carried them. Refusing to render on that basis alone would deadlock the
-# release pipeline, which sets RENDER_DICTIONARY unconditionally and has no job left that
-# writes that object by hand, so each key resolves in two steps. A value already in the
-# rendered object wins. A key the object does not carry falls back to the controller global
-# the PIC-SURE Dictionary Image job defaults that same parameter to -- database_psql_host_address
-# for the URL, database_psql_app_user_secret_name for the username -- which reproduces exactly
-# what the running image was built with. A key that is empty in both sources still stops the
-# run: podman --env-file overrides the image ENV, so rendering a blank would not leave the
-# working datasource settings alone, it would take them away. The globals are dereferenced
-# with a default so that an unset one under set -u reaches that message rather than killing
-# the run first. Only the key and the source it resolved from are echoed, never a value,
-# matching how app_user_secret_name is handled.
+# DATASOURCE_URL and DATASOURCE_USERNAME name infrastructure that already exists, so this job
+# never mints them. A key the rendered object does not carry falls back to the controller global
+# the PIC-SURE Dictionary Image job built the running image from. A key empty in both sources
+# stops the run: podman --env-file overrides the image ENV, so a blank would take the datasource
+# setting away. Each global is dereferenced with a default so that an unset one reaches that
+# message rather than tripping set -u first.
 dictionary_datasource_url=&quot;&quot;
 dictionary_datasource_username=&quot;&quot;
 if [ &quot;$render_dictionary&quot; = &quot;true&quot; ]; then
