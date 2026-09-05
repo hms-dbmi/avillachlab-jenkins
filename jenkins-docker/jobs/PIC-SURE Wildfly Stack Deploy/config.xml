@@ -61,36 +61,6 @@ startup on all enabled containers in parallel.</description>
           <defaultValue>prod</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
-        <hudson.model.BooleanParameterDefinition>
-          <name>BANNER_ROLLOUT</name>
-          <description>Set only by the combined pipeline after validating the banner release tuple.</description>
-          <defaultValue>false</defaultValue>
-        </hudson.model.BooleanParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>BANNER_ROLLOUT_TUPLE_SHA256</name>
-          <description>Canonical digest emitted by the banner rollout validator.</description>
-          <trim>true</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>BANNER_ROLLOUT_DEPLOYMENT</name>
-          <description>Deployment whose exact tuple was validated by the combined pipeline.</description>
-          <trim>true</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>BANNER_ROLLOUT_RUN_ID</name>
-          <description>Exact combined-pipeline run that built the selected backend artifacts.</description>
-          <trim>true</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.BooleanParameterDefinition>
-          <name>BANNER_ROLLBACK</name>
-          <description>Use for attested backend or PSAMA rollback stages.</description>
-          <defaultValue>false</defaultValue>
-        </hudson.model.BooleanParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>BANNER_ROLLBACK_ATTESTATION_JSON</name>
-          <description>Machine-checkable rollback state. Do not include secrets.</description>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -103,68 +73,9 @@ startup on all enabled containers in parallel.</description>
   <triggers/>
   <concurrentBuild>false</concurrentBuild>
   <builders>
-    <hudson.plugins.groovy.SystemGroovy plugin="groovy@457.v99900cb_85593">
-      <source class="hudson.plugins.groovy.StringSystemScriptSource">
-        <script plugin="script-security@1362.v67dc1f0e1b_b_3">
-          <script>def build = Thread.currentThread().executable
-def parameters = build.getAction(hudson.model.ParametersAction)
-def rolloutRunId = parameters?.getParameter(&quot;BANNER_ROLLOUT_RUN_ID&quot;)?.value?.toString()
-if (rolloutRunId) {
-    def cause = build.getCause(hudson.model.Cause.UpstreamCause)
-    if (cause == null || cause.upstreamProject != &quot;PIC-SURE Pipeline Build and Deploy&quot; || rolloutRunId != &quot;combined-${cause.upstreamBuild}&quot;) {
-        throw new hudson.AbortException(&quot;Banner backend deploy requires its exact combined-pipeline upstream run&quot;)
-    }
-}</script>
-          <sandbox>false</sandbox>
-        </script>
-      </source>
-    </hudson.plugins.groovy.SystemGroovy>
     <hudson.tasks.Shell>
       <command>#!/usr/bin/env bash
 set -euo pipefail
-
-if [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; &amp;&amp; &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot; ]]; then
-  echo &quot;ERROR: forward rollout and rollback modes are mutually exclusive.&quot; &gt;&amp;2
-  exit 2
-fi
-if [[ &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot; ]]; then
-  if [[ -z &quot;${BANNER_ROLLBACK_ATTESTATION_JSON:-}&quot; ]]; then
-    echo &quot;ERROR: banner rollback requires an operator attestation.&quot; &gt;&amp;2
-    exit 2
-  fi
-  if [[ &quot;${DEPLOY_OPERATIONS:-false}&quot; == &quot;true&quot; &amp;&amp; &quot;${DEPLOY_GATEWAY:-false}&quot; == &quot;true&quot; &amp;&amp; &quot;${DEPLOY_PSAMA:-false}&quot; != &quot;true&quot; ]]; then
-    required_rollback_stage=BACKEND_ALLOWED
-  elif [[ &quot;${DEPLOY_OPERATIONS:-false}&quot; != &quot;true&quot; &amp;&amp; &quot;${DEPLOY_GATEWAY:-false}&quot; != &quot;true&quot; &amp;&amp; &quot;${DEPLOY_PSAMA:-false}&quot; == &quot;true&quot; ]]; then
-    required_rollback_stage=PSAMA_ALLOWED
-  else
-    echo &quot;ERROR: rollback must deploy Operations and Gateway together, or recreate PSAMA alone afterward.&quot; &gt;&amp;2
-    exit 2
-  fi
-  rollback_attestation=$(mktemp)
-  trap &apos;rm -f &quot;${rollback_attestation}&quot;&apos; EXIT
-  printf &apos;%s&apos; &quot;${BANNER_ROLLBACK_ATTESTATION_JSON}&quot; &gt; &quot;${rollback_attestation}&quot;
-  python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; \
-    --rollback-attestation &quot;${rollback_attestation}&quot; \
-    --jenkins-source-commit &quot;${JENKINS_SOURCE_COMMIT}&quot; \
-    --controller-deployment &quot;${BANNER_CONTROLLER_DEPLOYMENT}&quot; \
-    --target-stack &quot;${TARGET_STACK}&quot; \
-    --required-rollback-stage &quot;${required_rollback_stage}&quot;
-fi
-
-if [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; ]]; then
-  if [[ -z &quot;${BANNER_ROLLOUT_RUN_ID:-}&quot; ]]; then
-    echo &quot;ERROR: banner rollout requires its combined-pipeline run identity.&quot; &gt;&amp;2
-    exit 2
-  fi
-  if [[ &quot;${DEPLOY_OPERATIONS:-false}&quot; != &quot;true&quot; || &quot;${DEPLOY_PSAMA:-false}&quot; != &quot;true&quot; || &quot;${DEPLOY_GATEWAY:-false}&quot; != &quot;true&quot; ]]; then
-    echo &quot;ERROR: banner rollout requires Operations, PSAMA, and Gateway in one backend deployment.&quot; &gt;&amp;2
-    exit 2
-  fi
-  python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; \
-    --deployment &quot;${BANNER_ROLLOUT_DEPLOYMENT}&quot; \
-    --tuple-sha256 &quot;${BANNER_ROLLOUT_TUPLE_SHA256}&quot; \
-    --jenkins-source-commit &quot;${JENKINS_SOURCE_COMMIT}&quot;
-fi
 
 # -----------------------------
 # Load shared bash functions
@@ -195,73 +106,12 @@ done
 : &quot;${TARGET_STACK:?TARGET_STACK is required}&quot;
 : &quot;${S3_BUCKET_NAME:?S3_BUCKET_NAME is required}&quot;
 
-artifact_prefix=&quot;${TARGET_STACK}/containers&quot;
-expected_backend_commit=$(python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; --component-commit backend)
-expected_artifact_run=standard
-if [[ &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot; ]]; then
-  artifact_prefix=$(jq -r &apos;.artifactPrefix&apos; &quot;${rollback_attestation}&quot;)
-  expected_backend_commit=$(jq -r &apos;.artifacts.backendCommit&apos; &quot;${rollback_attestation}&quot;)
-  expected_artifact_run=&quot;${artifact_prefix%/containers}&quot;
-  expected_artifact_run=&quot;${expected_artifact_run##*/}&quot;
-elif [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; ]]; then
-  [[ &quot;${BANNER_ROLLOUT_RUN_ID}&quot; =~ ^combined-[0-9]+$ ]] || { echo &quot;ERROR: invalid banner rollout run identity.&quot; &gt;&amp;2; exit 2; }
-  artifact_prefix=&quot;${TARGET_STACK}/banner-rollout/forward/${BANNER_ROLLOUT_RUN_ID}/containers&quot;
-  expected_artifact_run=&quot;${BANNER_ROLLOUT_RUN_ID}&quot;
-fi
-
 # Default optional parameters
 DATASET_S3_OBJECT_KEY=&quot;${DATASET_S3_OBJECT_KEY:-}&quot;
 ENABLE_DEBUG=&quot;${ENABLE_DEBUG:-false}&quot;
 SPRING_PROFILE=&quot;${SPRING_PROFILE:-prod}&quot;
 
 assume_role
-
-banner_backend_seen=false
-operations_artifact_etag=&quot;&quot;
-query_artifact_etag=&quot;&quot;
-psama_artifact_etag=&quot;&quot;
-gateway_artifact_etag=&quot;&quot;
-for artifact in \
-  &quot;${DEPLOY_OPERATIONS}:pic-sure-operations-service.tar.gz&quot; \
-  &quot;${DEPLOY_PSAMA}:psama.tar.gz&quot; \
-  &quot;${DEPLOY_GATEWAY}:pic-sure-gateway.tar.gz&quot; \
-  &quot;${DEPLOY_QUERY}:pic-sure-hpds-query-service.tar.gz&quot;; do
-  selected=&quot;${artifact%%:*}&quot;
-  object_name=&quot;${artifact#*:}&quot;
-  if [[ &quot;${selected}&quot; != &quot;true&quot; ]]; then
-    continue
-  fi
-  artifact_head=$(aws s3api head-object \
-    --bucket &quot;${S3_BUCKET_NAME}&quot; \
-    --key &quot;${artifact_prefix}/${object_name}&quot; \
-    --query &apos;{commit:Metadata.&quot;git-commit&quot;,run:Metadata.&quot;rollout-run&quot;,etag:ETag}&apos; \
-    --output json)
-  artifact_commit=$(jq -r &apos;.commit // empty&apos; &lt;&lt;&lt;&quot;${artifact_head}&quot;)
-  artifact_run=$(jq -r &apos;.run // empty&apos; &lt;&lt;&lt;&quot;${artifact_head}&quot;)
-  artifact_etag=$(jq -r &apos;.etag // empty&apos; &lt;&lt;&lt;&quot;${artifact_head}&quot;)
-  if [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; || &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot; ]]; then
-    if [[ &quot;${artifact_commit}&quot; != &quot;${expected_backend_commit}&quot; ]]; then
-      echo &quot;ERROR: ${object_name} does not match the selected banner backend commit.&quot; &gt;&amp;2
-      exit 2
-    fi
-    if [[ &quot;${artifact_run}&quot; != &quot;${expected_artifact_run}&quot; || -z &quot;${artifact_etag}&quot; ]]; then
-      echo &quot;ERROR: ${object_name} is not bound to the selected immutable rollout object.&quot; &gt;&amp;2
-      exit 2
-    fi
-    case &quot;${object_name}&quot; in
-      pic-sure-operations-service.tar.gz) operations_artifact_etag=&quot;${artifact_etag}&quot; ;;
-      pic-sure-hpds-query-service.tar.gz) query_artifact_etag=&quot;${artifact_etag}&quot; ;;
-      psama.tar.gz) psama_artifact_etag=&quot;${artifact_etag}&quot; ;;
-      pic-sure-gateway.tar.gz) gateway_artifact_etag=&quot;${artifact_etag}&quot; ;;
-    esac
-  elif [[ &quot;${artifact_commit}&quot; == &quot;${expected_backend_commit}&quot; ]]; then
-    banner_backend_seen=true
-  fi
-done
-if [[ &quot;${banner_backend_seen}&quot; == &quot;true&quot; &amp;&amp; &quot;${BANNER_ROLLOUT:-false}&quot; != &quot;true&quot; ]]; then
-  echo &quot;ERROR: reviewed banner backend artifacts require the combined banner pipeline.&quot; &gt;&amp;2
-  exit 2
-fi
 
 # -----------------------------
 # Download terraform state
@@ -311,11 +161,6 @@ sudo /opt/picsure/deploy-wildfly-stack.sh \
   ${deploy_flags} \
   --stack_s3_bucket &quot;${S3_BUCKET_NAME}&quot; \
   --target_stack &quot;${TARGET_STACK}&quot; \
-  --artifact_prefix &quot;${artifact_prefix}&quot; \
-  --operations_artifact_etag &apos;${operations_artifact_etag}&apos; \
-  --query_artifact_etag &apos;${query_artifact_etag}&apos; \
-  --psama_artifact_etag &apos;${psama_artifact_etag}&apos; \
-  --gateway_artifact_etag &apos;${gateway_artifact_etag}&apos; \
   --dataset_s3_object_key &quot;${DATASET_S3_OBJECT_KEY}&quot; \
   --enable_debug &quot;${ENABLE_DEBUG}&quot; \
   --spring_profile &quot;${SPRING_PROFILE}&quot;
@@ -387,29 +232,6 @@ done
 if [[ &quot;${failed}&quot; == &quot;true&quot; ]]; then
   echo &quot;ERROR: One or more Spring Boot applications failed to start.&quot;
   exit 1
-fi
-
-if [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; ]]; then
-  # The command substitution runs on the target host through SSM.
-  # shellcheck disable=SC2016
-  health_command=&apos;test &quot;$(curl --fail --silent --show-error http://localhost:8080/system/status)&quot; = &quot;RUNNING&quot;&apos;
-  health_command_json=$(jq -n --arg cmd &quot;${health_command}&quot; &apos;{commands: [$cmd]}&apos;)
-  health_command_id=$(aws ssm send-command \
-    --instance-ids &quot;${wildfly_instance_id}&quot; \
-    --document-name &quot;AWS-RunShellScript&quot; \
-    --comment &quot;Verify Gateway and downstream aggregate health&quot; \
-    --parameters &quot;${health_command_json}&quot; \
-    --timeout-seconds 60 \
-    --query &quot;Command.CommandId&quot; \
-    --output text)
-  if ! (wait_for_command &quot;${health_command_id}&quot; &quot;${wildfly_instance_id}&quot;); then
-    aws ssm get-command-invocation \
-      --command-id &quot;${health_command_id}&quot; \
-      --instance-id &quot;${wildfly_instance_id}&quot; \
-      --query &apos;{Status:Status,StandardOutputContent:StandardOutputContent,StandardErrorContent:StandardErrorContent}&apos; \
-      --output json &gt;&amp;2 || true
-    exit 1
-  fi
 fi
 
 echo &quot;All wildfly-host containers started successfully.&quot;

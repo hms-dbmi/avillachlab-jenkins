@@ -38,6 +38,8 @@ import hudson.*
 import hudson.model.*
 import groovy.json.JsonSlurper;
 
+def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/Check For Updates/build-spec.json&apos;));
+
 def envVars= Hudson.instance.getItem(&quot;Check For Updates&quot;).lastBuild.properties.get(&quot;envVars&quot;);
 
 Jenkins.instance.getItemByFullName(&quot;Bash_Functions&quot;)
@@ -45,9 +47,7 @@ Jenkins.instance.getItemByFullName(&quot;Bash_Functions&quot;)
 
 
 def run = Jenkins.instance.getItemByFullName(&quot;PIC-SURE Pipeline&quot;)
-    .scheduleBuild2(0, new ParametersAction([
-        new StringParameterValue(&quot;RELEASE_CONTROL_BRANCH&quot;, envVars[&quot;GIT_COMMIT&quot;].trim())
-    ])).get()
+.scheduleBuild2(0).get()
 
 if (run.getResult() != Result.SUCCESS) {
     throw new AbortException(&quot;PIC-SURE Pipeline failed&quot;)
@@ -101,7 +101,6 @@ import hudson.model.*
 import groovy.json.JsonSlurper;
 
 def buildSpec = new JsonSlurper().parse(new File(&quot;/var/jenkins_home/workspace/Check For Updates/build-spec.json&quot;));
-def bannerRollout = buildSpec.banner_rollout != null
 
 def envVars= Hudson.instance.getItem(&quot;Check For Updates&quot;).lastBuild.properties.get(&quot;envVars&quot;);
 
@@ -137,23 +136,13 @@ if(new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_to
 
 genomic_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/genomicDatasetKey.txt&quot;).text
 
-def deploymentFuture = Jenkins.instance.getItemByFullName(&quot;Deployment Pipeline&quot;)
+Jenkins.instance.getItemByFullName(&quot;Deployment Pipeline&quot;)
     .scheduleBuild2(0, new ParametersAction([
         new StringParameterValue(&quot;deployment_git_hash&quot;, envVars[&quot;GIT_COMMIT&quot;].trim()),
         new StringParameterValue(&quot;dataset_s3_object_key&quot;, dataset_s3_object_key.trim()),
         new StringParameterValue(&quot;destigmatized_dataset_s3_object_key&quot;, destigmatized_dataset_s3_object_key.trim()),
         new StringParameterValue(&quot;genomic_dataset_s3_object_key&quot;, genomic_s3_object_key.trim()),
-        new BooleanParameterValue(&quot;BANNER_ROLLOUT&quot;, bannerRollout),
-        new StringParameterValue(&quot;BANNER_ROLLOUT_OPERATION&quot;, bannerRollout ? &quot;FORWARD&quot; : &quot;NON_BANNER_COMPONENTS&quot;),
-        new BooleanParameterValue(&quot;BANNER_MANUAL_OPERATOR_MODE&quot;, false),
-        new StringParameterValue(&quot;BANNER_EXPECTED_DEPLOYMENT&quot;, bannerRollout ? buildSpec.banner_rollout.deployment.toString() : &quot;&quot;),
-        new StringParameterValue(&quot;BANNER_EXPECTED_TUPLE_SHA256&quot;, bannerRollout ? buildSpec.banner_rollout.tupleSha256.toString() : &quot;&quot;),
-        new StringParameterValue(&quot;STACK_S3_BUCKET&quot;, envVars[&quot;stack_s3_bucket&quot;].trim())
-    ]))
-def deploymentRun = deploymentFuture.get()
-if (deploymentRun.getResult() != Result.SUCCESS) {
-    throw new AbortException(&quot;Deployment Pipeline failed&quot;)
-}
+])).get()
 
 
 </script>

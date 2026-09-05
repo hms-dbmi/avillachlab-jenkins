@@ -25,21 +25,6 @@
           <defaultValue>${stack_s3_bucket}</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>BANNER_ROLLOUT_RUN_ID</name>
-          <description>Immutable combined-pipeline run identity for the forward banner artifact.</description>
-          <trim>true</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.BooleanParameterDefinition>
-          <name>BANNER_ROLLBACK</name>
-          <description>Build the exact old frontend artifact selected by a FRONTEND_ALLOWED attestation.</description>
-          <defaultValue>false</defaultValue>
-        </hudson.model.BooleanParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>BANNER_ROLLBACK_ATTESTATION_JSON</name>
-          <description>Machine-checkable rollback state. Do not include secrets.</description>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -67,22 +52,6 @@
   <triggers/>
   <concurrentBuild>true</concurrentBuild>
   <builders>
-    <hudson.plugins.groovy.SystemGroovy plugin="groovy@457.v99900cb_85593">
-      <source class="hudson.plugins.groovy.StringSystemScriptSource">
-        <script plugin="script-security@1362.v67dc1f0e1b_b_3">
-          <script>def build = Thread.currentThread().executable
-def parameters = build.getAction(hudson.model.ParametersAction)
-def rolloutRunId = parameters?.getParameter(&quot;BANNER_ROLLOUT_RUN_ID&quot;)?.value?.toString()
-if (rolloutRunId) {
-    def cause = build.getCause(hudson.model.Cause.UpstreamCause)
-    if (cause == null || cause.upstreamProject != &quot;PIC-SURE Pipeline Build and Deploy&quot; || rolloutRunId != &quot;combined-${cause.upstreamBuild}&quot;) {
-        throw new hudson.AbortException(&quot;Banner frontend build requires its exact combined-pipeline upstream run&quot;)
-    }
-}</script>
-          <sandbox>false</sandbox>
-        </script>
-      </source>
-    </hudson.plugins.groovy.SystemGroovy>
     <hudson.tasks.Shell>
       <command>#!/bin/bash
 set -euo pipefail
@@ -90,60 +59,17 @@ set -euo pipefail
 : &quot;${TARGET_STACK:?TARGET_STACK is required}&quot;
 : &quot;${S3_BUCKET_NAME:?S3_BUCKET_NAME is required}&quot;
 
-artifact_prefix=&quot;${TARGET_STACK}/containers&quot;
-if [[ &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot; ]]; then
-  [[ -z &quot;${BANNER_ROLLOUT_RUN_ID:-}&quot; ]] || { echo &quot;ERROR: frontend rollback cannot include a forward run identity.&quot; &gt;&amp;2; exit 2; }
-  [[ -n &quot;${BANNER_ROLLBACK_ATTESTATION_JSON:-}&quot; ]] || { echo &quot;ERROR: frontend rollback build requires a FRONTEND_ALLOWED attestation.&quot; &gt;&amp;2; exit 2; }
-  rollback_attestation=$(mktemp)
-  trap &apos;rm -f &quot;${rollback_attestation}&quot;&apos; EXIT
-  printf &apos;%s&apos; &quot;${BANNER_ROLLBACK_ATTESTATION_JSON}&quot; &gt; &quot;${rollback_attestation}&quot;
-  python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; \
-    --rollback-attestation &quot;${rollback_attestation}&quot; \
-    --jenkins-source-commit &quot;${JENKINS_SOURCE_COMMIT}&quot; \
-    --controller-deployment &quot;${BANNER_CONTROLLER_DEPLOYMENT}&quot; \
-    --target-stack &quot;${TARGET_STACK}&quot; \
-    --required-rollback-stage FRONTEND_ALLOWED
-  artifact_prefix=$(jq -r &apos;.artifactPrefix&apos; &quot;${rollback_attestation}&quot;)
-  attested_frontend_commit=$(jq -r &apos;.artifacts.frontendCommit&apos; &quot;${rollback_attestation}&quot;)
-  if [[ &quot;${GIT_COMMIT}&quot; != &quot;${attested_frontend_commit}&quot; ]]; then
-    echo &quot;ERROR: checked-out frontend commit does not match the rollback attestation.&quot; &gt;&amp;2
-    exit 2
-  fi
-elif [[ -n &quot;${BANNER_ROLLOUT_RUN_ID:-}&quot; ]]; then
-  [[ &quot;${BANNER_ROLLOUT_RUN_ID}&quot; =~ ^combined-[0-9]+$ ]] || { echo &quot;ERROR: invalid banner rollout run identity.&quot; &gt;&amp;2; exit 2; }
-  artifact_prefix=&quot;${TARGET_STACK}/banner-rollout/forward/${BANNER_ROLLOUT_RUN_ID}/containers&quot;
-fi
+GIT_BRANCH_SHORT=`echo ${GIT_BRANCH} | cut -d &quot;/&quot; -f 2` 
+GIT_COMMIT_SHORT=`echo ${GIT_COMMIT} | cut -c1-7`
 
-GIT_BRANCH_SHORT=$(echo &quot;${GIT_BRANCH}&quot; | awk -F/ &apos;{print $NF}&apos;)
-GIT_COMMIT_SHORT=$(echo &quot;${GIT_COMMIT}&quot; | cut -c1-7)
-
-reviewed_component_commit=$(python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; --component-commit frontend)
-if [[ &quot;${BANNER_ROLLBACK:-false}&quot; != &quot;true&quot; &amp;&amp; -z &quot;${BANNER_ROLLOUT_RUN_ID:-}&quot; &amp;&amp; &quot;${GIT_COMMIT}&quot; == &quot;${reviewed_component_commit}&quot; ]]; then
-  echo &quot;ERROR: reviewed banner commit requires the immutable banner rollout namespace.&quot; &gt;&amp;2
-  exit 2
-fi
-
-aws s3api get-object --bucket &quot;${S3_BUCKET_NAME}&quot; --key &quot;configs/pic-sure-frontend/bdc.env&quot; .env
-aws s3api get-object --bucket &quot;${S3_BUCKET_NAME}&quot; --key &quot;configs/pic-sure-frontend/configuration.json&quot; configuration.json
+aws s3api get-object --bucket $stack_s3_bucket --key &quot;configs/pic-sure-frontend/bdc.env&quot; .env
+aws s3api get-object --bucket $stack_s3_bucket --key &quot;configs/pic-sure-frontend/configuration.json&quot; configuration.json
 
 cp -f configuration.json ./src/lib/assets/configuration.json
 
-frontend_image=&quot;hms-dbmi/pic-sure-frontend:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}_${TARGET_STACK}&quot;
-docker build --no-cache --load -f Dockerfile --build-arg THEME=&quot;${THEME}&quot; -t &quot;${frontend_image}&quot; .
-docker save &quot;${frontend_image}&quot; | gzip &gt; pic-sure-frontend.tar.gz
-if [[ &quot;${artifact_prefix}&quot; == &quot;${TARGET_STACK}/banner-rollout/&quot;* ]]; then
-  artifact_run_id=&quot;${artifact_prefix%/containers}&quot;
-  artifact_run_id=&quot;${artifact_run_id##*/}&quot;
-  aws s3api put-object \
-    --bucket &quot;${S3_BUCKET_NAME}&quot; \
-    --key &quot;${artifact_prefix}/pic-sure-frontend.tar.gz&quot; \
-    --body pic-sure-frontend.tar.gz \
-    --server-side-encryption AES256 \
-    --metadata &quot;git-commit=${GIT_COMMIT},rollout-run=${artifact_run_id}&quot; \
-    --if-none-match &apos;*&apos;
-else
-  aws s3 --sse=AES256 cp pic-sure-frontend.tar.gz &quot;s3://${S3_BUCKET_NAME}/${artifact_prefix}/pic-sure-frontend.tar.gz&quot; --metadata &quot;git-commit=${GIT_COMMIT},rollout-run=standard&quot;
-fi
+docker build --no-cache --load -f Dockerfile --build-arg THEME=${THEME} -t hms-dbmi/pic-sure-frontend:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}_${TARGET_STACK} .
+docker save hms-dbmi/pic-sure-frontend:${GIT_BRANCH_SHORT}_${GIT_COMMIT_SHORT}_${TARGET_STACK} | gzip &gt; pic-sure-frontend.tar.gz
+aws s3 --sse=AES256 cp pic-sure-frontend.tar.gz s3://$S3_BUCKET_NAME/$TARGET_STACK/containers/pic-sure-frontend.tar.gz
 </command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>

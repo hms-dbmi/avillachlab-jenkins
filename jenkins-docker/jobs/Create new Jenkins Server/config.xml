@@ -78,8 +78,6 @@ docker build --load \
   --build-arg HUDSON_TASKS_FILE=&quot;./hudson.tasks.Maven.xml&quot; \
   --build-arg JENKINS_JOBS_DIR=&quot;./jobs/&quot; \
   --build-arg GIT_CREDENTIALS_ID=&quot;${git_credentials_id}&quot; \
-  --build-arg JENKINS_SOURCE_COMMIT=&quot;${GIT_COMMIT}&quot; \
-  --build-arg BANNER_CONTROLLER_DEPLOYMENT=&quot;${environment_prefix}&quot; \
   --build-arg PKCS12_FILE=&quot;./certs/jenkins.p12&quot; \
   --build-arg PKCS12_PASS=&quot;${keystore_pass}&quot; \
   -t jenkins:$git_commit_short .

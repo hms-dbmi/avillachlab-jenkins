@@ -15,41 +15,6 @@
           <name>TARGET_STACK</name>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
-        <hudson.model.BooleanParameterDefinition>
-          <name>BANNER_ROLLOUT</name>
-          <description>Set only by the combined pipeline after validating the banner release tuple.</description>
-          <defaultValue>false</defaultValue>
-        </hudson.model.BooleanParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>BANNER_ROLLOUT_TUPLE_SHA256</name>
-          <description>Canonical digest emitted by the banner rollout validator.</description>
-          <trim>true</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>BANNER_ROLLOUT_DEPLOYMENT</name>
-          <description>Deployment whose exact tuple was validated by the combined pipeline.</description>
-          <trim>true</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>BANNER_BACKEND_HEALTH_RECEIPT</name>
-          <description>Set by the combined pipeline after the backend aggregate health probe passes.</description>
-          <trim>true</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>BANNER_ROLLOUT_RUN_ID</name>
-          <description>Exact combined-pipeline run that built this frontend artifact.</description>
-          <trim>true</trim>
-        </hudson.model.StringParameterDefinition>
-        <hudson.model.BooleanParameterDefinition>
-          <name>BANNER_ROLLBACK</name>
-          <description>Use only for the frontend-first rollback path with a validated FRONTEND_ALLOWED attestation.</description>
-          <defaultValue>false</defaultValue>
-        </hudson.model.BooleanParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>BANNER_ROLLBACK_ATTESTATION_JSON</name>
-          <description>Machine-checkable rollback state. Do not include secrets.</description>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -62,140 +27,34 @@
   <triggers/>
   <concurrentBuild>true</concurrentBuild>
   <builders>
-    <hudson.plugins.groovy.SystemGroovy plugin="groovy@457.v99900cb_85593">
-      <source class="hudson.plugins.groovy.StringSystemScriptSource">
-        <script plugin="script-security@1362.v67dc1f0e1b_b_3">
-          <script>def build = Thread.currentThread().executable
-def parameters = build.getAction(hudson.model.ParametersAction)
-def rolloutRunId = parameters?.getParameter(&quot;BANNER_ROLLOUT_RUN_ID&quot;)?.value?.toString()
-if (rolloutRunId) {
-    def cause = build.getCause(hudson.model.Cause.UpstreamCause)
-    if (cause == null || cause.upstreamProject != &quot;PIC-SURE Pipeline Build and Deploy&quot; || rolloutRunId != &quot;combined-${cause.upstreamBuild}&quot;) {
-        throw new hudson.AbortException(&quot;Banner frontend deploy requires its exact combined-pipeline upstream run&quot;)
-    }
-}</script>
-          <sandbox>false</sandbox>
-        </script>
-      </source>
-    </hudson.plugins.groovy.SystemGroovy>
     <hudson.tasks.Shell>
-      <command>#!/usr/bin/env bash
-set -euo pipefail
-
-if [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; &amp;&amp; &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot; ]]; then
-  echo &quot;ERROR: forward rollout and rollback modes are mutually exclusive.&quot; &gt;&amp;2
-  exit 2
-fi
-if [[ &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot; ]]; then
-  if [[ -z &quot;${BANNER_ROLLBACK_ATTESTATION_JSON:-}&quot; ]]; then
-    echo &quot;ERROR: frontend rollback requires a FRONTEND_ALLOWED attestation.&quot; &gt;&amp;2
-    exit 2
-  fi
-  rollback_attestation=$(mktemp)
-  trap &apos;rm -f &quot;${rollback_attestation}&quot;&apos; EXIT
-  printf &apos;%s&apos; &quot;${BANNER_ROLLBACK_ATTESTATION_JSON}&quot; &gt; &quot;${rollback_attestation}&quot;
-  python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; \
-    --rollback-attestation &quot;${rollback_attestation}&quot; \
-    --jenkins-source-commit &quot;${JENKINS_SOURCE_COMMIT}&quot; \
-    --controller-deployment &quot;${BANNER_CONTROLLER_DEPLOYMENT}&quot; \
-    --target-stack &quot;${TARGET_STACK}&quot; \
-    --required-rollback-stage FRONTEND_ALLOWED
-fi
-
-if [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; ]]; then
-  if [[ -z &quot;${BANNER_ROLLOUT_RUN_ID:-}&quot; || &quot;${BANNER_BACKEND_HEALTH_RECEIPT:-}&quot; != &quot;${BANNER_ROLLOUT_RUN_ID}&quot; ]]; then
-    echo &quot;ERROR: banner frontend publication requires the backend health receipt.&quot; &gt;&amp;2
-    exit 2
-  fi
-  python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; \
-    --deployment &quot;${BANNER_ROLLOUT_DEPLOYMENT}&quot; \
-    --tuple-sha256 &quot;${BANNER_ROLLOUT_TUPLE_SHA256}&quot; \
-    --jenkins-source-commit &quot;${JENKINS_SOURCE_COMMIT}&quot;
-fi
-
-: &quot;${TARGET_STACK:?TARGET_STACK is required}&quot;
-: &quot;${S3_BUCKET_NAME:?S3_BUCKET_NAME is required}&quot;
-stack_s3_bucket=&quot;${S3_BUCKET_NAME}&quot;
-artifact_prefix=&quot;${TARGET_STACK}/containers&quot;
-expected_frontend_commit=$(python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; --component-commit frontend)
-expected_artifact_run=standard
-if [[ &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot; ]]; then
-  artifact_prefix=$(jq -r &apos;.artifactPrefix&apos; &quot;${rollback_attestation}&quot;)
-  expected_frontend_commit=$(jq -r &apos;.artifacts.frontendCommit&apos; &quot;${rollback_attestation}&quot;)
-  expected_artifact_run=&quot;${artifact_prefix%/containers}&quot;
-  expected_artifact_run=&quot;${expected_artifact_run##*/}&quot;
-elif [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; ]]; then
-  [[ &quot;${BANNER_ROLLOUT_RUN_ID}&quot; =~ ^combined-[0-9]+$ ]] || { echo &quot;ERROR: invalid banner rollout run identity.&quot; &gt;&amp;2; exit 2; }
-  artifact_prefix=&quot;${TARGET_STACK}/banner-rollout/forward/${BANNER_ROLLOUT_RUN_ID}/containers&quot;
-  expected_artifact_run=&quot;${BANNER_ROLLOUT_RUN_ID}&quot;
-fi
+      <command>#!/bin/bash
 
 # Source folder containing the scripts
 source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
 
 
 # Iterate through the files in the folder and source them
-shopt -s nullglob
 for script_file in &quot;$source_scripts_folder&quot;*.sh; do
-    if [ -f &quot;$script_file&quot; ]; then
-        chmod +x &quot;$script_file&quot;
+    chmod +x &quot;$script_file&quot;
+    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
         echo &quot;sourcing $script_file&quot;
-        # shellcheck source=/dev/null
         source &quot;$script_file&quot;
     fi
-done
-shopt -u nullglob
-
-for fn in assume_role wait_for_command reset_role; do
-  if ! command -v &quot;${fn}&quot; &gt;/dev/null 2&gt;&amp;1; then
-    echo &quot;ERROR: required function &apos;${fn}&apos; is not loaded from ${source_scripts_folder}&quot; &gt;&amp;2
-    exit 1
-  fi
 done
 
 assume_role
 
-frontend_head=$(aws s3api head-object \
-  --bucket &quot;${stack_s3_bucket}&quot; \
-  --key &quot;${artifact_prefix}/pic-sure-frontend.tar.gz&quot; \
-  --query &apos;{commit:Metadata.&quot;git-commit&quot;,run:Metadata.&quot;rollout-run&quot;,etag:ETag}&apos; \
-  --output json)
-frontend_commit=$(jq -r &apos;.commit // empty&apos; &lt;&lt;&lt;&quot;${frontend_head}&quot;)
-frontend_run=$(jq -r &apos;.run // empty&apos; &lt;&lt;&lt;&quot;${frontend_head}&quot;)
-frontend_etag=$(jq -r &apos;.etag // empty&apos; &lt;&lt;&lt;&quot;${frontend_head}&quot;)
-if [[ &quot;${frontend_commit}&quot; == &quot;${expected_frontend_commit}&quot; &amp;&amp; &quot;${BANNER_ROLLOUT:-false}&quot; != &quot;true&quot; &amp;&amp; &quot;${BANNER_ROLLBACK:-false}&quot; != &quot;true&quot; ]]; then
-  echo &quot;ERROR: reviewed banner frontend artifact requires the combined banner pipeline.&quot; &gt;&amp;2
-  exit 2
-fi
-if [[ (&quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; || &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot;) &amp;&amp; &quot;${frontend_commit}&quot; != &quot;${expected_frontend_commit}&quot; ]]; then
-  echo &quot;ERROR: frontend artifact does not match the reviewed banner commit.&quot; &gt;&amp;2
-  exit 2
-fi
-if [[ &quot;${BANNER_ROLLOUT:-false}&quot; == &quot;true&quot; || &quot;${BANNER_ROLLBACK:-false}&quot; == &quot;true&quot; ]]; then
-  if [[ &quot;${frontend_run}&quot; != &quot;${expected_artifact_run}&quot; || -z &quot;${frontend_etag}&quot; ]]; then
-    echo &quot;ERROR: frontend artifact is not bound to the selected immutable rollout object.&quot; &gt;&amp;2
-    exit 2
-  fi
-fi
-
 # Download the terraform state file
 echo &quot;Download terraform.tfstate file for $TARGET_STACK stack&quot;
-aws s3 cp &quot;s3://${stack_s3_bucket}/deployment_state_metadata/${TARGET_STACK}/terraform.tfstate&quot; terraform.tfstate
+aws s3 cp s3://$stack_s3_bucket/deployment_state_metadata/$TARGET_STACK/terraform.tfstate terraform.tfstate
 
 # Extract the Wildfly EC2 instance ID
 echo &quot;Extract HTTPD instance ID for $TARGET_STACK stack&quot;
 httpd_instance_id=$(jq -r &apos;.outputs[&quot;httpd-ec2-id&quot;].value&apos; terraform.tfstate)
 echo &quot;${httpd_instance_id}&quot;
 
-update_httpd_container=$(
-  cat &lt;&lt;EOF
-sudo /bin/bash /opt/picsure/deploy-httpd.sh \
-  --stack_s3_bucket &quot;${stack_s3_bucket}&quot; \
-  --target_stack &quot;${TARGET_STACK}&quot; \
-  --artifact_prefix &quot;${artifact_prefix}&quot; \
-  --artifact_etag &apos;${frontend_etag}&apos;
-EOF
-)
+update_httpd_container=&quot;sudo sh /opt/picsure/deploy-httpd.sh --stack_s3_bucket $stack_s3_bucket --target_stack $TARGET_STACK&quot;
 echo &quot;$update_httpd_container&quot;
 
 update_httpd_container_json=$(jq -n --arg cmd &quot;$update_httpd_container&quot; &apos;{commands: [$cmd]}&apos;)
@@ -209,7 +68,7 @@ command_id=$(aws ssm send-command \
   --query &quot;Command.CommandId&quot; \
   --output text)
 
-wait_for_command &quot;${command_id}&quot; &quot;${httpd_instance_id}&quot;
+wait_for_command ${command_id} ${httpd_instance_id}
 
 reset_role
 </command>

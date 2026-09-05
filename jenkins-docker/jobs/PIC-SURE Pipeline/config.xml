@@ -17,16 +17,6 @@
         <string>*</string>
       </projectNameList>
     </hudson.plugins.copyartifact.CopyArtifactPermissionProperty>
-    <hudson.model.ParametersDefinitionProperty>
-      <parameterDefinitions>
-        <hudson.model.StringParameterDefinition>
-          <name>RELEASE_CONTROL_BRANCH</name>
-          <description>Exact release-control commit from Check For Updates. Banner inputs require a full 40-character commit.</description>
-          <defaultValue>${release_control_git_hash}</defaultValue>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
-      </parameterDefinitions>
-    </hudson.model.ParametersDefinitionProperty>
   </properties>
   <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@4256.v991a_f1991c03">
     <script>import groovy.json.JsonSlurper
@@ -36,19 +26,15 @@ def retrieveBuildSpecId
 def pipelineBuildId
 def hasOverrideUI
 def targetStack
-def bannerRolloutPresent = false
 
 @NonCPS
-def parseBuildSpec(String text) {
+def parseBuildHashes(String text) {
     def spec = new JsonSlurper().parseText(text)
-    def buildHashes = [:]
+    def result = [:]
     for (build in spec.application) {
-        buildHashes[build.project_job_git_key.toString()] = build.git_hash?.toString()
+        result[build.project_job_git_key.toString()] = build.git_hash?.toString()
     }
-    return [
-        buildHashes: buildHashes,
-        bannerRolloutPresent: spec.banner_rollout != null
-    ]
+    return result
 }
 
 pipeline {
@@ -62,22 +48,15 @@ pipeline {
         stage(&apos;Retrieve Build Spec&apos;) {
             steps {
                 script {
-                    def result = build job: &apos;Retrieve Build Spec&apos;, parameters: [
-                        [$class: &apos;StringParameterValue&apos;, name: &apos;RELEASE_CONTROL_BRANCH&apos;, value: params.RELEASE_CONTROL_BRANCH]
-                    ]
+                    def result = build job: &apos;Retrieve Build Spec&apos;
                     retrieveBuildSpecId = result.number
                 }
                 script {
                     copyArtifacts filter: &apos;*&apos;, projectName: &apos;Retrieve Build Spec&apos;, selector: specific(&quot;&quot;+retrieveBuildSpecId)
-                    // parseBuildSpec returns only plain maps, strings, and a boolean.
+                    // parseBuildHashes returns a plain (serializable) LinkedHashMap.
                     // The lazy JSON structures never leave the @NonCPS method.
-                    def parsedBuildSpec = parseBuildSpec(readFile(&apos;build-spec.json&apos;))
-                    build_hashes.putAll(parsedBuildSpec.buildHashes)
-                    bannerRolloutPresent = parsedBuildSpec.bannerRolloutPresent
+                    build_hashes.putAll(parseBuildHashes(readFile(&apos;build-spec.json&apos;)))
                     pipelineBuildId = readFile(&apos;pipeline_git_commit.txt&apos;).trim()
-                    if (bannerRolloutPresent &amp;&amp; (!(params.RELEASE_CONTROL_BRANCH ==~ /[0-9a-f]{40}/) || pipelineBuildId != params.RELEASE_CONTROL_BRANCH)) {
-                        error(&apos;Banner image wave requires the exact release-control commit from Check For Updates&apos;)
-                    }
                     if (build_hashes[&apos;OVERRIDE_UI&apos;]) {
                         hasOverrideUI = true;
                         echo &quot;Hex Code: OVERRIDE_UI = Color Name: ${build_hashes[&apos;OVERRIDE_UI&apos;]}&quot;
@@ -127,25 +106,21 @@ pipeline {
                             [$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId]
                         ]
                         def branches = [:]
-                        if (!bannerRolloutPresent) {
-                            if (build_hashes[&apos;PSA&apos;]) {
-                                branches[&apos;gateway&apos;]    = { build job: &apos;PIC-SURE Gateway Image&apos;, parameters: imageParams }
-                                branches[&apos;operations&apos;] = { build job: &apos;PIC-SURE Operations Service Image&apos;, parameters: imageParams }
-                                branches[&apos;query&apos;]      = { build job: &apos;PIC-SURE HPDS Query Service Image&apos;, parameters: imageParams }
-                                branches[&apos;psama&apos;]      = { build job: &apos;PIC-SURE Auth Micro App Image&apos;, parameters: imageParams }
-                            }
-                            branches[&apos;frontend&apos;] = {
-                                build job: &apos;PIC-SURE Frontend Build&apos;, parameters: [
-                                    [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                                    [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSF&apos;]]
-                                ]
-                            }
-                        }
                         if (build_hashes[&apos;PSA&apos;]) {
+                            branches[&apos;gateway&apos;]       = { build job: &apos;PIC-SURE Gateway Image&apos;, parameters: imageParams }
+                            branches[&apos;operations&apos;]    = { build job: &apos;PIC-SURE Operations Service Image&apos;, parameters: imageParams }
+                            branches[&apos;query&apos;]         = { build job: &apos;PIC-SURE HPDS Query Service Image&apos;, parameters: imageParams }
                             branches[&apos;hpds&apos;]          = { build job: &apos;PIC-SURE HPDS Image&apos;, parameters: imageParams }
+                            branches[&apos;psama&apos;]         = { build job: &apos;PIC-SURE Auth Micro App Image&apos;, parameters: imageParams }
                             branches[&apos;logging&apos;]       = { build job: &apos;PIC-SURE Logging Image&apos;, parameters: imageParams }
                             branches[&apos;visualization&apos;] = { build job: &apos;PIC-SURE Visualization Image&apos;, parameters: imageParams }
                             branches[&apos;dictionary&apos;]    = { build job: &apos;PIC-SURE Dictionary Image&apos;, parameters: imageParams }
+                        }
+                        branches[&apos;frontend&apos;] = {
+                            build job: &apos;PIC-SURE Frontend Build&apos;, parameters: [
+                                [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                                [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSF&apos;]]
+                            ]
                         }
                         parallel branches
                     }

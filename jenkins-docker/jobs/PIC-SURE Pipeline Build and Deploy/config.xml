@@ -26,16 +26,6 @@
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.ChoiceParameterDefinition>
-          <name>BANNER_ROLLOUT_OPERATION</name>
-          <description>FORWARD deploys the banner tuple. NON_BANNER_COMPONENTS permits only unrelated components from a release input that retains banner metadata.</description>
-          <choices class="java.util.Arrays$ArrayList">
-            <a class="string-array">
-              <string>FORWARD</string>
-              <string>NON_BANNER_COMPONENTS</string>
-            </a>
-          </choices>
-        </hudson.model.ChoiceParameterDefinition>
-        <hudson.model.ChoiceParameterDefinition>
           <name>TARGET_STACK</name>
           <description>Based on selection we determine if it is the a or b stack.</description>
           <choices class="java.util.Arrays$ArrayList">
@@ -94,12 +84,7 @@
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
           <name>RUN_DATABASE_MIGRATIONS</name>
-          <description>Run database migrations</description>
-          <defaultValue>false</defaultValue>
-        </hudson.model.BooleanParameterDefinition>
-        <hudson.model.BooleanParameterDefinition>
-          <name>MIGRATIONS_COMPLETED_UPSTREAM</name>
-          <description>True only when Deployment Pipeline already completed its migration stage for this exact release input.</description>
+          <description>Run database migrations, then recreate PSAMA to refresh cached authorization rules.</description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.StringParameterDefinition>
@@ -119,11 +104,6 @@
           <defaultValue>${stack_s3_bucket}</defaultValue>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>BANNER_AIM_ATTESTATION_JSON</name>
-          <description>Exact runtime AIM-AHEAD operator attestation. Parented forward runs accept the Deployment Pipeline snapshot. A standalone AIM-AHEAD NON_BANNER_COMPONENTS run supplies the operator snapshot explicitly and never rereads the runtime file.</description>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -131,61 +111,18 @@
     <script>import groovy.json.JsonSlurper;
 
 @NonCPS
-def parseBuildSpec(String text) {
+def parseBuildHashes(String text) {
     def spec = new JsonSlurper().parseText(text)
-    def hashes = [:]
+    def result = [:]
     for (build in spec.application) {
-        hashes[build.project_job_git_key.toString()] = build.git_hash?.toString()
+        result[build.project_job_git_key.toString()] = build.git_hash?.toString()
     }
-    return [
-        buildHashes: hashes,
-        infrastructureGitHash: spec.infrastructure_git_hash?.toString(),
-        bannerRolloutPresent: spec.banner_rollout != null,
-        bannerDeployment: spec.banner_rollout?.deployment?.toString()
-    ]
+    return result
 }
 
 @NonCPS
-def requireTrustedBannerParent(def currentBuild) {
-  def collectCauseTree
-  collectCauseTree = { causeList ->
-    def collected = []
-    (causeList ?: []).each { nestedCause ->
-      collected &lt;&lt; nestedCause
-      if (nestedCause instanceof hudson.model.Cause.UpstreamCause) {
-        collected.addAll(collectCauseTree(nestedCause.upstreamCauses))
-      }
-    }
-    return collected
-  }
-  def build = currentBuild.rawBuild
-  def directCauses = build?.getCauses() ?: []
-  def cause = build?.getCause(hudson.model.Cause.UpstreamCause)
-  def parentJob = cause == null ? null : jenkins.model.Jenkins.instance.getItemByFullName(cause.upstreamProject)
-  def upstreamBuild = parentJob == null ? null : parentJob.getBuildByNumber(cause.upstreamBuild)
-  def currentParentBuild = parentJob?.getLastBuild()
-  def upstreamParameters = upstreamBuild?.getAction(hudson.model.ParametersAction)
-  def upstreamBannerValue = upstreamParameters?.getParameter(&apos;BANNER_ROLLOUT&apos;)?.value
-  def upstreamOperation = upstreamParameters?.getParameter(&apos;BANNER_ROLLOUT_OPERATION&apos;)?.value?.toString()
-  def upstreamManualValue = upstreamParameters?.getParameter(&apos;BANNER_MANUAL_OPERATOR_MODE&apos;)?.value
-  def upstreamManualMode = upstreamManualValue != null &amp;&amp; upstreamManualValue.toString().toBoolean()
-  def upstreamBannerForward = upstreamBannerValue != null &amp;&amp; upstreamBannerValue.toString().toBoolean() &amp;&amp; upstreamOperation == &apos;FORWARD&apos;
-  def copiedCauseTree = cause == null ? [] : collectCauseTree(cause.upstreamCauses)
-  def parentCauseTree = upstreamBuild == null ? [] : collectCauseTree(upstreamBuild.getCauses())
-  def copiedManualCauses = copiedCauseTree.findAll { it instanceof hudson.model.Cause.UserIdCause }
-  def parentManualCauses = parentCauseTree.findAll { it instanceof hudson.model.Cause.UserIdCause }
-  def automatedCauseContext = !upstreamManualMode &amp;&amp; copiedCauseTree.isEmpty() &amp;&amp; parentCauseTree.isEmpty()
-  def manualCauseContext = upstreamManualMode &amp;&amp;
-    copiedCauseTree.size() == 1 &amp;&amp; copiedManualCauses.size() == 1 &amp;&amp;
-    parentCauseTree.size() == 1 &amp;&amp; parentManualCauses.size() == 1 &amp;&amp;
-    copiedManualCauses[0].userId &amp;&amp; copiedManualCauses[0].userId == parentManualCauses[0].userId
-  if (directCauses.size() != 1 || !(directCauses[0] instanceof hudson.model.Cause.UpstreamCause) ||
-      cause == null || cause.upstreamProject != &apos;Deployment Pipeline&apos; ||
-      upstreamBuild == null || currentParentBuild == null || currentParentBuild.number != cause.upstreamBuild ||
-      !upstreamBuild.isBuilding() || !upstreamBannerForward ||
-      (!automatedCauseContext &amp;&amp; !manualCauseContext)) {
-    throw new hudson.AbortException(&apos;Banner rollout requires the active trusted Deployment Pipeline parent&apos;)
-  }
+def parseInfrastructureGitHash(String text) {
+    return new JsonSlurper().parseText(text).infrastructure_git_hash?.toString()
 }
 
 def retrieveBuildSpecId = &apos;&apos;
@@ -193,12 +130,7 @@ def build_hashes = [:]
 def infrastructure_git_hash
 def targetStack
 def pipelineBuildId
-def bannerRolloutPresent = false
-def bannerForward = false
-def bannerDeployment
-def bannerRolloutTupleSha = &apos;&apos;
-def bannerRolloutRunId = &apos;&apos;
-def validatedArtifactBucket = &apos;&apos;
+def recreatePsama = false
 
 pipeline {
   agent any
@@ -208,17 +140,6 @@ pipeline {
   }
 
   stages {
-    stage(&apos;Verify Supported Banner Entrypoint&apos;) {
-      steps {
-        script {
-          if (params.MIGRATIONS_COMPLETED_UPSTREAM) {
-            requireTrustedBannerParent(currentBuild)
-          }
-          bannerRolloutRunId = &quot;combined-${env.BUILD_NUMBER}&quot;
-        }
-      }
-    }
-
     stage(&apos;Retrieve Build Spec&apos;) {
       steps {
         script {
@@ -231,62 +152,9 @@ pipeline {
           copyArtifacts filter: &apos;*&apos;, projectName: &apos;Retrieve Build Spec&apos;, selector: specific(&quot;&quot; + retrieveBuildSpecId)
           sh &apos;cat build-spec.json&apos;
           sh &apos;cat pipeline_git_commit.txt&apos;
-          def parsedBuildSpec = parseBuildSpec(readFile(&apos;build-spec.json&apos;))
-          build_hashes = parsedBuildSpec.buildHashes
+          build_hashes = parseBuildHashes(readFile(&apos;build-spec.json&apos;))
           pipelineBuildId = readFile(&apos;pipeline_git_commit.txt&apos;).trim()
-          infrastructure_git_hash = parsedBuildSpec.infrastructureGitHash
-          bannerDeployment = parsedBuildSpec.bannerDeployment
-          bannerRolloutPresent = parsedBuildSpec.bannerRolloutPresent
-          bannerForward = bannerRolloutPresent &amp;&amp; params.BANNER_ROLLOUT_OPERATION == &apos;FORWARD&apos;
-          validatedArtifactBucket = String.valueOf(params.STACK_S3_BUCKET)
-          if (bannerRolloutPresent) {
-            if (!(bannerDeployment in [&apos;BDC&apos;, &apos;AIM-AHEAD&apos;])) {
-              error(&quot;Unsupported banner rollout deployment: ${bannerDeployment}&quot;)
-            }
-            String requestedArtifactBucket = params.STACK_S3_BUCKET?.toString()
-            String controllerArtifactBucket = env.stack_s3_bucket?.toString()
-            if (!requestedArtifactBucket || requestedArtifactBucket != requestedArtifactBucket.trim() ||
-                    !controllerArtifactBucket || controllerArtifactBucket != controllerArtifactBucket.trim() ||
-                    requestedArtifactBucket != controllerArtifactBucket) {
-              error(&apos;Artifact bucket must be nonempty, canonical, and match the controller-bound artifact bucket&apos;)
-            }
-            validatedArtifactBucket = controllerArtifactBucket
-            if (params.BANNER_ROLLOUT_OPERATION == &apos;FORWARD&apos;) {
-              if (!params.MIGRATIONS_COMPLETED_UPSTREAM) {
-                error(&apos;Forward banner rollout requires the exact Deployment Pipeline upstream run&apos;)
-              }
-            }
-            def aimAttestation = &apos;&apos;
-            if (bannerDeployment == &apos;AIM-AHEAD&apos;) {
-              if (!params.BANNER_AIM_ATTESTATION_JSON?.trim()) {
-                error(&apos;AIM-AHEAD requires an exact Deployment Pipeline snapshot or standalone AIM-AHEAD NON_BANNER_COMPONENTS attestation parameter&apos;)
-              }
-              writeFile file: &apos;aim-ahead-operator-attestation.json&apos;, text: params.BANNER_AIM_ATTESTATION_JSON
-              aimAttestation = &apos;--attestation aim-ahead-operator-attestation.json&apos;
-            }
-            withEnv([
-              &quot;BANNER_ARTIFACT_BUCKET=${requestedArtifactBucket}&quot;,
-              &quot;BANNER_CONTROLLER_ARTIFACT_BUCKET=${controllerArtifactBucket}&quot;
-            ]) {
-              bannerRolloutTupleSha = sh(
-                script: &quot;&quot;&quot;python3 &quot;${JENKINS_HOME}/banner-rollout/validate-banner-rollout.py&quot; \
-                  --deployment &apos;${bannerDeployment}&apos; \
-                  --operation &apos;${params.BANNER_ROLLOUT_OPERATION}&apos; \
-                  --build-spec build-spec.json \
-                  --jenkins-source-commit &apos;${env.JENKINS_SOURCE_COMMIT}&apos; \
-                  --release-control-commit &apos;${pipelineBuildId}&apos; \
-                  --controller-deployment &apos;${env.BANNER_CONTROLLER_DEPLOYMENT}&apos; \
-                  --artifact-bucket &quot;\${BANNER_ARTIFACT_BUCKET}&quot; \
-                  --controller-artifact-bucket &quot;\${BANNER_CONTROLLER_ARTIFACT_BUCKET}&quot; \
-                  ${aimAttestation} \
-                  --run-database-migrations &apos;${params.RUN_DATABASE_MIGRATIONS}&apos; \
-                  --include-api &apos;${params.INCLUDE_PIC_SURE_API}&apos; \
-                  --include-psama &apos;${params.INCLUDE_PIC_SURE_AUTH_MICRO_APP}&apos; \
-                  --include-frontend &apos;${params.INCLUDE_PIC_SURE_FRONTEND}&apos;&quot;&quot;&quot;,
-                returnStdout: true
-              ).trim()
-            }
-          }
+          infrastructure_git_hash = parseInfrastructureGitHash(readFile(&apos;build-spec.json&apos;))
         }
       }
     }
@@ -322,7 +190,7 @@ pipeline {
 
     stage(&apos;Database Migrations (once)&apos;) {
       when {
-        expression { return params.RUN_DATABASE_MIGRATIONS &amp;&amp; !params.MIGRATIONS_COMPLETED_UPSTREAM &amp;&amp; (params.INCLUDE_PIC_SURE_API || params.INCLUDE_PIC_SURE_AUTH_MICRO_APP || params.INCLUDE_PIC_SURE_VISUALIZATION) }
+        expression { return params.RUN_DATABASE_MIGRATIONS &amp;&amp; (params.INCLUDE_PIC_SURE_API || params.INCLUDE_PIC_SURE_AUTH_MICRO_APP || params.INCLUDE_PIC_SURE_VISUALIZATION) }
       }
       steps {
         script {
@@ -331,6 +199,7 @@ pipeline {
             build job: &apos;Database Migrations&apos;, parameters: [
               [$class: &apos;StringParameterValue&apos;, name: &apos;infrastructure_git_hash&apos;, value: infrastructure_git_hash]
             ]
+            recreatePsama = true
           }
         }
       }
@@ -351,20 +220,16 @@ pipeline {
             }
             def imageParams = [
               [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-              [$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId],
-              [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: validatedArtifactBucket]
-            ]
-            def bannerImageParams = imageParams + [
-              [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_RUN_ID&apos;, value: bannerForward ? bannerRolloutRunId : &apos;&apos;]
+              [$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId]
             ]
             def branches = [:]
             if (params.INCLUDE_PIC_SURE_API) {
-              branches[&apos;gateway&apos;]    = { build job: &apos;PIC-SURE Gateway Image&apos;, parameters: bannerImageParams }
-              branches[&apos;operations&apos;] = { build job: &apos;PIC-SURE Operations Service Image&apos;, parameters: bannerImageParams }
-              branches[&apos;query&apos;]      = { build job: &apos;PIC-SURE HPDS Query Service Image&apos;, parameters: bannerImageParams }
+              branches[&apos;gateway&apos;]    = { build job: &apos;PIC-SURE Gateway Image&apos;, parameters: imageParams }
+              branches[&apos;operations&apos;] = { build job: &apos;PIC-SURE Operations Service Image&apos;, parameters: imageParams }
+              branches[&apos;query&apos;]      = { build job: &apos;PIC-SURE HPDS Query Service Image&apos;, parameters: imageParams }
             }
             if (params.INCLUDE_PIC_SURE_HPDS_AUTH || params.INCLUDE_PIC_SURE_HPDS_OPEN) { branches[&apos;hpds&apos;] = { build job: &apos;PIC-SURE HPDS Image&apos;, parameters: imageParams } }
-            if (params.INCLUDE_PIC_SURE_AUTH_MICRO_APP) { branches[&apos;psama&apos;] = { build job: &apos;PIC-SURE Auth Micro App Image&apos;, parameters: bannerImageParams } }
+            if (params.INCLUDE_PIC_SURE_AUTH_MICRO_APP || recreatePsama) { branches[&apos;psama&apos;] = { build job: &apos;PIC-SURE Auth Micro App Image&apos;, parameters: imageParams } }
             if (params.INCLUDE_PIC_SURE_VISUALIZATION)  { branches[&apos;visualization&apos;] = { build job: &apos;PIC-SURE Visualization Image&apos;, parameters: imageParams } }
             if (params.INCLUDE_PIC_SURE_DICTIONARY)     { branches[&apos;dictionary&apos;] = { build job: &apos;PIC-SURE Dictionary Image&apos;, parameters: imageParams } }
             if (params.INCLUDE_PIC_SURE_LOGGING)        { branches[&apos;logging&apos;] = { build job: &apos;PIC-SURE Logging Image&apos;, parameters: imageParams } }
@@ -372,13 +237,18 @@ pipeline {
               branches[&apos;frontend&apos;] = {
                 build job: &apos;PIC-SURE Frontend Build&apos;, parameters: [
                   [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSF&apos;]],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: validatedArtifactBucket],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_RUN_ID&apos;, value: bannerForward ? bannerRolloutRunId : &apos;&apos;]
+                  [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: build_hashes[&apos;PSF&apos;]]
                 ]
               }
             }
             if (branches) { parallel branches }
+
+            if (params.INCLUDE_PIC_SURE_API) {
+              build job: &apos;Render PIC-SURE Service Config Templates&apos;, parameters: [
+                [$class: &apos;StringParameterValue&apos;, name: &apos;INFRASTRUCTURE_GIT_HASH&apos;, value: infrastructure_git_hash],
+                [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
+              ]
+            }
 
             if (params.INCLUDE_PIC_SURE_VISUALIZATION) {
               build job: &apos;Render PIC-SURE Visualization Config Template&apos;, parameters: [
@@ -387,66 +257,55 @@ pipeline {
               ]
             }
 
-            def deployBranches = [:]
-            deployBranches[&apos;banner_backend_then_frontend&apos;] = {
-              def shouldDeploy = params.INCLUDE_PIC_SURE_API || params.INCLUDE_PIC_SURE_AUTH_MICRO_APP || params.INCLUDE_PIC_SURE_DICTIONARY || params.INCLUDE_PIC_SURE_VISUALIZATION
-              if (shouldDeploy) {
-                build job: &apos;PIC-SURE Wildfly Stack Deploy&apos;, parameters: [
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: validatedArtifactBucket],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;DATASET_S3_OBJECT_KEY&apos;, value: String.valueOf(params.DATASET_S3_OBJECT_KEY)],
-                  [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_GATEWAY&apos;, value: params.INCLUDE_PIC_SURE_API],
-                  [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_OPERATIONS&apos;, value: params.INCLUDE_PIC_SURE_API],
-                  [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_QUERY&apos;, value: params.INCLUDE_PIC_SURE_API],
-                  [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_PSAMA&apos;, value: params.INCLUDE_PIC_SURE_AUTH_MICRO_APP],
-                  [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_DICTIONARY&apos;, value: params.INCLUDE_PIC_SURE_DICTIONARY],
-                  [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_VISUALIZATION&apos;, value: params.INCLUDE_PIC_SURE_VISUALIZATION],
-                  [$class: &apos;BooleanParameterValue&apos;, name: &apos;BANNER_ROLLOUT&apos;, value: bannerForward],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_DEPLOYMENT&apos;, value: bannerDeployment ?: &apos;&apos;],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_TUPLE_SHA256&apos;, value: bannerRolloutTupleSha],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_RUN_ID&apos;, value: bannerForward ? bannerRolloutRunId : &apos;&apos;]
-                ]
-              } else {
-                echo &apos;Skipping Wildfly Stack Deploy (no wildfly-host components selected)&apos;
-              }
-              if (params.INCLUDE_PIC_SURE_FRONTEND) {
-                build job: &apos;PIC-SURE Frontend Deploy&apos;, parameters: [
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: validatedArtifactBucket],
-                  [$class: &apos;BooleanParameterValue&apos;, name: &apos;BANNER_ROLLOUT&apos;, value: bannerForward],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_DEPLOYMENT&apos;, value: bannerDeployment ?: &apos;&apos;],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_TUPLE_SHA256&apos;, value: bannerRolloutTupleSha],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_BACKEND_HEALTH_RECEIPT&apos;, value: bannerForward ? bannerRolloutRunId : &apos;&apos;],
-                  [$class: &apos;StringParameterValue&apos;, name: &apos;BANNER_ROLLOUT_RUN_ID&apos;, value: bannerForward ? bannerRolloutRunId : &apos;&apos;]
-                ]
-              } else {
-                echo &apos;Skipping PIC-SURE Frontend Deploy&apos;
-              }
-            }
-            deployBranches[&apos;hpds_auth_deploy&apos;] = {
+            parallel (
+              backend_then_frontend: {
+                def shouldDeploy = params.INCLUDE_PIC_SURE_API || params.INCLUDE_PIC_SURE_AUTH_MICRO_APP || params.INCLUDE_PIC_SURE_DICTIONARY || params.INCLUDE_PIC_SURE_VISUALIZATION
+                if (shouldDeploy) {
+                  build job: &apos;PIC-SURE Wildfly Stack Deploy&apos;, parameters: [
+                    [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                    [$class: &apos;StringParameterValue&apos;, name: &apos;DATASET_S3_OBJECT_KEY&apos;, value: String.valueOf(params.DATASET_S3_OBJECT_KEY)],
+                    [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_GATEWAY&apos;, value: params.INCLUDE_PIC_SURE_API],
+                    [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_OPERATIONS&apos;, value: params.INCLUDE_PIC_SURE_API],
+                    [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_QUERY&apos;, value: params.INCLUDE_PIC_SURE_API],
+                    [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_PSAMA&apos;, value: params.INCLUDE_PIC_SURE_AUTH_MICRO_APP || recreatePsama],
+                    [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_DICTIONARY&apos;, value: params.INCLUDE_PIC_SURE_DICTIONARY],
+                    [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_VISUALIZATION&apos;, value: params.INCLUDE_PIC_SURE_VISUALIZATION]
+                  ]
+                } else {
+                  echo &apos;Skipping Wildfly Stack Deploy (no wildfly-host components selected)&apos;
+                }
+                if (params.INCLUDE_PIC_SURE_FRONTEND) {
+                  build job: &apos;PIC-SURE Frontend Deploy&apos;, parameters: [
+                    [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
+                  ]
+                } else {
+                  echo &apos;Skipping PIC-SURE Frontend Deploy&apos;
+                }
+              },
+              hpds_auth_deploy: {
                 if (params.INCLUDE_PIC_SURE_HPDS_AUTH) {
                   build job: &apos;PIC-SURE HPDS Auth Deploy&apos;, parameters: [
                     [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                    [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: validatedArtifactBucket],
+                    [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: String.valueOf(params.STACK_S3_BUCKET)],
                     [$class: &apos;StringParameterValue&apos;, name: &apos;DATA_S3_OBJECT_KEY&apos;, value: String.valueOf(params.DATA_S3_OBJECT_KEY)],
                     [$class: &apos;StringParameterValue&apos;, name: &apos;GENOMIC_DATASET_S3_OBJECT_KEY&apos;, value: String.valueOf(params.GENOMIC_DATASET_S3_OBJECT_KEY)]
                   ]
                 } else {
                   echo &apos;Skipping HPDS Auth Deploy&apos;
                 }
-            }
-            deployBranches[&apos;hpds_open_deploy&apos;] = {
+              },
+              hpds_open_deploy: {
                 if (params.INCLUDE_PIC_SURE_HPDS_OPEN) {
                   build job: &apos;PIC-SURE HPDS Open Deploy&apos;, parameters: [
                     [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                    [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: validatedArtifactBucket],
+                    [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: String.valueOf(params.STACK_S3_BUCKET)],
                     [$class: &apos;StringParameterValue&apos;, name: &apos;DESTIGMATIZED_DATASET_S3_OBJECT_KEY&apos;, value: String.valueOf(params.DESTIGMATIZED_DATASET_S3_OBJECT_KEY)]
                   ]
                 } else {
                   echo &apos;Skipping HPDS Open Deploy&apos;
                 }
-            }
-            deployBranches[&apos;logging_deploy&apos;] = {
+              },
+              logging_deploy: {
                 if (params.INCLUDE_PIC_SURE_LOGGING) {
                   build job: &apos;PIC-SURE Logging Deploy&apos;, parameters: [
                     [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
@@ -454,8 +313,8 @@ pipeline {
                 } else {
                   echo &apos;Skipping PIC-SURE Logging Deploy&apos;
                 }
-            }
-            parallel deployBranches
+              }
+            )
           }
         }
       }
@@ -463,7 +322,7 @@ pipeline {
 
   }
 }</script>
-    <sandbox>false</sandbox>
+    <sandbox>true</sandbox>
   </definition>
   <triggers/>
   <disabled>false</disabled>
