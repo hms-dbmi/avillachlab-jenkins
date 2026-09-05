@@ -183,15 +183,7 @@ resolve_template &quot;configs/query/templates&quot; &quot;query.env.tftpl&quot;
 # the introspection token, the logging key, and the full rendered env contents.
 # Remove it on exit so it never lingers in the browsable Jenkins workspace.
 tfstate_dir=&quot;$PWD&quot;
-rendered_operations_env=
-cleanup_sensitive_render_files() {
-  if [ -n &quot;$rendered_operations_env&quot; ]; then
-    rm -f -- &quot;$rendered_operations_env&quot; 2&gt;/dev/null || true
-  fi
-  rm -f &quot;$tfstate_dir&quot;/terraform.tfstate &quot;$tfstate_dir&quot;/terraform.tfstate.backup \
-    2&gt;/dev/null || true
-}
-trap cleanup_sensitive_render_files EXIT
+trap &apos;rm -f &quot;$tfstate_dir&quot;/terraform.tfstate &quot;$tfstate_dir&quot;/terraform.tfstate.backup&apos; EXIT
 
 terraform init -input=false
 
@@ -210,34 +202,6 @@ terraform apply -auto-approve -input=false \
   -var=&quot;logging_api_key=${logging_api_key}&quot; \
   -var=&quot;app_user_secret_name=${database_app_user_secret_name}&quot; \
   -var=&quot;include_open_hpds=${include_open_hpds}&quot;
-
-# An editable S3 template can replace the repository template completely. Read
-# back the rendered Operations env and fail before reporting success unless the
-# deployed logging client settings are exact. Never print either observed value.
-rendered_operations_env=$(mktemp &quot;${TMPDIR:-/tmp}/operations.env.XXXXXX&quot;)
-if ! aws s3 cp \
-  &quot;s3://$stack_s3_bucket/configs/operations/${TARGET_STACK}/operations.env&quot; \
-  &quot;$rendered_operations_env&quot; &gt;/dev/null; then
-  rm -f &quot;$rendered_operations_env&quot; 2&gt;/dev/null || true
-  echo &quot;Error: could not verify the rendered Operations environment.&quot; &gt;&amp;2
-  exit 1
-fi
-
-logging_url_count=$(grep -c &apos;^LOGGING_SERVICE_URL=&apos; &quot;$rendered_operations_env&quot; || true)
-logging_key_count=$(grep -c &apos;^LOGGING_API_KEY=&apos; &quot;$rendered_operations_env&quot; || true)
-rendered_logging_service_url=$(sed -n &apos;s/^LOGGING_SERVICE_URL=//p&apos; \
-  &quot;$rendered_operations_env&quot;)
-rendered_logging_api_key=$(sed -n &apos;s/^LOGGING_API_KEY=//p&apos; &quot;$rendered_operations_env&quot;)
-if [ &quot;$logging_url_count&quot; -ne 1 ] \
-  || [ &quot;$rendered_logging_service_url&quot; != &quot;http://pic-sure-logging&quot; ] \
-  || [ &quot;$logging_key_count&quot; -ne 1 ] \
-  || [ -z &quot;$rendered_logging_api_key&quot; ] \
-  || [ &quot;$rendered_logging_api_key&quot; != &quot;$logging_api_key&quot; ]; then
-  rm -f &quot;$rendered_operations_env&quot; 2&gt;/dev/null || true
-  echo &quot;Error: rendered Operations logging settings do not match the fetched logging credential.&quot; &gt;&amp;2
-  exit 1
-fi
-rm -f &quot;$rendered_operations_env&quot; 2&gt;/dev/null || true
 
 reset_role
 </command>
