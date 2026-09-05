@@ -1,7 +1,7 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
   <actions/>
-  <description>Uploads one Terraform env template for the selected service. Leave TARGET_STACK empty for the shared template path or provide a stack identifier for a stack-specific override.</description>
+  <description>Uploads one Terraform env template for the selected service. Each service has a single template shared by both stacks; a change takes effect the next time that service renders and deploys.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
@@ -16,14 +16,10 @@
             <string>HPDS Auth</string>
             <string>HPDS Open</string>
             <string>Visualization</string>
+            <string>Logging</string>
+            <string>Dictionary</string>
           </choices>
         </hudson.model.ChoiceParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>TARGET_STACK</name>
-          <description>Optional target stack identifier (for example, a or b). Leave empty to upload to the shared template path.</description>
-          <defaultValue></defaultValue>
-          <trim>true</trim>
-        </hudson.model.StringParameterDefinition>
         <hudson.model.FileParameterDefinition>
           <name>service.env.tftpl</name>
           <description>Non-empty Terraform env template for the selected service. It is stored under that service&apos;s canonical filename.</description>
@@ -90,6 +86,14 @@ case &quot;$SERVICE&quot; in
         template_file=&quot;visualization.env.tftpl&quot;
         template_prefix=&quot;configs/pic-sure-visualization/templates&quot;
         ;;
+    Logging)
+        template_file=&quot;logging.env.tftpl&quot;
+        template_prefix=&quot;configs/pic-sure-logging/templates&quot;
+        ;;
+    Dictionary)
+        template_file=&quot;picsure-dictionary.env.tftpl&quot;
+        template_prefix=&quot;configs/picsure-dictionary/templates&quot;
+        ;;
     *)
         echo &quot;Error: unsupported SERVICE selection.&quot; &gt;&amp;2
         exit 1
@@ -102,14 +106,8 @@ if [[ ! -f &quot;$upload_file&quot; || ! -s &quot;$upload_file&quot; ]]; then
     exit 1
 fi
 
-TARGET_STACK=&quot;${TARGET_STACK:-}&quot;
-if [[ -n &quot;$TARGET_STACK&quot; ]]; then
-    destination=&quot;s3://$stack_s3_bucket/$template_prefix/$TARGET_STACK/$template_file&quot;
-    echo &quot;Uploading $template_file to the stack-specific template path.&quot;
-else
-    destination=&quot;s3://$stack_s3_bucket/$template_prefix/$template_file&quot;
-    echo &quot;Uploading $template_file to the shared template path.&quot;
-fi
+destination=&quot;s3://$stack_s3_bucket/$template_prefix/$template_file&quot;
+echo &quot;Uploading $template_file to $destination.&quot;
 
 trap 'reset_role' EXIT
 assume_role

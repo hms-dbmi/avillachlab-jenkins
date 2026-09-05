@@ -9,7 +9,7 @@
       <options/>
     </org.jenkinsci.plugins.pipeline.modeldefinition.actions.DeclarativeJobPropertyTrackerAction>
   </actions>
-  <description>Downloads one Terraform env template. Resolution order is stack-specific S3, shared S3, then the infrastructure repository. Select the service and optionally a target stack.</description>
+  <description>Downloads one Terraform env template for the selected service. Each service has a single template shared by both stacks; a change takes effect the next time that service renders and deploys.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
@@ -30,14 +30,10 @@
             <string>HPDS Auth</string>
             <string>HPDS Open</string>
             <string>Visualization</string>
+            <string>Logging</string>
+            <string>Dictionary</string>
           </choices>
         </hudson.model.ChoiceParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>TARGET_STACK</name>
-          <description>Optional target stack identifier (for example, a or b). Leave empty to skip the stack-specific S3 path.</description>
-          <defaultValue></defaultValue>
-          <trim>true</trim>
-        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -69,7 +65,9 @@ pipeline {
             &apos;Query&apos;: [&apos;query.env.tftpl&apos;, &apos;configs/query/templates&apos;],
             &apos;HPDS Auth&apos;: [&apos;hpds-auth.env.tftpl&apos;, &apos;configs/hpds/templates&apos;],
             &apos;HPDS Open&apos;: [&apos;hpds-open.env.tftpl&apos;, &apos;configs/hpds/templates&apos;],
-            &apos;Visualization&apos;: [&apos;visualization.env.tftpl&apos;, &apos;configs/pic-sure-visualization/templates&apos;]
+            &apos;Visualization&apos;: [&apos;visualization.env.tftpl&apos;, &apos;configs/pic-sure-visualization/templates&apos;],
+            &apos;Logging&apos;: [&apos;logging.env.tftpl&apos;, &apos;configs/pic-sure-logging/templates&apos;],
+            &apos;Dictionary&apos;: [&apos;picsure-dictionary.env.tftpl&apos;, &apos;configs/picsure-dictionary/templates&apos;]
           ]
 
           def selected = templates[params.SERVICE]
@@ -107,7 +105,6 @@ done
 template_file=&quot;$TEMPLATE_FILE&quot;
 template_prefix=&quot;$TEMPLATE_PREFIX&quot;
 
-TARGET_STACK=&quot;${TARGET_STACK:-}&quot;
 role_assumed=false
 cleanup() {
     if [[ &quot;$role_assumed&quot; == true ]]; then
@@ -155,18 +152,6 @@ download_s3_template() {
     echo &quot;Error: could not read s3://$stack_s3_bucket/$object_key; refusing to fall back after a non-missing-object AWS error.&quot; &gt;&amp;2
     return 2
 }
-
-if [[ -n &quot;$TARGET_STACK&quot; ]]; then
-    if download_s3_template &quot;$template_prefix/$TARGET_STACK/$template_file&quot; &quot;$template_file&quot;; then
-        echo &quot;Using stack-specific S3 template for $template_file&quot;
-        exit 0
-    else
-        download_status=$?
-        if [[ $download_status -ne 1 ]]; then
-            exit &quot;$download_status&quot;
-        fi
-    fi
-fi
 
 if download_s3_template &quot;$template_prefix/$template_file&quot; &quot;$template_file&quot;; then
     echo &quot;Using shared S3 template for $template_file&quot;
