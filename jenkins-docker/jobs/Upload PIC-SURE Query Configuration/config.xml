@@ -76,9 +76,11 @@ if [[ ! -f &quot;$ENV_FILE&quot; || ! -s &quot;$ENV_FILE&quot; ]]; then
 fi
 
 # Required non-empty keys are derived from query.env.tftpl. Intentionally blank template keys are optional.
+# HPDS_OPEN_URL is NOT required: the template emits it only when include_open_hpds is true, and a stack
+# without an open HPDS instance must leave it unset so the query service treats that backend as not
+# deployed rather than probing a host that has no Route53 record.
 required_keys=(
     HPDS_AUTH_URL
-    HPDS_OPEN_URL
     OPERATIONS_SERVICE_URL
     QUERY_SERVICE_INTERNAL_TOKEN
     VISUALIZATION_URL
