@@ -680,9 +680,9 @@ if [ &quot;$render_gateway&quot; = &quot;true&quot; ]; then
   apply_args+=(-var=&quot;include_open_hpds=${include_open_hpds}&quot;)
 fi
 
-terraform init -input=false
+terraform15 init -input=false
 
-terraform apply &quot;${apply_args[@]}&quot;
+terraform15 apply &quot;${apply_args[@]}&quot;
 
 reset_role
 </command>
