@@ -63,7 +63,7 @@
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
           <name>ROTATE_LOGGING_API_KEY</name>
-          <description>Mint a new LOGGING_API_KEY instead of reusing the rendered one. This one is not stack-local: configs/pic-sure-logging/logging.env carries no stack segment, so the new key lands in the object every stack reads. The other stack keeps working on the old key, because its containers hold that key in memory, but its rendered gateway.env and visualization.env now disagree with the shared object, and its next logging deploy brings the mismatch live as 401s and dropped audit events. Use the Rotate PIC-SURE Logging API Key job, which renders and redeploys both stacks. It requires RENDER_LOGGING, RENDER_GATEWAY and RENDER_VISUALIZATION all true.</description>
+          <description>Mint a new LOGGING_API_KEY instead of reusing the rendered one. The key is stack-local: configs/pic-sure-logging/&lt;target_stack&gt;/logging.env is this stack&apos;s own object, and no other stack is read or written. pic-sure-logging checks the key and the gateway and visualization services present it, so it requires RENDER_LOGGING, RENDER_GATEWAY and RENDER_VISUALIZATION all true and all three must be redeployed afterwards. A fourth consumer is not rendered here: the frontend reads the key from configs/pic-sure-frontend/&lt;target_stack&gt;/bdc.env, which is uploaded by hand, so a rotation has to update that file for this stack as well or the frontend&apos;s audit events are dropped. Use the Rotate PIC-SURE Logging API Key job, which does the render and the redeploys and says so at the end.</description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
       </parameterDefinitions>
@@ -504,15 +504,14 @@ if [ &quot;$render_services&quot; = &quot;true&quot; ]; then
 fi
 
 # LOGGING_API_KEY is checked by pic-sure-logging and presented by the gateway and the
-# visualization service, so all three env files must carry the same value. logging.env carries
-# no stack segment, so one object serves every stack and a new key leaves the other stack&apos;s
-# rendered gateway.env and visualization.env disagreeing with it. An absent object is a
-# bootstrap and mints under the all-three gate; a present object with a blank key aborts,
-# because changing the value is a both-stacks operation and that is what
-# ROTATE_LOGGING_API_KEY plus the Rotate PIC-SURE Logging API Key job are for.
+# visualization service, so all three env files for this stack must carry the same value.
+# A fourth consumer, the frontend, reads it from configs/pic-sure-frontend/${TARGET_STACK}/bdc.env,
+# which is uploaded by hand and not rendered here. An absent object is a bootstrap and mints
+# under the all-three gate; a present object with a blank key aborts and refers you to the
+# rotation job, which pairs the mint with the redeploys that make it safe.
 logging_api_key=&quot;&quot;
 if [ &quot;$render_logging&quot; = &quot;true&quot; ] || [ &quot;$render_gateway&quot; = &quot;true&quot; ] || [ &quot;$render_visualization&quot; = &quot;true&quot; ]; then
-  logging_env_key=&quot;configs/pic-sure-logging/logging.env&quot;
+  logging_env_key=&quot;configs/pic-sure-logging/${TARGET_STACK}/logging.env&quot;
   logging_env_copy=&quot;&quot;
 
   if [ &quot;$rotate_logging_api_key&quot; = &quot;true&quot; ]; then
@@ -540,8 +539,8 @@ if [ &quot;$render_logging&quot; = &quot;true&quot; ] || [ &quot;$render_gateway
   if [ &quot;$logging_api_key_origin&quot; = &quot;generate&quot; ]; then
     if [ &quot;$rotate_logging_api_key&quot; != &quot;true&quot; ] &amp;&amp; [ -n &quot;$logging_env_copy&quot; ]; then
       echo &quot;Error: s3://${stack_s3_bucket}/${logging_env_key} exists but carries no non-empty LOGGING_API_KEY.&quot; &gt;&amp;2
-      echo &quot;That object has no stack segment, so every stack&apos;s deploy pulls the same file, and minting a key here would leave the other stack&apos;s rendered gateway.env and visualization.env holding a key the object no longer carries.&quot; &gt;&amp;2
-      echo &quot;Run the Rotate PIC-SURE Logging API Key job to change this value: it renders and redeploys the three consumers on both stacks, which is what makes a new key safe.&quot; &gt;&amp;2
+      echo &quot;Minting a key here would leave this stack&apos;s running gateway, visualization and pic-sure-logging containers on the old one until each is redeployed.&quot; &gt;&amp;2
+      echo &quot;Run the Rotate PIC-SURE Logging API Key job to change this value: it renders and redeploys all three for this stack, which is what makes a new key safe.&quot; &gt;&amp;2
       exit 1
     fi
     if [ &quot;$all_logging_consumers_selected&quot; != &quot;true&quot; ]; then

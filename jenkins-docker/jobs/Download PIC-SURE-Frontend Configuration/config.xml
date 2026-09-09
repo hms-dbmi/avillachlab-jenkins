@@ -1,9 +1,22 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
   <actions/>
-  <description>Download the current bdc.env file that has been configured and will be used to configure the PIC-SURE-Frontend app</description>
+  <description>Downloads one stack&apos;s bdc.env and the shared configuration.json into configs/, for editing and re-upload through Upload PIC-SURE-Frontend Configuration. bdc.env is per stack, so the choice matters; configuration.json is the same file for every stack.</description>
   <keepDependencies>false</keepDependencies>
-  <properties/>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.ChoiceParameterDefinition>
+          <name>TARGET_STACK</name>
+          <description>Which stack&apos;s bdc.env to act on. Based on selection we determine if is a or b stack. configuration.json is shared by both stacks and is not affected by this choice.</description>
+          <choices>
+            <string>staging</string>
+            <string>live</string>
+          </choices>
+        </hudson.model.ChoiceParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
   <scm class="hudson.scm.NullSCM"/>
   <canRoam>true</canRoam>
   <disabled>false</disabled>
@@ -30,8 +43,14 @@ for script_file in &quot;$source_scripts_folder&quot;*.sh; do
     fi
 done
 
-# Upload the bdc.env file to S3
-aws s3 --sse=AES256 cp s3://$stack_s3_bucket/configs/pic-sure-frontend/ configs/ --recursive
+
+: &quot;${TARGET_STACK:?TARGET_STACK is required}&quot;
+target_stack=$(get_stack &quot;$TARGET_STACK&quot;)
+echo &quot;Resolved TARGET_STACK ${TARGET_STACK} to stack ${target_stack}&quot;
+
+mkdir -p configs
+aws s3 --sse=AES256 cp &quot;s3://$stack_s3_bucket/configs/pic-sure-frontend/$target_stack/bdc.env&quot; configs/bdc.env
+aws s3 --sse=AES256 cp &quot;s3://$stack_s3_bucket/configs/pic-sure-frontend/configuration.json&quot; configs/configuration.json
 </command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>

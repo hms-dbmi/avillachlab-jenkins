@@ -1,11 +1,19 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
   <actions/>
-  <description></description>
+  <description>Uploads a bdc.env for one stack and a configuration.json shared by both. bdc.env goes to configs/pic-sure-frontend/&lt;target_stack&gt;/bdc.env, so the two stacks can hold different values; it carries LOGGING_API_KEY, which must match the same stack&apos;s rendered logging.env or pic-sure-logging answers the frontend&apos;s audit events with 401 and they are dropped. configuration.json is not stack-scoped and lands in configs/pic-sure-frontend/ for every stack. Neither file takes effect until the frontend is rebuilt and redeployed for that stack.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
+        <hudson.model.ChoiceParameterDefinition>
+          <name>TARGET_STACK</name>
+          <description>Which stack&apos;s bdc.env to act on. Based on selection we determine if is a or b stack. configuration.json is shared by both stacks and is not affected by this choice.</description>
+          <choices>
+            <string>staging</string>
+            <string>live</string>
+          </choices>
+        </hudson.model.ChoiceParameterDefinition>
         <hudson.model.FileParameterDefinition>
           <name>bdc.env</name>
           <description>Upload a bdc.env file that has been configured and will be used to configure the PIC-SURE-Frontend app</description>
@@ -42,6 +50,11 @@ for script_file in &quot;$source_scripts_folder&quot;*.sh; do
     fi
 done
 
+
+: &quot;${TARGET_STACK:?TARGET_STACK is required}&quot;
+target_stack=$(get_stack &quot;$TARGET_STACK&quot;)
+echo &quot;Resolved TARGET_STACK ${TARGET_STACK} to stack ${target_stack}&quot;
+
 # Check if bdc.env exists and is not empty
 BDC_ENV=&quot;bdc.env&quot;
 CONFIG_JSON=&quot;configuration.json&quot;
@@ -49,7 +62,7 @@ CONFIG_JSON=&quot;configuration.json&quot;
 # Check if bdc.env exists and is not empty
 if [[ -f &quot;$BDC_ENV&quot; &amp;&amp; -s &quot;$BDC_ENV&quot; ]]; then
   echo &quot;Uploading $BDC_ENV to S3...&quot;
-  aws s3 --sse=AES256 cp &quot;$BDC_ENV&quot; &quot;s3://$stack_s3_bucket/configs/pic-sure-frontend/$BDC_ENV&quot;
+  aws s3 --sse=AES256 cp &quot;$BDC_ENV&quot; &quot;s3://$stack_s3_bucket/configs/pic-sure-frontend/$target_stack/$BDC_ENV&quot;
 else
   echo &quot;Warning: $BDC_ENV is either empty or does not exist. Skipping upload.&quot;
 fi

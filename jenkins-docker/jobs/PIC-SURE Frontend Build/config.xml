@@ -62,7 +62,7 @@ set -euo pipefail
 GIT_BRANCH_SHORT=`echo ${GIT_BRANCH} | cut -d &quot;/&quot; -f 2` 
 GIT_COMMIT_SHORT=`echo ${GIT_COMMIT} | cut -c1-7`
 
-aws s3api get-object --bucket $stack_s3_bucket --key &quot;configs/pic-sure-frontend/bdc.env&quot; .env
+aws s3api get-object --bucket $stack_s3_bucket --key &quot;configs/pic-sure-frontend/$TARGET_STACK/bdc.env&quot; .env
 aws s3api get-object --bucket $stack_s3_bucket --key &quot;configs/pic-sure-frontend/configuration.json&quot; configuration.json
 
 cp -f configuration.json ./src/lib/assets/configuration.json

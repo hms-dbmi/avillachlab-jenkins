@@ -1,22 +1,22 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <flow-definition plugin="workflow-job@1540.v295eccc9778f">
   <actions/>
-  <description>Mints a new LOGGING_API_KEY and rolls it out to both stacks. This is a fleet-wide change and it redeploys the live stack. There is no single-stack version of it.
+  <description>Mints a new LOGGING_API_KEY for one stack, then redeploys that stack's gateway, visualization and pic-sure-logging containers. Rotating and redeploying are a single operation; there is no option to render without deploying.
 
-configs/pic-sure-logging/logging.env carries no stack segment, so one object serves every stack and only one key can exist at a time. TARGET_STACK selects which stack cuts over first, not which stack is affected.
+Only the selected stack is touched. configs/pic-sure-logging/&lt;stack&gt;/logging.env is that stack's own object, each stack runs its own pic-sure-logging container, and no request crosses between stacks, so the other stack keeps its own key and is never rendered, redeployed or read.
 
-The key is presented by the gateway and the visualization service and checked by pic-sure-logging, so all three are rendered and redeployed on each stack. Expect a short window per stack, between the Wildfly deploy and the logging deploy, where the gateway and visualization already present the new key and pic-sure-logging still checks the old one. It answers those audit events with 401 and the logging client drops them. One key covers all three services, so the two sides cannot cut over at the same instant; the window is a cost of the single-key design rather than a defect.
+Expect a short window between the Wildfly deploy and the logging deploy where the gateway and visualization already present the new key and pic-sure-logging still checks the old one. It answers those audit events with 401 and the logging client drops them. One key covers all three services, so the two sides cannot cut over at the same instant; the window is a cost of the single-key design rather than a defect.
 
-Both stacks must complete. Stopping after the first leaves the second stack&apos;s rendered gateway.env and visualization.env holding a key the shared object no longer carries. Its containers keep working on the old key, because they hold it in memory, until something redeploys them; then its logging container comes up on the new key while its gateway and visualization come up on the old one. That is the 401 case above, triggered later by an unrelated deploy with no obvious connection to this job.
+A fourth consumer is not rendered here, and this job does not finish the rotation on its own. The frontend reads LOGGING_API_KEY from configs/pic-sure-frontend/&lt;stack&gt;/bdc.env, which is uploaded by hand. When this job completes: download this stack's rendered logging.env to read the new key, download the same stack's bdc.env through Download PIC-SURE-Frontend Configuration, set LOGGING_API_KEY to match, upload it through Upload PIC-SURE-Frontend Configuration, and redeploy the frontend. Until that is done the frontend posts the old key and pic-sure-logging drops its audit events; gateway and visualization audit is unaffected. The key is never printed to this job's console.
 
-Per-stack secrets are not touched. PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT are read back out of each stack&apos;s own rendered env files and preserved. Rotate those with Rotate PIC-SURE Stack Secrets.</description>
+Per-stack service secrets are not touched. PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT are read back out of this stack's rendered env files and preserved. Rotate those with Rotate PIC-SURE Stack Secrets.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.ChoiceParameterDefinition>
           <name>TARGET_STACK</name>
-          <description>The stack that cuts over to the new key first. Based on selection we determine if is a or b stack. The other stack follows in the second stage; both are always rolled out.</description>
+          <description>The stack to rotate. Based on selection we determine if is a or b stack. No other stack is touched.</description>
           <choices>
             <string>staging</string>
             <string>live</string>
@@ -132,49 +132,6 @@ pipeline {
             }
         }
 
-        stage(&apos;Roll Out To Other Stack&apos;) {
-            steps {
-                script {
-                    if (targetStack != &apos;a&apos; &amp;&amp; targetStack != &apos;b&apos;) {
-                        error(&quot;Resolved stack &apos;${targetStack}&apos; is neither a nor b, so the other stack cannot be derived. The new LOGGING_API_KEY is already in configs/pic-sure-logging/logging.env, which every stack reads, so the other stack&apos;s rendered gateway.env and visualization.env now hold a key that object no longer carries. Render and redeploy its gateway, visualization and pic-sure-logging by hand before anything else deploys that stack.&quot;)
-                    }
-
-                    def otherStack = targetStack == &apos;a&apos; ? &apos;b&apos; : &apos;a&apos;
-                    echo &quot;Rolling stack ${otherStack} onto the new LOGGING_API_KEY&quot;
-
-                    lock(&quot;stack-${otherStack}&quot;) {
-                        build job: &apos;Render PIC-SURE Configuration&apos;, parameters: [
-                            [$class: &apos;StringParameterValue&apos;, name: &apos;INFRASTRUCTURE_GIT_HASH&apos;, value: infrastructureGitHash],
-                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: otherStack],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_GATEWAY&apos;, value: true],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPERATIONS&apos;, value: false],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_QUERY&apos;, value: false],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_AUTH_HPDS&apos;, value: false],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPEN_HPDS&apos;, value: false],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_VISUALIZATION&apos;, value: true],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_LOGGING&apos;, value: true],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_DICTIONARY&apos;, value: false],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;ROTATE_STACK_SECRETS&apos;, value: false],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;ROTATE_LOGGING_API_KEY&apos;, value: false]
-                        ]
-
-                        build job: &apos;PIC-SURE Wildfly Stack Deploy&apos;, parameters: [
-                            [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: params.S3_BUCKET_NAME],
-                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: otherStack],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_GATEWAY&apos;, value: true],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_OPERATIONS&apos;, value: false],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_QUERY&apos;, value: false],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_VISUALIZATION&apos;, value: true]
-                        ]
-
-                        build job: &apos;PIC-SURE Logging Deploy&apos;, parameters: [
-                            [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: params.S3_BUCKET_NAME],
-                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: otherStack]
-                        ]
-                    }
-                }
-            }
-        }
     }
 }</script>
     <sandbox>true</sandbox>

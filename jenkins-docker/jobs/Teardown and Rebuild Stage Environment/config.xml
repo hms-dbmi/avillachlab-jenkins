@@ -178,9 +178,9 @@ picsure_db_password=$(replace_xml_special_chars &quot;${picsure_db_password}&quo
 
 # Get logging API key from logging.env in S3. The key is never echoed: it is a live credential.
 logging_env=$(mktemp &quot;${TMPDIR:-/tmp}/logging.env.XXXXXX&quot;)
-if ! aws s3 cp &quot;s3://$stack_s3_bucket/configs/pic-sure-logging/logging.env&quot; &quot;$logging_env&quot; &gt;/dev/null; then
+if ! aws s3 cp &quot;s3://$stack_s3_bucket/configs/pic-sure-logging/$target_stack/logging.env&quot; &quot;$logging_env&quot; &gt;/dev/null; then
   rm -f &quot;$logging_env&quot; 2&gt;/dev/null || true
-  echo &quot;Error: could not read s3://$stack_s3_bucket/configs/pic-sure-logging/logging.env.&quot; &gt;&amp;2
+  echo &quot;Error: could not read s3://$stack_s3_bucket/configs/pic-sure-logging/$target_stack/logging.env.&quot; &gt;&amp;2
   echo &quot;That object is hand-maintained (there is no terraform template for it); confirm it exists, then re-run this job.&quot; &gt;&amp;2
   exit 1
 fi
