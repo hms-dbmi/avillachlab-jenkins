@@ -136,6 +136,7 @@ pipeline {
 
                     lock(&quot;stack-${targetStack}&quot;) {
                         build job: &apos;Render PIC-SURE Configuration&apos;, parameters: [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: params.S3_BUCKET_NAME],
                             [$class: &apos;StringParameterValue&apos;, name: &apos;INFRASTRUCTURE_GIT_HASH&apos;, value: infrastructureGitHash],
                             [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_GATEWAY&apos;, value: true],

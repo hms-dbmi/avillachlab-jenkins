@@ -21,6 +21,12 @@ One thing to watch in the console. Terraform prints the rendered picsure-diction
     <hudson.model.ParametersDefinitionProperty>
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
+          <name>S3_BUCKET_NAME</name>
+          <description>Bucket to render into. Must be the same bucket the deploy that follows reads from, or the containers come up on env files this run did not write. Leave the default to use the controller global stack_s3_bucket, which is what every caller that does not set a bucket of its own resolves to.</description>
+          <defaultValue>${stack_s3_bucket}</defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
           <name>INFRASTRUCTURE_GIT_HASH</name>
           <description>Git hash of the infrastructure repo to checkout</description>
           <trim>false</trim>
@@ -133,6 +139,21 @@ for required_function in assume_role reset_role fetch_secret extract_field initi
 done
 
 : &quot;${TARGET_STACK:?TARGET_STACK is required}&quot;
+
+# The deploy that follows a render reads its own S3_BUCKET_NAME. Render into the same bucket or
+# the containers come up on env files this run did not write. An unset or unexpanded parameter
+# falls back to the controller global rather than failing, which is what this job did before it
+# took a bucket at all.
+case &quot;${S3_BUCKET_NAME:-}&quot; in
+  &quot;&quot;|*&apos;$&apos;*|*&apos;{&apos;*)
+    echo &quot;Rendering into the controller global stack_s3_bucket: ${stack_s3_bucket}&quot;
+    ;;
+  *)
+    stack_s3_bucket=&quot;$S3_BUCKET_NAME&quot;
+    echo &quot;Rendering into S3_BUCKET_NAME: ${stack_s3_bucket}&quot;
+    ;;
+esac
+: &quot;${stack_s3_bucket:?no bucket resolved: set S3_BUCKET_NAME or the stack_s3_bucket global}&quot;
 : &quot;${stack_s3_bucket:?stack_s3_bucket is required}&quot;
 
 render_gateway=&quot;${RENDER_GATEWAY:-false}&quot;
