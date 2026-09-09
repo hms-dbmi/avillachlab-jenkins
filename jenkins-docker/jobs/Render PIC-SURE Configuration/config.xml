@@ -547,6 +547,7 @@ fi
 logging_api_key=&quot;&quot;
 if [ &quot;$render_logging&quot; = &quot;true&quot; ] || [ &quot;$render_gateway&quot; = &quot;true&quot; ] || [ &quot;$render_visualization&quot; = &quot;true&quot; ]; then
   logging_env_key=&quot;configs/pic-sure-logging/${TARGET_STACK}/logging.env&quot;
+  logging_env_legacy_key=&quot;configs/pic-sure-logging/logging.env&quot;
   logging_env_copy=&quot;&quot;
 
   if [ &quot;$rotate_logging_api_key&quot; = &quot;true&quot; ]; then
@@ -563,7 +564,22 @@ if [ &quot;$render_logging&quot; = &quot;true&quot; ] || [ &quot;$render_gateway
         echo &quot;Error: the message above is from the shared S3 download helper. It was reading the rendered logging env back from s3://${stack_s3_bucket}/${logging_env_key} to recover LOGGING_API_KEY, and there is no template or repository fallback for a rendered env file, so this run stops.&quot; &gt;&amp;2
         exit &quot;$download_status&quot;
       fi
-      echo &quot;s3://${stack_s3_bucket}/${logging_env_key} is not rendered yet&quot;
+      # Before treating this as a first render, look at the pre-migration key. logging.env moved
+      # from a stack-independent path to a per-stack one, and a stack whose object has not been
+      # copied across yet would otherwise look unrendered, mint a fresh LOGGING_API_KEY and leave
+      # the frontend's bdc.env holding the old one.
+      if download_s3_template &quot;$logging_env_legacy_key&quot; &quot;$logging_env_candidate&quot;; then
+        echo &quot;WARNING: s3://${stack_s3_bucket}/${logging_env_key} does not exist yet; reading LOGGING_API_KEY back from the pre-migration s3://${stack_s3_bucket}/${logging_env_legacy_key} instead.&quot; &gt;&amp;2
+        echo &quot;WARNING: this render writes the per-stack key, so the fallback stops applying once it succeeds.&quot; &gt;&amp;2
+        logging_env_copy=&quot;$logging_env_candidate&quot;
+      else
+        download_status=$?
+        if [ &quot;$download_status&quot; -ne 1 ]; then
+          echo &quot;Error: the message above is from the shared S3 download helper, reading the pre-migration logging env at s3://${stack_s3_bucket}/${logging_env_legacy_key}. There is no further fallback for a rendered env file, so this run stops.&quot; &gt;&amp;2
+          exit &quot;$download_status&quot;
+        fi
+        echo &quot;neither s3://${stack_s3_bucket}/${logging_env_key} nor s3://${stack_s3_bucket}/${logging_env_legacy_key} is rendered yet&quot;
+      fi
     fi
   fi
 

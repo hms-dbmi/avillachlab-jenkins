@@ -178,9 +178,26 @@ picsure_db_password=$(replace_xml_special_chars &quot;${picsure_db_password}&quo
 
 # Get logging API key from logging.env in S3. The key is never echoed: it is a live credential.
 logging_env=$(mktemp &quot;${TMPDIR:-/tmp}/logging.env.XXXXXX&quot;)
-if ! aws s3 cp &quot;s3://$stack_s3_bucket/configs/pic-sure-logging/$target_stack/logging.env&quot; &quot;$logging_env&quot; &gt;/dev/null; then
+if aws s3 cp &quot;s3://$stack_s3_bucket/configs/pic-sure-logging/$target_stack/logging.env&quot; &quot;$logging_env&quot; &gt;/dev/null 2&gt;&amp;1; then
+  :
+elif aws s3 cp &quot;s3://$stack_s3_bucket/configs/pic-sure-logging/logging.env&quot; &quot;$logging_env&quot; &gt;/dev/null 2&gt;&amp;1; then
+  echo &quot;WARNING: s3://$stack_s3_bucket/configs/pic-sure-logging/$target_stack/logging.env is missing; reading the pre-migration s3://$stack_s3_bucket/configs/pic-sure-logging/logging.env instead.&quot; &gt;&amp;2
+  echo &quot;WARNING: that object has no stack segment, so every stack reads it. Copy it to the per-stack key to finish the migration.&quot; &gt;&amp;2
+else
   rm -f &quot;$logging_env&quot; 2&gt;/dev/null || true
-  echo &quot;Error: could not read s3://$stack_s3_bucket/configs/pic-sure-logging/$target_stack/logging.env.&quot; &gt;&amp;2
+  echo &quot;Error: no logging.env found for stack ${target_stack}.&quot; &gt;&amp;2
+  echo &quot;Error:   looked for s3://$stack_s3_bucket/configs/pic-sure-logging/$target_stack/logging.env&quot; &gt;&amp;2
+  echo &quot;Error:   and        s3://$stack_s3_bucket/configs/pic-sure-logging/logging.env&quot; &gt;&amp;2
+  echo &quot;Error:&quot; &gt;&amp;2
+  echo &quot;Error: LOGGING_API_KEY comes from that file and gateway.env cannot be rendered without it.&quot; &gt;&amp;2
+  echo &quot;Error: To fix it:&quot; &gt;&amp;2
+  echo &quot;Error:   1. Run &apos;Render PIC-SURE Configuration&apos; with TARGET_STACK=${target_stack} and&quot; &gt;&amp;2
+  echo &quot;Error:      RENDER_LOGGING, RENDER_GATEWAY and RENDER_VISUALIZATION all true. That mints a&quot; &gt;&amp;2
+  echo &quot;Error:      key and writes the per-stack logging.env; all three must render together so&quot; &gt;&amp;2
+  echo &quot;Error:      they agree on it.&quot; &gt;&amp;2
+  echo &quot;Error:   2. Update configs/pic-sure-frontend/${target_stack}/bdc.env with the same key via&quot; &gt;&amp;2
+  echo &quot;Error:      &apos;Upload PIC-SURE-Frontend Configuration&apos;, or the frontend&apos;s audit events are dropped.&quot; &gt;&amp;2
+  echo &quot;Error:   3. Re-run this job.&quot; &gt;&amp;2
   echo &quot;That object is hand-maintained (there is no terraform template for it); confirm it exists, then re-run this job.&quot; &gt;&amp;2
   exit 1
 fi

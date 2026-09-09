@@ -49,7 +49,24 @@ target_stack=$(get_stack &quot;$TARGET_STACK&quot;)
 echo &quot;Resolved TARGET_STACK ${TARGET_STACK} to stack ${target_stack}&quot;
 
 mkdir -p configs
-aws s3 --sse=AES256 cp &quot;s3://$stack_s3_bucket/configs/pic-sure-frontend/$target_stack/bdc.env&quot; configs/bdc.env
+if aws s3 --sse=AES256 cp &quot;s3://$stack_s3_bucket/configs/pic-sure-frontend/$target_stack/bdc.env&quot; configs/bdc.env &gt;/dev/null 2&gt;&amp;1; then
+  echo &quot;Downloaded configs/pic-sure-frontend/$target_stack/bdc.env&quot;
+elif aws s3 --sse=AES256 cp &quot;s3://$stack_s3_bucket/configs/pic-sure-frontend/bdc.env&quot; configs/bdc.env &gt;/dev/null 2&gt;&amp;1; then
+  echo &quot;WARNING: this stack has no per-stack bdc.env yet; downloaded the pre-migration configs/pic-sure-frontend/bdc.env instead.&quot; &gt;&amp;2
+  echo &quot;WARNING: uploading it back through Upload PIC-SURE-Frontend Configuration with TARGET_STACK=$TARGET_STACK completes the migration for this stack.&quot; &gt;&amp;2
+else
+  echo &quot;ERROR: no bdc.env found for stack $target_stack.&quot; &gt;&amp;2
+  echo &quot;ERROR:   looked for s3://$stack_s3_bucket/configs/pic-sure-frontend/$target_stack/bdc.env&quot; &gt;&amp;2
+  echo &quot;ERROR:   and        s3://$stack_s3_bucket/configs/pic-sure-frontend/bdc.env&quot; &gt;&amp;2
+  echo &quot;ERROR:&quot; &gt;&amp;2
+  echo &quot;ERROR: There is nothing to download. To create one:&quot; &gt;&amp;2
+  echo &quot;ERROR:   1. Run this job against a stack that does have a bdc.env, or copy .env.example&quot; &gt;&amp;2
+  echo &quot;ERROR:      from the PIC-SURE-Frontend repository.&quot; &gt;&amp;2
+  echo &quot;ERROR:   2. Set LOGGING_API_KEY to the value in this stack&apos;s rendered&quot; &gt;&amp;2
+  echo &quot;ERROR:      configs/pic-sure-logging/$target_stack/logging.env.&quot; &gt;&amp;2
+  echo &quot;ERROR:   3. Upload it with &apos;Upload PIC-SURE-Frontend Configuration&apos;, TARGET_STACK=$TARGET_STACK.&quot; &gt;&amp;2
+  exit 1
+fi
 aws s3 --sse=AES256 cp &quot;s3://$stack_s3_bucket/configs/pic-sure-frontend/configuration.json&quot; configs/configuration.json
 </command>
       <configuredLocalRules/>
