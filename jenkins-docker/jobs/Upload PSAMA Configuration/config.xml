@@ -1,7 +1,7 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
   <actions/>
-  <description></description>
+  <description>Validates a psama.env against PSAMA&apos;s required-key rules and, only if it passes, uploads it to S3. The check is fail-closed: it requires every key PSAMA cannot start or authorize without, requires each identity provider&apos;s credentials whenever that provider&apos;s IS_ENABLED flag is true, and requires ENABLE_PUBLIC_ACCESS, TOS_ENABLED, CONSENT_BASED_AUTHORIZATION_ENABLED and APPLICATION_CLIENT_SECRET_IS_BASE_64 to read exactly true or false, because Spring also reads yes, on and 1 as true. An empty STRICT_AUTHORIZATION_APPLICATIONS is rejected as well: it makes no connection strict, and an empty merged access-rule set then grants rather than denies. Failures name the offending key only, never its value. An uploaded change takes effect only after redeploying PSAMA; the container bakes its env at create time. The rules are derived from PSAMA&apos;s own application.properties rather than from a live file, so run this job once per environment with VALIDATE_ONLY set against the current live psama.env before relying on the gate; that reports what the rules would reject without changing anything.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
@@ -10,6 +10,11 @@
           <name>psama.env</name>
           <description>Upload a psama.env file that has been configured and will be used to configure the pic-sure-auth-micro-app.</description>
         </hudson.model.FileParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>VALIDATE_ONLY</name>
+          <description>Run every validation rule and report the verdict without uploading. A file that fails still fails the build; this only suppresses the upload on success, so s3://.../configs/psama/psama.env is left untouched. Use it as a pre-flight: download the live psama.env, run it through here once per environment, and fix what it names before relying on the gate for a real upload.</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -24,23 +29,157 @@
   <builders>
     <hudson.tasks.Shell>
       <command>#!/bin/bash
+set -euo pipefail
 
-set -e
-# Source folder containing the scripts
 source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
-
-
-# Iterate through the files in the folder and source them
+shopt -s nullglob
 for script_file in &quot;$source_scripts_folder&quot;*.sh; do
     chmod +x &quot;$script_file&quot;
-    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+    if [[ -f &quot;$script_file&quot; &amp;&amp; -x &quot;$script_file&quot; ]]; then
         echo &quot;sourcing $script_file&quot;
         source &quot;$script_file&quot;
     fi
 done
+shopt -u nullglob
 
-# Upload the psama.env file to S3
-aws s3 --sse=AES256 cp psama.env s3://$stack_s3_bucket/configs/psama/psama.env</command>
+: &quot;${stack_s3_bucket:?stack_s3_bucket is required}&quot;
+
+ENV_FILE=&quot;psama.env&quot;
+validate_only=&quot;${VALIDATE_ONLY:-false}&quot;
+
+if [[ ! -f &quot;$ENV_FILE&quot; || ! -s &quot;$ENV_FILE&quot; ]]; then
+    echo &quot;Error: $ENV_FILE is missing or empty; refusing to upload.&quot; &gt;&amp;2
+    exit 1
+fi
+
+definition_count() {
+    grep -c &quot;^${1}=&quot; &quot;$ENV_FILE&quot; || true
+}
+
+definition_value() {
+    sed -n &quot;s/^${1}=//p&quot; &quot;$ENV_FILE&quot;
+}
+
+value_shape() {
+    printf &apos;%s\n&apos; &quot;$1&quot; | LC_ALL=C sed -e &apos;s/[A-Za-z]/a/g&apos; -e &apos;s/[0-9]/9/g&apos; -e &apos;s/[^a9]/./g&apos;
+}
+
+# The pattern requires a non-whitespace character after the =. A key set to a single space
+# reads as configured to a plain presence test and as blank to PSAMA.
+require_single_non_empty() {
+    local key=$1
+    if [[ &quot;$(definition_count &quot;$key&quot;)&quot; -ne 1 ]] || ! grep -q &quot;^${key}=[[:space:]]*[^[:space:]]&quot; &quot;$ENV_FILE&quot;; then
+        return 1
+    fi
+    return 0
+}
+
+require_canonical_boolean() {
+    local key=$1
+    local count
+    count=$(definition_count &quot;$key&quot;)
+    if [[ &quot;$count&quot; -gt 1 ]]; then
+        echo &quot;Error: $ENV_FILE defines $key more than once; refusing to upload.&quot; &gt;&amp;2
+        exit 1
+    fi
+    if [[ &quot;$count&quot; -eq 0 ]]; then
+        return 0
+    fi
+    local value
+    value=$(definition_value &quot;$key&quot;)
+    if [[ &quot;$value&quot; != &quot;true&quot; &amp;&amp; &quot;$value&quot; != &quot;false&quot; ]]; then
+        echo &quot;Error: $key must be exactly true or false; the uploaded value has length ${#value} and shape $(value_shape &quot;$value&quot;). Refusing to upload.&quot; &gt;&amp;2
+        echo &quot;Spring also reads yes, on and 1 as true, so a non-canonical value silently flips this flag.&quot; &gt;&amp;2
+        exit 1
+    fi
+    return 0
+}
+
+provider_is_enabled() {
+    [[ &quot;$(definition_value &quot;$1&quot;)&quot; == &quot;true&quot; ]]
+}
+
+required_keys=(
+    APPLICATION_CLIENT_SECRET
+    APPLICATION_CLIENT_SECRET_IS_BASE_64
+    DATASOURCE_URL
+    DATASOURCE_USERNAME
+    STRICT_AUTHORIZATION_APPLICATIONS
+    ENABLE_PUBLIC_ACCESS
+    CONSENT_BASED_AUTHORIZATION_ENABLED
+    TOS_ENABLED
+    USER_ID_CLAIM
+    TOKEN_INCLUSION_ROLES
+    TOKEN_EXPIRATION_TIME
+    MAX_SESSION_TIME
+    LONG_TERM_TOKEN_EXPIRATION_TIME
+    SERVER_PORT
+)
+for key in &quot;${required_keys[@]}&quot;; do
+    if ! require_single_non_empty &quot;$key&quot;; then
+        echo &quot;Error: $ENV_FILE must define exactly one non-empty $key value; refusing to upload.&quot; &gt;&amp;2
+        if [[ &quot;$key&quot; == &quot;STRICT_AUTHORIZATION_APPLICATIONS&quot; ]]; then
+            echo &quot;An empty value makes no connection strict, and an empty merged access-rule set then grants rather than denies.&quot; &gt;&amp;2
+        fi
+        exit 1
+    fi
+done
+
+for key in ENABLE_PUBLIC_ACCESS TOS_ENABLED CONSENT_BASED_AUTHORIZATION_ENABLED APPLICATION_CLIENT_SECRET_IS_BASE_64; do
+    require_canonical_boolean &quot;$key&quot;
+done
+
+# A non-canonical flag here would enable a provider in Spring while this check skipped that
+# provider&apos;s keys. An absent flag stays legal and means the provider is off.
+for key in OPEN_IDP_PROVIDER_IS_ENABLED A4_OKTA_IDP_PROVIDER_IS_ENABLED FENCE_IDP_PROVIDER_IS_ENABLED AUTH0_IDP_PROVIDER_IS_ENABLED RAS_OKTA_IDP_PROVIDER_IS_ENABLED; do
+    require_canonical_boolean &quot;$key&quot;
+done
+
+# An identity provider&apos;s credentials are required only while its flag is true. Okta, Fence
+# and RAS issue those secrets, so this check can only ever verify presence.
+idp_requirements=(
+    &quot;A4_OKTA_IDP_PROVIDER_IS_ENABLED A4_OKTA_CLIENT_ID A4_OKTA_CLIENT_SECRET A4_OKTA_CONNECTION_ID A4_OKTA_IDP_PROVIDER_URI&quot;
+    &quot;FENCE_IDP_PROVIDER_IS_ENABLED FENCE_CLIENT_ID FENCE_CLIENT_SECRET FENCE_IDP_PROVIDER_URI&quot;
+    &quot;RAS_OKTA_IDP_PROVIDER_IS_ENABLED RAS_OKTA_CLIENT_ID RAS_OKTA_CLIENT_SECRET RAS_OKTA_CONNECTION_ID RAS_OKTA_IDP_PROVIDER_URI RAS_IDP_URI RAS_PASSPORT_ISSUER&quot;
+    &quot;AUTH0_IDP_PROVIDER_IS_ENABLED AUTH0_HOST&quot;
+)
+for requirement in &quot;${idp_requirements[@]}&quot;; do
+    read -r provider_flag dependent_keys &lt;&lt;&lt; &quot;$requirement&quot;
+    if ! provider_is_enabled &quot;$provider_flag&quot;; then
+        continue
+    fi
+    for key in $dependent_keys; do
+        if ! require_single_non_empty &quot;$key&quot;; then
+            echo &quot;Error: $provider_flag is true, so $ENV_FILE must define exactly one non-empty $key value; refusing to upload.&quot; &gt;&amp;2
+            exit 1
+        fi
+    done
+done
+
+# Notification mail has no enable flag, so the pair itself is the switch.
+mail_keys_set=0
+for key in EMAIL_ADDRESS EMAIL_PASSWORD; do
+    if [[ &quot;$(definition_count &quot;$key&quot;)&quot; -gt 1 ]]; then
+        echo &quot;Error: $ENV_FILE defines $key more than once; refusing to upload.&quot; &gt;&amp;2
+        exit 1
+    fi
+    if grep -q &quot;^${key}=[[:space:]]*[^[:space:]]&quot; &quot;$ENV_FILE&quot;; then
+        mail_keys_set=$((mail_keys_set + 1))
+    fi
+done
+if [[ &quot;$mail_keys_set&quot; -eq 1 ]]; then
+    echo &quot;Error: EMAIL_ADDRESS and EMAIL_PASSWORD are a pair; set both to enable notification mail or leave both empty; refusing to upload.&quot; &gt;&amp;2
+    exit 1
+fi
+
+if [[ &quot;$validate_only&quot; == &quot;true&quot; ]]; then
+    echo &quot;$ENV_FILE passed every PSAMA required-key rule.&quot;
+    echo &quot;VALIDATE_ONLY is true, so nothing was uploaded and s3://$stack_s3_bucket/configs/psama/psama.env is unchanged.&quot;
+    exit 0
+fi
+
+echo &quot;Validated $ENV_FILE against the PSAMA required-key rules; uploading.&quot;
+aws s3 --sse=AES256 cp &quot;$ENV_FILE&quot; &quot;s3://$stack_s3_bucket/configs/psama/psama.env&quot;</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>

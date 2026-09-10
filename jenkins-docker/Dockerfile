@@ -70,6 +70,11 @@ RUN mv jdk-21.0.1 /opt/java/
 RUN wget -c $JENKINS_DOCKER_TERRAFORM_DISTRO -O /opt/terraform.zip && \
     unzip /opt/terraform.zip -d /usr/local/bin/ && rm -f /opt/terraform.zip
 
+RUN wget -c https://releases.hashicorp.com/terraform/1.5.7/terraform_1.5.7_linux_amd64.zip -O /opt/terraform15.zip && \
+    unzip /opt/terraform15.zip -d /opt/tf15 && \
+    mv /opt/tf15/terraform /usr/local/bin/terraform15 && \
+    rm -rf /opt/terraform15.zip /opt/tf15
+
 # Cleanup
 RUN apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /var/cache/apt/*
 

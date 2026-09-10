@@ -1,0 +1,181 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job@1540.v295eccc9778f">
+  <actions/>
+  <description>Mints new values for the secrets the PIC-SURE services share on one stack, then redeploys every service that carries one. Rotating and redeploying are a single operation; there is no option to render without deploying.
+
+Pick what to rotate. At least one is required:
+  ROTATE_STACK_SECRETS - PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT, shared by gateway, operations and query.
+  ROTATE_LOGGING_API_KEY - LOGGING_API_KEY, shared by gateway, visualization and pic-sure-logging.
+
+The gateway carries secrets from both sets, so it always renders and always redeploys. The other services are pulled in only by the flag that needs them, and a flag left false makes the render read those values back out of this stack&apos;s own env files and preserve them unchanged. Rotating both in one run is the usual case after an exposure, because a leaked gateway.env carries all four, and it restarts the gateway once instead of twice.
+
+Only the selected stack is touched. Every one of these values lives in a per-stack object and no request crosses between stacks, so the other stack keeps its own values and is never rendered, redeployed or read.
+
+Why the redeploy is not optional: containers bake their env at create time. A rotated QUERY_SERVICE_INTERNAL_TOKEN that no container has picked up leaves InternalTokenFilter rejecting the stale value with 403, which the gateway flattens into an opaque 500 on query downloads while every other endpoint keeps working. A rotated LOGGING_API_KEY leaves pic-sure-logging answering 401 while the logging client drops the audit event.
+
+With ROTATE_LOGGING_API_KEY, expect a short window between the Wildfly deploy and the logging deploy where the gateway and visualization already present the new key and pic-sure-logging still checks the old one. One key covers all three services, so the two sides cannot cut over at the same instant; the window is a cost of the single-key design rather than a defect.
+
+ROTATE_LOGGING_API_KEY also leaves a manual tail, and the job says so when it finishes. The frontend reads LOGGING_API_KEY from configs/pic-sure-frontend/&lt;target_stack&gt;/bdc.env, which is uploaded by hand and not rendered here. Download this stack&apos;s rendered logging.env to read the new key, download the same stack&apos;s bdc.env through Download PIC-SURE-Frontend Configuration, set LOGGING_API_KEY to match, upload it and redeploy the frontend. Until then the frontend&apos;s audit events are dropped while gateway and visualization audit continues normally. The key is never printed to this job&apos;s console.
+
+ROTATE_STACK_SECRETS changes AGGREGATE_OBFUSCATION_SALT, so this stack&apos;s reported aggregate counts shift for queries run before and after. The two stacks already carry different salts and report slightly different counts for the same query; that is a property of per-stack salts rather than a fault.
+
+TOKEN_INTROSPECTION_TOKEN is not rotated here. PSAMA holds it in the application table and validates every stack&apos;s gateway against that single row, so unlike everything above it is genuinely fleet-wide. It is minted by Update PIC-SURE Token Introspection Token.</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.ChoiceParameterDefinition>
+          <name>TARGET_STACK</name>
+          <description>The stack to rotate. Based on selection we determine if is a or b stack. No other stack is touched.</description>
+          <choices>
+            <string>staging</string>
+            <string>live</string>
+          </choices>
+        </hudson.model.ChoiceParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>ROTATE_STACK_SECRETS</name>
+          <description>Mint new PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT values. Pulls in operations and query alongside the gateway, and redeploys all three.</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>ROTATE_LOGGING_API_KEY</name>
+          <description>Mint a new LOGGING_API_KEY. Pulls in visualization and pic-sure-logging alongside the gateway, and redeploys all three. Leaves a manual step for this stack&apos;s frontend bdc.env; see the job description.</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>INFRASTRUCTURE_GIT_HASH</name>
+          <description>Infrastructure repository revision to render the rotated configuration from. Leave empty to resolve it from build-spec.json.</description>
+          <defaultValue></defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>S3_BUCKET_NAME</name>
+          <defaultValue>${stack_s3_bucket}</defaultValue>
+          <trim>false</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@4183.v94b_6fd39da_c1">
+    <script>import groovy.json.JsonSlurper;
+
+def targetStack
+def infrastructureGitHash
+
+pipeline {
+    agent any
+
+    environment {
+        SOURCE_SCRIPTS_FOLDER = &quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+    }
+
+    stages {
+        stage(&apos;Validate Selection&apos;) {
+            steps {
+                script {
+                    if (!params.ROTATE_STACK_SECRETS &amp;&amp; !params.ROTATE_LOGGING_API_KEY) {
+                        error(&quot;Neither ROTATE_STACK_SECRETS nor ROTATE_LOGGING_API_KEY is true, so this run would mint nothing and redeploy the gateway for no reason. Set at least one.&quot;)
+                    }
+                }
+            }
+        }
+
+        stage(&apos;Retrieve Stack&apos;) {
+            steps {
+                script {
+                    targetStack = sh(script: &quot;&quot;&quot;
+                    bash -c &apos;
+                    set +x
+
+                    if [ ! -d &quot;$SOURCE_SCRIPTS_FOLDER&quot; ]; then
+                        echo &quot;Error: Source folder does not exist: $SOURCE_SCRIPTS_FOLDER&quot;
+                        exit 1
+                    fi
+
+                    for script_file in &quot;$SOURCE_SCRIPTS_FOLDER&quot;*.sh; do
+                        chmod +x &quot;\$script_file&quot;
+                        if [ -f &quot;\$script_file&quot; ] &amp;&amp; [ -x &quot;\$script_file&quot; ]; then
+                            . &quot;\$script_file&quot;
+                        fi
+                    done
+
+                    get_stack \&quot;${TARGET_STACK}\&quot;
+                    &apos;
+                    &quot;&quot;&quot;, returnStdout: true).trim()
+
+                    println &quot;TARGET_STACK: $targetStack&quot;
+                }
+            }
+        }
+
+        stage(&apos;Resolve Infrastructure Git Hash&apos;) {
+            steps {
+                script {
+                    if (params.INFRASTRUCTURE_GIT_HASH?.trim()) {
+                        infrastructureGitHash = params.INFRASTRUCTURE_GIT_HASH.trim()
+                        echo &quot;Using provided INFRASTRUCTURE_GIT_HASH: ${infrastructureGitHash}&quot;
+                    } else {
+                        def result = build job: &apos;Retrieve Build Spec&apos;
+                        copyArtifacts filter: &apos;build-spec.json&apos;, projectName: &apos;Retrieve Build Spec&apos;, selector: specific(&quot;&quot; + result.number)
+                        def buildSpec = new JsonSlurper().parse(new File(&quot;${env.WORKSPACE}/build-spec.json&quot;))
+                        infrastructureGitHash = buildSpec.infrastructure_git_hash
+                        echo &quot;Resolved INFRASTRUCTURE_GIT_HASH from release control: ${infrastructureGitHash}&quot;
+                    }
+                }
+            }
+        }
+
+        stage(&apos;Rotate and Redeploy&apos;) {
+            steps {
+                script {
+                    // The gateway carries secrets from both sets, so it is in every selection.
+                    def rotateStack = params.ROTATE_STACK_SECRETS
+                    def rotateLogging = params.ROTATE_LOGGING_API_KEY
+
+                    echo &quot;Rotating on stack ${targetStack}: stack secrets=${rotateStack}, logging api key=${rotateLogging}&quot;
+
+                    lock(&quot;stack-${targetStack}&quot;) {
+                        build job: &apos;Render PIC-SURE Configuration&apos;, parameters: [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: params.S3_BUCKET_NAME],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;INFRASTRUCTURE_GIT_HASH&apos;, value: infrastructureGitHash],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_GATEWAY&apos;, value: true],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPERATIONS&apos;, value: rotateStack],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_QUERY&apos;, value: rotateStack],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_AUTH_HPDS&apos;, value: false],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPEN_HPDS&apos;, value: false],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_VISUALIZATION&apos;, value: rotateLogging],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_LOGGING&apos;, value: rotateLogging],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_DICTIONARY&apos;, value: false],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;ROTATE_STACK_SECRETS&apos;, value: rotateStack],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;ROTATE_LOGGING_API_KEY&apos;, value: rotateLogging]
+                        ]
+
+                        build job: &apos;PIC-SURE Wildfly Stack Deploy&apos;, parameters: [
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: params.S3_BUCKET_NAME],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_GATEWAY&apos;, value: true],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_OPERATIONS&apos;, value: rotateStack],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_QUERY&apos;, value: rotateStack],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_VISUALIZATION&apos;, value: rotateLogging]
+                        ]
+
+                        if (rotateLogging) {
+                            build job: &apos;PIC-SURE Logging Deploy&apos;, parameters: [
+                                [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: params.S3_BUCKET_NAME],
+                                [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
+                            ]
+
+                            echo &quot;LOGGING_API_KEY was rotated. configs/pic-sure-frontend/${targetStack}/bdc.env still holds the old key: update it and redeploy the frontend, or this stack&apos;s frontend audit events are dropped.&quot;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>

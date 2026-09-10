@@ -62,7 +62,31 @@ set -euo pipefail
 GIT_BRANCH_SHORT=`echo ${GIT_BRANCH} | cut -d &quot;/&quot; -f 2` 
 GIT_COMMIT_SHORT=`echo ${GIT_COMMIT} | cut -c1-7`
 
-aws s3api get-object --bucket $stack_s3_bucket --key &quot;configs/pic-sure-frontend/bdc.env&quot; .env
+# bdc.env moved from a stack-independent key to a per-stack one. Accept the old location while
+# the copy is outstanding, and stop with instructions when neither exists: a frontend image built
+# without it has no LOGGING_API_KEY and silently drops every audit event.
+if aws s3api get-object --bucket $stack_s3_bucket --key &quot;configs/pic-sure-frontend/$TARGET_STACK/bdc.env&quot; .env &gt;/dev/null 2&gt;&amp;1; then
+  echo &quot;Using configs/pic-sure-frontend/$TARGET_STACK/bdc.env&quot;
+elif aws s3api get-object --bucket $stack_s3_bucket --key &quot;configs/pic-sure-frontend/bdc.env&quot; .env &gt;/dev/null 2&gt;&amp;1; then
+  echo &quot;WARNING: configs/pic-sure-frontend/$TARGET_STACK/bdc.env is missing; using the pre-migration configs/pic-sure-frontend/bdc.env instead.&quot; &gt;&amp;2
+  echo &quot;WARNING: that object has no stack segment, so every stack builds from it. Upload a per-stack copy to finish the migration.&quot; &gt;&amp;2
+else
+  echo &quot;ERROR: no bdc.env found for stack $TARGET_STACK.&quot; &gt;&amp;2
+  echo &quot;ERROR:   looked for s3://$stack_s3_bucket/configs/pic-sure-frontend/$TARGET_STACK/bdc.env&quot; &gt;&amp;2
+  echo &quot;ERROR:   and        s3://$stack_s3_bucket/configs/pic-sure-frontend/bdc.env&quot; &gt;&amp;2
+  echo &quot;ERROR:&quot; &gt;&amp;2
+  echo &quot;ERROR: The image bakes this file in as .env, so building without it ships a frontend with&quot; &gt;&amp;2
+  echo &quot;ERROR: no LOGGING_API_KEY. This build stops here instead.&quot; &gt;&amp;2
+  echo &quot;ERROR: To fix it:&quot; &gt;&amp;2
+  echo &quot;ERROR:   1. Get a starting file: run &apos;Download PIC-SURE-Frontend Configuration&apos; against a&quot; &gt;&amp;2
+  echo &quot;ERROR:      stack that has one, or copy .env.example from the PIC-SURE-Frontend repository.&quot; &gt;&amp;2
+  echo &quot;ERROR:   2. Set LOGGING_API_KEY to the value in this stack&apos;s rendered&quot; &gt;&amp;2
+  echo &quot;ERROR:      configs/pic-sure-logging/$TARGET_STACK/logging.env. A mismatch is not fatal, but&quot; &gt;&amp;2
+  echo &quot;ERROR:      pic-sure-logging answers the frontend&apos;s audit events with 401 and they are dropped.&quot; &gt;&amp;2
+  echo &quot;ERROR:   3. Upload it with &apos;Upload PIC-SURE-Frontend Configuration&apos;, TARGET_STACK=$TARGET_STACK.&quot; &gt;&amp;2
+  echo &quot;ERROR:   4. Re-run this build.&quot; &gt;&amp;2
+  exit 1
+fi
 aws s3api get-object --bucket $stack_s3_bucket --key &quot;configs/pic-sure-frontend/configuration.json&quot; configuration.json
 
 cp -f configuration.json ./src/lib/assets/configuration.json
