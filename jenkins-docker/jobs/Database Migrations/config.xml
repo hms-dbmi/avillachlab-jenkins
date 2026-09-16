@@ -19,6 +19,11 @@
           <name>DROP_PICSURE_TABLES</name>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>FLYWAY_REPAIR</name>
+          <description>Run flyway repair on the auth and picsure schemas before migrate. Repair realigns flyway_schema_history with the checked-out migration files: it marks applied versions whose file was removed as deleted and rewrites the stored checksum of applied versions whose file changed. It never alters schema or data. Use it once on an environment whose history no longer validates against the release; leave it off otherwise so genuine drift still fails the run.</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>COPY_APPLICATION_TOKEN_FROM_DB</name>
           <description>The value must be the name of an auth database. For example auth2. This will copy the existing token from the auth2 database into the auth database. Additionally, the token will be compared to the stack&apos;s gateway.env in S3. If it is different it will replace the token and redeploy the gateway container. It will do this for both stacks.</description>

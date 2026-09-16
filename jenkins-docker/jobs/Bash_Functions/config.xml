@@ -518,23 +518,35 @@ create_flyway_conf() {
 }
 
 
-run_flyway_migration() {
+run_flyway_command() {
   local sql_path=$1
   local flyway_conf_path=$2
+  local flyway_command=$3
 
   docker run --rm --network=host \
     -v &quot;$(pwd)/${sql_path}:/flyway/sql:Z&quot; \
     -v &quot;$(pwd)/${flyway_conf_path}:/flyway/conf/flyway.conf:Z&quot; \
-    flyway/flyway:10.8 -configFiles=/flyway/conf/flyway.conf -X migrate
+    flyway/flyway:10.8 -configFiles=/flyway/conf/flyway.conf -X &quot;$flyway_command&quot;
 
   # Capture the exit status of the docker command
   local status=$?
 
   # Check if the status is not zero (which indicates an error)
   if [ $status -ne 0 ]; then
-    echo &quot;Error: Flyway migration failed with status $status&quot;
+    echo &quot;Error: Flyway $flyway_command failed with status $status&quot;
     exit $status  # Exit the script with the same status, causing the Jenkins job to fail
   fi
+}
+
+run_flyway_migration() {
+  local sql_path=$1
+  local flyway_conf_path=$2
+
+  if [ &quot;$FLYWAY_REPAIR&quot; = true ]; then
+    run_flyway_command &quot;$sql_path&quot; &quot;$flyway_conf_path&quot; repair
+  fi
+
+  run_flyway_command &quot;$sql_path&quot; &quot;$flyway_conf_path&quot; migrate
 }
 EOF</command>
       <configuredLocalRules/>
