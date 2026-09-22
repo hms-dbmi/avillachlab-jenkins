@@ -59,7 +59,7 @@
       <command>#!/bin/bash
 set -e
 
-datasets_s3_role="${datasets_s3_role:-arn:aws:iam::515157839325:role/curated-datasets-s3-role}"
+curated_datasets_s3_role="arn:aws:iam::515157839325:role/curated-datasets-s3-role"
 
 # Source folder containing the scripts
 source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
