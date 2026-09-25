@@ -13,6 +13,8 @@ LOGGING_API_KEY has a fourth consumer this job does not render. The frontend rea
 
 TARGET_STACK means what it says for seven of the eight objects. picsure-dictionary.env is the exception: its key carries no stack segment, so every stack's deploy pulls that one file and rendering the dictionary reaches all of them at once.
 
+operations.env carries no database password. It names the AWS Secrets Manager MySQL driver and passes database_app_user_secret_name as the datasource username, so the operations service reads the rotating app-user password itself when it connects. The host is database_host_address, the same value PSAMA is built with.
+
 The dictionary's DATASOURCE_URL and DATASOURCE_USERNAME are never minted. Each is read back out of the rendered picsure-dictionary.env, falls back to the controller global the dictionary image was built from when the object does not carry it (database_psql_host_address and database_psql_app_user_secret_name), and stops the run only when both sources are empty.
 
 One thing to watch in the console. Terraform prints the rendered picsure-dictionary.env in full in the auto-approved plan: its inputs are an RDS hostname and a Secrets Manager secret id rather than credentials, so nothing feeding it is marked sensitive. Every env file that does carry a secret is masked instead. That is new exposure for a file that used to be hand-uploaded, so treat a dictionary render's console output accordingly.</description>
@@ -695,6 +697,7 @@ fi
 
 if [ &quot;$render_operations&quot; = &quot;true&quot; ]; then
   export TF_VAR_app_user_secret_name=&quot;$database_app_user_secret_name&quot;
+  export TF_VAR_picsure_db_host=&quot;$database_host_address&quot;
 fi
 
 if [ &quot;$render_query&quot; = &quot;true&quot; ]; then
