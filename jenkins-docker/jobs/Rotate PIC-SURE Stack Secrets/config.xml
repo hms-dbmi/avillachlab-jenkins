@@ -6,8 +6,11 @@
 Pick what to rotate. At least one is required:
   ROTATE_STACK_SECRETS - PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT, shared by gateway, operations and query.
   ROTATE_LOGGING_API_KEY - LOGGING_API_KEY, shared by gateway, visualization and pic-sure-logging.
+  ROTATE_MCP_SERVICE_TOKEN - MCP_SERVICE_TOKEN, shared by gateway and pic-sure-mcp.
 
-The gateway carries secrets from both sets, so it always renders and always redeploys. The other services are pulled in only by the flag that needs them, and a flag left false makes the render read those values back out of this stack&apos;s own env files and preserve them unchanged. Rotating both in one run is the usual case after an exposure, because a leaked gateway.env carries all four, and it restarts the gateway once instead of twice.
+ROTATE_MCP_SERVICE_TOKEN keeps a previous value: the render writes the old token into MCP_SERVICE_TOKEN_PREVIOUS in the gateway env, so the gateway accepts both the new and the old token while pic-sure-mcp is redeployed and no request is rejected during the cutover.
+
+The gateway carries secrets from every set, so it always renders and always redeploys. The other services are pulled in only by the flag that needs them, and a flag left false makes the render read those values back out of this stack&apos;s own env files and preserve them unchanged. Rotating both in one run is the usual case after an exposure, because a leaked gateway.env carries every one of these values, and it restarts the gateway once instead of twice.
 
 Only the selected stack is touched. Every one of these values lives in a per-stack object and no request crosses between stacks, so the other stack keeps its own values and is never rendered, redeployed or read.
 
@@ -42,6 +45,11 @@ TOKEN_INTROSPECTION_TOKEN is not rotated here. PSAMA holds it in the application
           <description>Mint a new LOGGING_API_KEY. Pulls in visualization and pic-sure-logging alongside the gateway, and redeploys all three. Leaves a manual step for this stack&apos;s frontend bdc.env; see the job description.</description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>ROTATE_MCP_SERVICE_TOKEN</name>
+          <description>Mint a new MCP_SERVICE_TOKEN and keep the old one as MCP_SERVICE_TOKEN_PREVIOUS in the gateway env. Pulls in pic-sure-mcp alongside the gateway, and redeploys both.</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>INFRASTRUCTURE_GIT_HASH</name>
           <description>Infrastructure repository revision to render the rotated configuration from. Leave empty to resolve it from build-spec.json.</description>
@@ -73,8 +81,8 @@ pipeline {
         stage(&apos;Validate Selection&apos;) {
             steps {
                 script {
-                    if (!params.ROTATE_STACK_SECRETS &amp;&amp; !params.ROTATE_LOGGING_API_KEY) {
-                        error(&quot;Neither ROTATE_STACK_SECRETS nor ROTATE_LOGGING_API_KEY is true, so this run would mint nothing and redeploy the gateway for no reason. Set at least one.&quot;)
+                    if (!params.ROTATE_STACK_SECRETS &amp;&amp; !params.ROTATE_LOGGING_API_KEY &amp;&amp; !params.ROTATE_MCP_SERVICE_TOKEN) {
+                        error(&quot;None of ROTATE_STACK_SECRETS, ROTATE_LOGGING_API_KEY and ROTATE_MCP_SERVICE_TOKEN is true, so this run would mint nothing and redeploy the gateway for no reason. Set at least one.&quot;)
                     }
                 }
             }
@@ -131,8 +139,9 @@ pipeline {
                     // The gateway carries secrets from both sets, so it is in every selection.
                     def rotateStack = params.ROTATE_STACK_SECRETS
                     def rotateLogging = params.ROTATE_LOGGING_API_KEY
+                    def rotateMcp = params.ROTATE_MCP_SERVICE_TOKEN
 
-                    echo &quot;Rotating on stack ${targetStack}: stack secrets=${rotateStack}, logging api key=${rotateLogging}&quot;
+                    echo &quot;Rotating on stack ${targetStack}: stack secrets=${rotateStack}, logging api key=${rotateLogging}, mcp service token=${rotateMcp}&quot;
 
                     lock(&quot;stack-${targetStack}&quot;) {
                         build job: &apos;Render PIC-SURE Configuration&apos;, parameters: [
@@ -142,13 +151,15 @@ pipeline {
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_GATEWAY&apos;, value: true],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPERATIONS&apos;, value: rotateStack],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_QUERY&apos;, value: rotateStack],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_MCP&apos;, value: rotateMcp],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_AUTH_HPDS&apos;, value: false],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPEN_HPDS&apos;, value: false],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_VISUALIZATION&apos;, value: rotateLogging],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_LOGGING&apos;, value: rotateLogging],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_DICTIONARY&apos;, value: false],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;ROTATE_STACK_SECRETS&apos;, value: rotateStack],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;ROTATE_LOGGING_API_KEY&apos;, value: rotateLogging]
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;ROTATE_LOGGING_API_KEY&apos;, value: rotateLogging],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;ROTATE_MCP_SERVICE_TOKEN&apos;, value: rotateMcp]
                         ]
 
                         build job: &apos;PIC-SURE Wildfly Stack Deploy&apos;, parameters: [
@@ -157,6 +168,7 @@ pipeline {
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_GATEWAY&apos;, value: true],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_OPERATIONS&apos;, value: rotateStack],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_QUERY&apos;, value: rotateStack],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_MCP&apos;, value: rotateMcp],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_VISUALIZATION&apos;, value: rotateLogging]
                         ]
 

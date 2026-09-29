@@ -396,6 +396,7 @@ else
   aws s3 --sse=AES256 cp scripts/deploy/deploy-gateway.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-gateway.sh
   aws s3 --sse=AES256 cp scripts/deploy/deploy-operations.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-operations.sh
   aws s3 --sse=AES256 cp scripts/deploy/deploy-query.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-query.sh
+  aws s3 --sse=AES256 cp scripts/deploy/deploy-mcp.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-mcp.sh
   aws s3 --sse=AES256 cp scripts/deploy/deploy-psama.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-psama.sh
   aws s3 --sse=AES256 cp scripts/deploy/deploy-dictionary.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-dictionary.sh
   aws s3 --sse=AES256 cp scripts/deploy/deploy-wildfly-stack.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-wildfly-stack.sh

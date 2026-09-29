@@ -55,6 +55,7 @@
         <string>PIC-SURE Maven Build</string>
         <string>PIC-SURE Gateway Image</string>
         <string>PIC-SURE HPDS Query Service Image</string>
+        <string>PIC-SURE MCP Image</string>
         <string>PIC-SURE Operations Service Image</string>
       </jobNames>
       <jobFilters/>
@@ -138,6 +139,7 @@
         <string>PIC-SURE Gateway Deploy</string>
         <string>PIC-SURE Operations Service Deploy</string>
         <string>PIC-SURE HPDS Query Service Deploy</string>
+        <string>PIC-SURE MCP Deploy</string>
         <string>PIC-SURE HPDS Image</string>
         <string>PIC-SURE Frontend Build</string>
         <string>PIC-SURE Visualization Image</string>
@@ -214,6 +216,7 @@
         <string>PIC-SURE Gateway Build and Deploy</string>
         <string>PIC-SURE Operations Service Build and Deploy</string>
         <string>PIC-SURE HPDS Query Service Build and Deploy</string>
+        <string>PIC-SURE MCP Build and Deploy</string>
         <string>PIC-SURE Visualization Build and Deploy</string>
         <string>Render PIC-SURE Configuration</string>
         <string>Rotate PIC-SURE Stack Secrets</string>

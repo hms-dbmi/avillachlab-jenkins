@@ -110,6 +110,7 @@ pipeline {
                             branches[&apos;gateway&apos;]       = { build job: &apos;PIC-SURE Gateway Image&apos;, parameters: imageParams }
                             branches[&apos;operations&apos;]    = { build job: &apos;PIC-SURE Operations Service Image&apos;, parameters: imageParams }
                             branches[&apos;query&apos;]         = { build job: &apos;PIC-SURE HPDS Query Service Image&apos;, parameters: imageParams }
+                            branches[&apos;mcp&apos;]           = { build job: &apos;PIC-SURE MCP Image&apos;, parameters: imageParams }
                             branches[&apos;hpds&apos;]          = { build job: &apos;PIC-SURE HPDS Image&apos;, parameters: imageParams }
                             branches[&apos;psama&apos;]         = { build job: &apos;PIC-SURE Auth Micro App Image&apos;, parameters: imageParams }
                             branches[&apos;logging&apos;]       = { build job: &apos;PIC-SURE Logging Image&apos;, parameters: imageParams }
