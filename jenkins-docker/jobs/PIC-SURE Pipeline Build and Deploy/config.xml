@@ -42,7 +42,7 @@
         </hudson.model.StringParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
           <name>INCLUDE_PIC_SURE_API</name>
-          <description>Include PIC-SURE API (gateway, operations, query) in the build and deploy process</description>
+          <description>Include PIC-SURE API (gateway, operations, query, mcp) in the build and deploy process</description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
@@ -225,6 +225,7 @@ pipeline {
               branches[&apos;gateway&apos;]    = { build job: &apos;PIC-SURE Gateway Image&apos;, parameters: imageParams }
               branches[&apos;operations&apos;] = { build job: &apos;PIC-SURE Operations Service Image&apos;, parameters: imageParams }
               branches[&apos;query&apos;]      = { build job: &apos;PIC-SURE HPDS Query Service Image&apos;, parameters: imageParams }
+              branches[&apos;mcp&apos;]        = { build job: &apos;PIC-SURE MCP Image&apos;, parameters: imageParams }
             }
             if (params.INCLUDE_PIC_SURE_HPDS_AUTH || params.INCLUDE_PIC_SURE_HPDS_OPEN) { branches[&apos;hpds&apos;] = { build job: &apos;PIC-SURE HPDS Image&apos;, parameters: imageParams } }
             if (params.INCLUDE_PIC_SURE_AUTH_MICRO_APP) { branches[&apos;psama&apos;] = { build job: &apos;PIC-SURE Auth Micro App Image&apos;, parameters: imageParams } }
@@ -241,6 +242,7 @@ pipeline {
                 [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_GATEWAY&apos;, value: false],
                 [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPERATIONS&apos;, value: false],
                 [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_QUERY&apos;, value: false],
+                [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_MCP&apos;, value: false],
                 [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_AUTH_HPDS&apos;, value: false],
                 [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPEN_HPDS&apos;, value: false],
                 [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_VISUALIZATION&apos;, value: true],
@@ -259,6 +261,7 @@ pipeline {
                     [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_GATEWAY&apos;, value: params.INCLUDE_PIC_SURE_API],
                     [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_OPERATIONS&apos;, value: params.INCLUDE_PIC_SURE_API],
                     [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_QUERY&apos;, value: params.INCLUDE_PIC_SURE_API],
+                    [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_MCP&apos;, value: params.INCLUDE_PIC_SURE_API],
                     [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_PSAMA&apos;, value: params.INCLUDE_PIC_SURE_AUTH_MICRO_APP],
                     [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_DICTIONARY&apos;, value: params.INCLUDE_PIC_SURE_DICTIONARY],
                     [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_VISUALIZATION&apos;, value: params.INCLUDE_PIC_SURE_VISUALIZATION]
