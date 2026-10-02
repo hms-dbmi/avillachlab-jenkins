@@ -8,13 +8,12 @@
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
           <name>EMAIL</name>
-          <description>Enter the user&apos;s email or username. The user must exist in the Database.</description>
-          <defaultValue>george_colon@hms.harvard.edu</defaultValue>
-          <trim>false</trim>
+          <description>The user&apos;s email or username, exactly as the identity provider reports it at login (matching is case-sensitive). The user is created if they do not exist yet, and is granted the &apos;PIC-SURE Top Admin&apos; and &apos;Admin&apos; roles either way.</description>
+          <trim>true</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>CONNECTION_ID_LOCAL</name>
-          <description>connection id from the connection table for the user&apos;s connection. </description>
+          <description>The id (not the label) of the connection the user logs in through, from the connection table. Leave blank to use the global connection_id.</description>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
@@ -32,8 +31,8 @@
       <command>#!/bin/bash
 # Check if the database root user has been set
 if [ -z &quot;$database_admin_user_secret_name&quot; ]; then
-	echo &quot;The &apos;database_root_user_secret_name&apos; must be set in the global configuration&quot;
-    exit;
+	echo &quot;The &apos;database_admin_user_secret_name&apos; must be set in the global configuration&quot;
+    exit 1
 fi
 
 # Source folder containing the scripts
@@ -51,10 +50,17 @@ done
 
 assume_role
 
-CONNECTION_ID=&quot;${connection_id:-$CONNECTION_ID_LOCAL}&quot;
+# The job parameter wins over the global connection_id, which is only the connection V4 inserted
+# and may not be the one this user logs in through.
+CONNECTION_ID=&quot;${CONNECTION_ID_LOCAL:-$connection_id}&quot;
 
 echo &quot;Connection ID: $CONNECTION_ID&quot;
 echo &quot;Email: $EMAIL&quot;
+
+if [ -z &quot;$EMAIL&quot; ] || [ -z &quot;$CONNECTION_ID&quot; ]; then
+    echo &quot;EMAIL and a connection id (CONNECTION_ID_LOCAL or the global connection_id) are required&quot;
+    exit 1
+fi
 
 # Getting a secret value by secret name
 dbuser_pass=$(fetch_secret &quot;$database_admin_user_secret_name&quot;)
@@ -67,8 +73,10 @@ dbuser_host=$(extract_field &quot;$dbuser_pass&quot; &quot;host&quot;)
 # Initialize database connection information
 initialize_shared_db_config &quot;${dbuser_host%:3306}&quot; &quot;$dbuser_username&quot; &quot;$dbuser_password&quot;
 create_top_admin &quot;$EMAIL&quot; &quot;$CONNECTION_ID&quot;
+status=$?
 unset_shared_db_config
-reset_role</command>
+reset_role
+exit $status</command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
   </builders>
