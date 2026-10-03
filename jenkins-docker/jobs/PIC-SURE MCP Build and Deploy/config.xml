@@ -95,11 +95,10 @@ pipeline {
                     for script_file in &quot;$SOURCE_SCRIPTS_FOLDER&quot;*.sh; do
                         chmod +x &quot;\$script_file&quot;
                         if [ -f &quot;\$script_file&quot; ] &amp;&amp; [ -x &quot;\$script_file&quot; ]; then
-                            . &quot;\$script_file&quot;  # Use dot (.) instead of `source`
+                            . &quot;\$script_file&quot;
                         fi
                     done
 
-                    # The PIC-SURE Pipeline is always used to deploy to staging.
                     get_stack \&quot;${TARGET_STACK}\&quot;
                     &apos;
                     &quot;&quot;&quot;, returnStdout: true).trim()

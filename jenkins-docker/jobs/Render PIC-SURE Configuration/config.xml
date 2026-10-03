@@ -7,9 +7,9 @@ The .tftpl is the file people edit. Pull it with Download PIC-SURE Configuration
 
 Secrets are reused, not minted. PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT are read back out of this stack's currently rendered gateway.env, operations.env and query.env, and LOGGING_API_KEY out of its logging.env. Re-rendering one service therefore leaves the values the other services are still running with alone. If the files that share a value disagree, the run aborts instead of picking one.
 
-ROTATE_STACK_SECRETS and ROTATE_LOGGING_API_KEY mint instead of reusing. Each requires every consumer of its values to render in the same run: gateway, operations and query for the first; logging, gateway and visualization for the second. Both are checkboxes on Rotate PIC-SURE Stack Secrets, which is the job to use, because a new value is only safe once the matching redeploys have followed it. A first render, where the object does not exist yet, mints under the same all-consumers gate; an object that exists but holds a blank value aborts and sends you to the rotation job.
+ROTATE_STACK_SECRETS and ROTATE_LOGGING_API_KEY mint instead of reusing. Each requires every consumer of its values to render in the same run: gateway, operations and query for the first; logging, gateway, visualization and mcp for the second. Both are checkboxes on Rotate PIC-SURE Stack Secrets, which is the job to use, because a new value is only safe once the matching redeploys have followed it. A first render, where the object does not exist yet, mints under the same all-consumers gate; an object that exists but holds a blank value aborts and sends you to the rotation job.
 
-LOGGING_API_KEY has a fourth consumer this job does not render. The frontend reads it from configs/pic-sure-frontend/&lt;target_stack&gt;/bdc.env, which is uploaded by hand through Upload PIC-SURE-Frontend Configuration. Minting a new key here leaves that file holding the old one until someone updates it, and until then the frontend's audit events are dropped.
+LOGGING_API_KEY has one more consumer this job does not render. The frontend reads it from configs/pic-sure-frontend/&lt;target_stack&gt;/bdc.env, which is uploaded by hand through Upload PIC-SURE-Frontend Configuration. Minting a new key here leaves that file holding the old one until someone updates it, and until then the frontend's audit events are dropped.
 
 TARGET_STACK means what it says for seven of the eight objects. picsure-dictionary.env is the exception: its key carries no stack segment, so every stack's deploy pulls that one file and rendering the dictionary reaches all of them at once.
 
@@ -17,7 +17,13 @@ operations.env carries no database password. It names the AWS Secrets Manager My
 
 The dictionary's DATASOURCE_URL and DATASOURCE_USERNAME are never minted. Each is read back out of the rendered picsure-dictionary.env, falls back to the controller global the dictionary image was built from when the object does not carry it (database_psql_host_address and database_psql_app_user_secret_name), and stops the run only when both sources are empty.
 
-MCP_SERVICE_TOKEN is shared by the gateway and pic-sure-mcp and is handled apart from the three above: it is read back out of this stack's rendered gateway.env and mcp.env, and the gateway also carries MCP_SERVICE_TOKEN_PREVIOUS so it accepts the old value while pic-sure-mcp still presents it. ROTATE_MCP_SERVICE_TOKEN mints a new current value and moves the old one into MCP_SERVICE_TOKEN_PREVIOUS; it requires RENDER_GATEWAY and RENDER_MCP both true, and both services must be redeployed afterwards. Use the Rotate PIC-SURE Stack Secrets job.
+MCP_SERVICE_TOKEN is shared by the gateway and pic-sure-mcp and is handled apart from the three above: it is read back out of this stack's rendered gateway.env and mcp.env. ROTATE_MCP_SERVICE_TOKEN mints a new current value and writes the outgoing one into the gateway's MCP_SERVICE_TOKEN_PREVIOUS, so the gateway accepts both while pic-sure-mcp is redeployed. It requires RENDER_GATEWAY and RENDER_MCP both true, refuses when gateway.env and mcp.env disagree about the outgoing value, and both services must be redeployed afterwards. Use the Rotate PIC-SURE Stack Secrets job.
+
+Only a rotating render writes MCP_SERVICE_TOKEN_PREVIOUS. Every other render of the gateway writes it blank, so the old token is accepted until the next gateway render and no longer. Rotate PIC-SURE Stack Secrets runs that render itself once pic-sure-mcp is up on the new token, then redeploys the gateway.
+
+A gateway render on a stack where nothing carries MCP_SERVICE_TOKEN yet, with RENDER_MCP false, writes the gateway's MCP_SERVICE_TOKEN blank instead of minting one. The gateway starts with a warning and rejects every X-PIC-SURE-MCP-TOKEN until a run that renders both the gateway and pic-sure-mcp mints the token. Rendering pic-sure-mcp always needs a token, so a first render of it requires RENDER_GATEWAY as well.
+
+mcp.env also carries MCP_ADAPTER_PYTHON_MIN_VERSION and MCP_ADAPTER_R_TAG, taken from the optional controller globals mcp_adapter_python_min_version and mcp_adapter_r_tag. A global that is unset or blank is written blank, and pic-sure-mcp then uses its built-in default.
 
 One thing to watch in the console. Terraform prints the rendered picsure-dictionary.env in full in the auto-approved plan: its inputs are an RDS hostname and a Secrets Manager secret id rather than credentials, so nothing feeding it is marked sensitive. Every env file that does carry a secret is masked instead. That is new exposure for a file that used to be hand-uploaded, so treat a dictionary render's console output accordingly.</description>
   <keepDependencies>false</keepDependencies>
@@ -92,12 +98,12 @@ One thing to watch in the console. Terraform prints the rendered picsure-diction
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
           <name>ROTATE_LOGGING_API_KEY</name>
-          <description>Mint a new LOGGING_API_KEY instead of reusing the rendered one. The key is stack-local: configs/pic-sure-logging/&lt;target_stack&gt;/logging.env is this stack&apos;s own object, and no other stack is read or written. pic-sure-logging checks the key and the gateway and visualization services present it, so it requires RENDER_LOGGING, RENDER_GATEWAY and RENDER_VISUALIZATION all true and all three must be redeployed afterwards. A fourth consumer is not rendered here: the frontend reads the key from configs/pic-sure-frontend/&lt;target_stack&gt;/bdc.env, which is uploaded by hand, so a rotation has to update that file for this stack as well or the frontend&apos;s audit events are dropped. Use the Rotate PIC-SURE Stack Secrets job with this box ticked; it does the render and the redeploys and names the frontend follow-up at the end.</description>
+          <description>Mint a new LOGGING_API_KEY instead of reusing the rendered one. The key is stack-local: configs/pic-sure-logging/&lt;target_stack&gt;/logging.env is this stack&apos;s own object, and no other stack is read or written. pic-sure-logging checks the key and the gateway, visualization and mcp services present it, so it requires RENDER_LOGGING, RENDER_GATEWAY, RENDER_VISUALIZATION and RENDER_MCP all true and all four must be redeployed afterwards. A fourth consumer is not rendered here: the frontend reads the key from configs/pic-sure-frontend/&lt;target_stack&gt;/bdc.env, which is uploaded by hand, so a rotation has to update that file for this stack as well or the frontend&apos;s audit events are dropped. Use the Rotate PIC-SURE Stack Secrets job with this box ticked; it does the render and the redeploys and names the frontend follow-up at the end.</description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
           <name>ROTATE_MCP_SERVICE_TOKEN</name>
-          <description>Mint a new MCP_SERVICE_TOKEN and carry the old one into MCP_SERVICE_TOKEN_PREVIOUS in the gateway env, so the gateway accepts both while pic-sure-mcp is redeployed. The value is stack-local. It requires RENDER_GATEWAY and RENDER_MCP both true, and both services must be redeployed afterwards. Use the Rotate PIC-SURE Stack Secrets job with this box ticked; it does the render and the redeploys.</description>
+          <description>Mint a new MCP_SERVICE_TOKEN and carry the old one into MCP_SERVICE_TOKEN_PREVIOUS in the gateway env, so the gateway accepts both while pic-sure-mcp is redeployed. The value is stack-local. It requires RENDER_GATEWAY and RENDER_MCP both true, refuses when the rendered gateway.env and mcp.env hold different tokens, and both services must be redeployed afterwards. Any later gateway render that does not rotate writes MCP_SERVICE_TOKEN_PREVIOUS blank. Use the Rotate PIC-SURE Stack Secrets job with this box ticked; it does the render, the redeploys and that final gateway render.</description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
       </parameterDefinitions>
@@ -208,7 +214,7 @@ if [ &quot;$render_gateway&quot; = &quot;true&quot; ] &amp;&amp; [ &quot;$render
 fi
 
 all_logging_consumers_selected=false
-if [ &quot;$render_logging&quot; = &quot;true&quot; ] &amp;&amp; [ &quot;$render_gateway&quot; = &quot;true&quot; ] &amp;&amp; [ &quot;$render_visualization&quot; = &quot;true&quot; ]; then
+if [ &quot;$render_logging&quot; = &quot;true&quot; ] &amp;&amp; [ &quot;$render_gateway&quot; = &quot;true&quot; ] &amp;&amp; [ &quot;$render_visualization&quot; = &quot;true&quot; ] &amp;&amp; [ &quot;$render_mcp&quot; = &quot;true&quot; ]; then
   all_logging_consumers_selected=true
 fi
 
@@ -222,11 +228,11 @@ if [ &quot;$rotate_stack_secrets&quot; = &quot;true&quot; ] &amp;&amp; [ &quot;$
   exit 1
 fi
 
-# pic-sure-logging checks LOGGING_API_KEY; the gateway and the visualization service present it.
+# pic-sure-logging checks LOGGING_API_KEY; the gateway, visualization and mcp services present it.
 # A consumer left on the old key is answered with 401 and its logging client drops the event.
 if [ &quot;$rotate_logging_api_key&quot; = &quot;true&quot; ] &amp;&amp; [ &quot;$all_logging_consumers_selected&quot; != &quot;true&quot; ]; then
-  echo &quot;Error: ROTATE_LOGGING_API_KEY changes a value that the pic-sure-logging, gateway and visualization services share between them.&quot; &gt;&amp;2
-  echo &quot;Set RENDER_LOGGING, RENDER_GATEWAY and RENDER_VISUALIZATION all true so the three render together, then redeploy all three.&quot; &gt;&amp;2
+  echo &quot;Error: ROTATE_LOGGING_API_KEY changes a value that the pic-sure-logging, gateway, visualization and mcp services share between them.&quot; &gt;&amp;2
+  echo &quot;Set RENDER_LOGGING, RENDER_GATEWAY, RENDER_VISUALIZATION and RENDER_MCP all true so the four render together, then redeploy all four.&quot; &gt;&amp;2
   exit 1
 fi
 
@@ -570,20 +576,20 @@ if [ &quot;$render_services&quot; = &quot;true&quot; ]; then
   echo &quot;  AGGREGATE_OBFUSCATION_SALT: ${aggregate_obfuscation_salt_origin}&quot;
 fi
 
-# LOGGING_API_KEY is checked by pic-sure-logging and presented by the gateway and the
-# visualization service, so all three env files for this stack must carry the same value.
-# A fourth consumer, the frontend, reads it from configs/pic-sure-frontend/${TARGET_STACK}/bdc.env,
+# LOGGING_API_KEY is checked by pic-sure-logging and presented by the gateway, visualization
+# and mcp services, so all four env files for this stack must carry the same value.
+# A fifth consumer, the frontend, reads it from configs/pic-sure-frontend/${TARGET_STACK}/bdc.env,
 # which is uploaded by hand and not rendered here. An absent object is a bootstrap and mints
-# under the all-three gate; a present object with a blank key aborts and refers you to the
+# under the all-four gate; a present object with a blank key aborts and refers you to the
 # rotation job, which pairs the mint with the redeploys that make it safe.
 logging_api_key=&quot;&quot;
-if [ &quot;$render_logging&quot; = &quot;true&quot; ] || [ &quot;$render_gateway&quot; = &quot;true&quot; ] || [ &quot;$render_visualization&quot; = &quot;true&quot; ]; then
+if [ &quot;$render_logging&quot; = &quot;true&quot; ] || [ &quot;$render_gateway&quot; = &quot;true&quot; ] || [ &quot;$render_visualization&quot; = &quot;true&quot; ] || [ &quot;$render_mcp&quot; = &quot;true&quot; ]; then
   logging_env_key=&quot;configs/pic-sure-logging/${TARGET_STACK}/logging.env&quot;
   logging_env_legacy_key=&quot;configs/pic-sure-logging/logging.env&quot;
   logging_env_copy=&quot;&quot;
 
   if [ &quot;$rotate_logging_api_key&quot; = &quot;true&quot; ]; then
-    echo &quot;ROTATE_LOGGING_API_KEY is true: minting a new LOGGING_API_KEY for pic-sure-logging, gateway and visualization.&quot;
+    echo &quot;ROTATE_LOGGING_API_KEY is true: minting a new LOGGING_API_KEY for pic-sure-logging, gateway, visualization and mcp.&quot;
   else
     new_temp_file &quot;logging.env&quot;
     logging_env_candidate=&quot;$temp_file_path&quot;
@@ -622,13 +628,13 @@ if [ &quot;$render_logging&quot; = &quot;true&quot; ] || [ &quot;$render_gateway
   if [ &quot;$logging_api_key_origin&quot; = &quot;generate&quot; ]; then
     if [ &quot;$rotate_logging_api_key&quot; != &quot;true&quot; ] &amp;&amp; [ -n &quot;$logging_env_copy&quot; ]; then
       echo &quot;Error: s3://${stack_s3_bucket}/${logging_env_key} exists but carries no non-empty LOGGING_API_KEY.&quot; &gt;&amp;2
-      echo &quot;Minting a key here would leave this stack&apos;s running gateway, visualization and pic-sure-logging containers on the old one until each is redeployed.&quot; &gt;&amp;2
-      echo &quot;Run the Rotate PIC-SURE Stack Secrets job with ROTATE_LOGGING_API_KEY to change this value: it renders and redeploys all three for this stack, which is what makes a new key safe.&quot; &gt;&amp;2
+      echo &quot;Minting a key here would leave this stack&apos;s running gateway, visualization, pic-sure-mcp and pic-sure-logging containers on the old one until each is redeployed.&quot; &gt;&amp;2
+      echo &quot;Run the Rotate PIC-SURE Stack Secrets job with ROTATE_LOGGING_API_KEY to change this value: it renders and redeploys all four for this stack, which is what makes a new key safe.&quot; &gt;&amp;2
       exit 1
     fi
     if [ &quot;$all_logging_consumers_selected&quot; != &quot;true&quot; ]; then
       echo &quot;Error: nothing is rendered at s3://${stack_s3_bucket}/${logging_env_key}, so this run would have to mint LOGGING_API_KEY.&quot; &gt;&amp;2
-      echo &quot;That value is shared by the pic-sure-logging, gateway and visualization services: set RENDER_LOGGING, RENDER_GATEWAY and RENDER_VISUALIZATION all true so all three render together on a first render.&quot; &gt;&amp;2
+      echo &quot;That value is shared by the pic-sure-logging, gateway, visualization and mcp services: set RENDER_LOGGING, RENDER_GATEWAY, RENDER_VISUALIZATION and RENDER_MCP all true so all four render together on a first render.&quot; &gt;&amp;2
       exit 1
     fi
     generate_shared_token
@@ -671,35 +677,47 @@ if [ &quot;$render_gateway&quot; = &quot;true&quot; ] || [ &quot;$render_mcp&quo
   done
 
   mcp_service_token_origin=generate
+  mcp_service_token_previous_origin=&quot;blank, this run does not rotate&quot;
   if [ &quot;$rotate_mcp_service_token&quot; = &quot;true&quot; ]; then
     echo &quot;ROTATE_MCP_SERVICE_TOKEN is true: minting a new MCP_SERVICE_TOKEN for the gateway and pic-sure-mcp on stack ${TARGET_STACK}. The gateway env keeps the old value as MCP_SERVICE_TOKEN_PREVIOUS.&quot;
-    if [ -n &quot;$gateway_mcp_env_copy&quot; ]; then
-      read_env_value &quot;$gateway_mcp_env_copy&quot; &quot;MCP_SERVICE_TOKEN&quot;
-      mcp_service_token_previous=&quot;$env_value&quot;
+    if ! resolve_shared_value &quot;MCP_SERVICE_TOKEN&quot; &quot;$gateway_mcp_env_copy&quot; &quot;$mcp_env_copy&quot; 2&gt;/dev/null; then
+      echo &quot;Error: refusing to rotate MCP_SERVICE_TOKEN on stack ${TARGET_STACK}: the rendered gateway.env and mcp.env hold different tokens, and only one of them can be carried into MCP_SERVICE_TOKEN_PREVIOUS.&quot; &gt;&amp;2
+      echo &quot;The redeployed gateway would reject the other one for as long as a pic-sure-mcp container still presented it. Put the token pic-sure-mcp is running with into both objects, then re-run the rotation.&quot; &gt;&amp;2
+      exit 1
+    fi
+    mcp_service_token_previous=&quot;$resolved_value&quot;
+    if [ &quot;$resolved_origin&quot; = &quot;reused&quot; ]; then
+      mcp_service_token_previous_origin=&quot;the outgoing MCP_SERVICE_TOKEN&quot;
+    else
+      mcp_service_token_previous_origin=&quot;blank, nothing rendered for this stack carried a token to carry over&quot;
     fi
   else
     resolve_shared_value &quot;MCP_SERVICE_TOKEN&quot; &quot;$gateway_mcp_env_copy&quot; &quot;$mcp_env_copy&quot;
     mcp_service_token=&quot;$resolved_value&quot;
     mcp_service_token_origin=&quot;$resolved_origin&quot;
-    if [ -n &quot;$gateway_mcp_env_copy&quot; ]; then
-      read_env_value &quot;$gateway_mcp_env_copy&quot; &quot;MCP_SERVICE_TOKEN_PREVIOUS&quot;
-      mcp_service_token_previous=&quot;$env_value&quot;
-    fi
   fi
 
   if [ &quot;$mcp_service_token_origin&quot; = &quot;generate&quot; ]; then
-    if [ &quot;$all_mcp_consumers_selected&quot; != &quot;true&quot; ]; then
+    if [ &quot;$render_mcp&quot; != &quot;true&quot; ]; then
+      mcp_service_token_origin=&quot;blank, nothing rendered for this stack carries one and this run does not render pic-sure-mcp&quot;
+      echo &quot;WARNING: no MCP_SERVICE_TOKEN exists for stack ${TARGET_STACK} yet, so gateway.env is written with a blank one and the gateway rejects every X-PIC-SURE-MCP-TOKEN.&quot; &gt;&amp;2
+      echo &quot;WARNING: render RENDER_GATEWAY and RENDER_MCP together, or run the Rotate PIC-SURE Stack Secrets job with ROTATE_MCP_SERVICE_TOKEN, to mint one when pic-sure-mcp is deployed to this stack.&quot; &gt;&amp;2
+    elif [ &quot;$all_mcp_consumers_selected&quot; != &quot;true&quot; ]; then
       echo &quot;Error: nothing rendered for stack ${TARGET_STACK} carries MCP_SERVICE_TOKEN, so this run would have to mint it.&quot; &gt;&amp;2
       echo &quot;That value is shared by the gateway and pic-sure-mcp: set RENDER_GATEWAY and RENDER_MCP both true so both render together on a first render, or run the Rotate PIC-SURE Stack Secrets job with ROTATE_MCP_SERVICE_TOKEN, which renders both and redeploys them.&quot; &gt;&amp;2
       exit 1
+    else
+      generate_shared_token
+      mcp_service_token=&quot;$generated_value&quot;
+      mcp_service_token_origin=generated
     fi
-    generate_shared_token
-    mcp_service_token=&quot;$generated_value&quot;
-    mcp_service_token_origin=generated
   fi
 
   echo &quot;MCP service token resolution:&quot;
   echo &quot;  MCP_SERVICE_TOKEN: ${mcp_service_token_origin}&quot;
+  if [ &quot;$render_gateway&quot; = &quot;true&quot; ]; then
+    echo &quot;  MCP_SERVICE_TOKEN_PREVIOUS: ${mcp_service_token_previous_origin}&quot;
+  fi
 fi
 
 # DATASOURCE_URL and DATASOURCE_USERNAME name infrastructure that already exists, so this job
@@ -778,7 +796,7 @@ if [ &quot;$render_gateway&quot; = &quot;true&quot; ]; then
   export TF_VAR_picsure_token_introspection_token=&quot;$picsure_token_introspection_token&quot;
 fi
 
-if [ &quot;$render_logging&quot; = &quot;true&quot; ] || [ &quot;$render_gateway&quot; = &quot;true&quot; ] || [ &quot;$render_visualization&quot; = &quot;true&quot; ]; then
+if [ &quot;$render_logging&quot; = &quot;true&quot; ] || [ &quot;$render_gateway&quot; = &quot;true&quot; ] || [ &quot;$render_visualization&quot; = &quot;true&quot; ] || [ &quot;$render_mcp&quot; = &quot;true&quot; ]; then
   export TF_VAR_logging_api_key=&quot;$logging_api_key&quot;
 fi
 
@@ -816,7 +834,6 @@ apply_args=(
   -var=&quot;environment_name=${environment_name}&quot;
   -var=&quot;target_stack=${TARGET_STACK}&quot;
   -var=&quot;env_private_dns_name=${env_private_dns_name}&quot;
-  -var=&quot;env_public_dns_name=${env_public_dns_name}&quot;
   -var=&quot;render_gateway=${render_gateway}&quot;
   -var=&quot;render_operations=${render_operations}&quot;
   -var=&quot;render_query=${render_query}&quot;
@@ -833,6 +850,14 @@ apply_args=(
 # abort the run on a controller where the global is unset. The Terraform default is false.
 if [ &quot;$render_gateway&quot; = &quot;true&quot; ]; then
   apply_args+=(-var=&quot;include_open_hpds=${include_open_hpds}&quot;)
+fi
+
+if [ &quot;$render_mcp&quot; = &quot;true&quot; ]; then
+  apply_args+=(
+    -var=&quot;env_public_dns_name=${env_public_dns_name}&quot;
+    -var=&quot;mcp_adapter_python_min_version=${mcp_adapter_python_min_version:-}&quot;
+    -var=&quot;mcp_adapter_r_tag=${mcp_adapter_r_tag:-}&quot;
+  )
 fi
 
 terraform15 init -input=false

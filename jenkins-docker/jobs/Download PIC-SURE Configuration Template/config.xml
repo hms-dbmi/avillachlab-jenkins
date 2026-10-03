@@ -27,6 +27,7 @@
             <string>Gateway</string>
             <string>Operations</string>
             <string>Query</string>
+            <string>MCP</string>
             <string>HPDS Auth</string>
             <string>HPDS Open</string>
             <string>Visualization</string>
@@ -63,6 +64,7 @@ pipeline {
             &apos;Gateway&apos;: [&apos;gateway.env.tftpl&apos;, &apos;configs/gateway/templates&apos;],
             &apos;Operations&apos;: [&apos;operations.env.tftpl&apos;, &apos;configs/operations/templates&apos;],
             &apos;Query&apos;: [&apos;query.env.tftpl&apos;, &apos;configs/query/templates&apos;],
+            &apos;MCP&apos;: [&apos;mcp.env.tftpl&apos;, &apos;configs/mcp/templates&apos;],
             &apos;HPDS Auth&apos;: [&apos;hpds-auth.env.tftpl&apos;, &apos;configs/hpds/templates&apos;],
             &apos;HPDS Open&apos;: [&apos;hpds-open.env.tftpl&apos;, &apos;configs/hpds/templates&apos;],
             &apos;Visualization&apos;: [&apos;visualization.env.tftpl&apos;, &apos;configs/pic-sure-visualization/templates&apos;],
