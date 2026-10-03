@@ -83,7 +83,7 @@ One thing to watch in the console. Terraform prints the rendered picsure-diction
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
           <name>RENDER_LOGGING</name>
-          <description>Render and upload the pic-sure-logging env file. The S3 object carries no stack segment, so every stack's deploy pulls the same file.</description>
+          <description>Render and upload the pic-sure-logging env file. The S3 object is per stack, configs/pic-sure-logging/&lt;target_stack&gt;/logging.env, so this reaches TARGET_STACK and no other stack.</description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.BooleanParameterDefinition>

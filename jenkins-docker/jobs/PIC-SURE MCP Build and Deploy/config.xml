@@ -125,12 +125,19 @@ pipeline {
                             error(&quot;No infrastructure_git_hash in build-spec.json; cannot render configuration.&quot;)
                         }
 
-                        build job: &apos;PIC-SURE Maven Build&apos;, parameters: [
+                        def mavenBuild = build job: &apos;PIC-SURE Maven Build&apos;, propagate: false, parameters: [
                             [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: params.git_hash ?: build_hashes[&apos;PSA&apos;]],
                             [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
                             [$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId ?: &apos;MANUAL_RUN&apos;],
                             [$class: &apos;StringParameterValue&apos;, name: &apos;MODULES&apos;, value: &apos;services/pic-sure-mcp&apos;]
                         ]
+                        if (!fileExists(&quot;/var/jenkins_home/workspace/PIC-SURE Maven Build - ${targetStack}/services/pic-sure-mcp/pom.xml&quot;)) {
+                            echo &quot;The pic-sure ref checked out for stack ${targetStack} has no services/pic-sure-mcp module (PIC-SURE Maven Build #${mavenBuild.number} ${mavenBuild.result}). Skipping the pic-sure-mcp image, render and deploy.&quot;
+                            return
+                        }
+                        if (mavenBuild.result != &apos;SUCCESS&apos;) {
+                            error(&quot;PIC-SURE Maven Build #${mavenBuild.number} finished ${mavenBuild.result}.&quot;)
+                        }
 
                         build job: &apos;PIC-SURE MCP Image&apos;, parameters: [
                             [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
