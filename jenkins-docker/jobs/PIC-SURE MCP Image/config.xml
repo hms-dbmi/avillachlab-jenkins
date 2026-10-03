@@ -1,7 +1,7 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
   <actions/>
-  <description>Packages the MCP service image from the per-stack reactor lane and ships the tarball to the stack&apos;s S3 prefix. Requires a prior successful &apos;PIC-SURE Maven Build&apos; for the same TARGET_STACK.</description>
+  <description>Packages the MCP service image from the per-stack reactor lane and ships the tarball to the stack&apos;s S3 prefix. Requires a prior successful &apos;PIC-SURE Maven Build&apos; for the same TARGET_STACK. When that build&apos;s pic-sure ref predates the MCP module, the job logs that and succeeds without building an image.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
@@ -42,6 +42,11 @@ set -euo pipefail
 MAVEN_WS=&quot;/var/jenkins_home/workspace/PIC-SURE Maven Build - ${TARGET_STACK}&quot;
 MODULE=&quot;services/pic-sure-mcp&quot;
 STAMP=&quot;$MAVEN_WS/build-info/$(printf &apos;%s&apos; &quot;$MODULE&quot; | tr &apos;/&apos; &apos;_&apos;).txt&quot;
+
+if [ ! -f &quot;$MAVEN_WS/$MODULE/pom.xml&quot; ]; then
+  echo &quot;The pic-sure ref checked out for stack ${TARGET_STACK} has no $MODULE module, so any jar or stamp left in that directory is from an earlier build. Skipping the pic-sure-mcp image.&quot;
+  exit 0
+fi
 
 if [ ! -f &quot;$STAMP&quot; ] || ! ls &quot;$MAVEN_WS/$MODULE&quot;/target/pic-sure-mcp-*.jar &gt;/dev/null 2&gt;&amp;1; then
   echo &quot;ERROR: no current artifacts for $MODULE on stack ${TARGET_STACK}. Run &apos;PIC-SURE Maven Build&apos; with MODULES=$MODULE first.&quot;

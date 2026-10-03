@@ -4,11 +4,11 @@
   <description>Mints new values for the secrets the PIC-SURE services share on one stack, then redeploys every service that carries one. Rotating and redeploying are a single operation; there is no option to render without deploying.
 
 Pick what to rotate. At least one is required:
-  ROTATE_STACK_SECRETS - PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT, shared by gateway, operations and query.
-  ROTATE_LOGGING_API_KEY - LOGGING_API_KEY, shared by gateway, visualization, pic-sure-mcp and pic-sure-logging.
-  ROTATE_MCP_SERVICE_TOKEN - MCP_SERVICE_TOKEN, shared by gateway and pic-sure-mcp.
+  ROTATE_STACK_SECRETS: PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT, shared by gateway, operations and query.
+  ROTATE_LOGGING_API_KEY: LOGGING_API_KEY, shared by gateway, visualization, pic-sure-mcp and pic-sure-logging.
+  ROTATE_MCP_SERVICE_TOKEN: MCP_SERVICE_TOKEN, shared by gateway and pic-sure-mcp.
 
-ROTATE_MCP_SERVICE_TOKEN keeps a previous value: the render writes the old token into MCP_SERVICE_TOKEN_PREVIOUS in the gateway env, so the gateway accepts both the new and the old token while pic-sure-mcp is redeployed and no request is rejected during the cutover. The stack deploy starts the gateway before pic-sure-mcp, so the gateway already accepts the new token when pic-sure-mcp starts presenting it. Once both are up, this job renders the gateway again without rotating, which writes MCP_SERVICE_TOKEN_PREVIOUS blank, and redeploys the gateway alone, so the old token stops working. Every render that does not rotate writes the previous value blank in the same way, so it never outlives the next gateway render. The rotation refuses to start when this stack's rendered gateway.env and mcp.env hold different tokens, because only one of them could be carried over.
+ROTATE_MCP_SERVICE_TOKEN keeps a previous value: the render writes the old token into MCP_SERVICE_TOKEN_PREVIOUS in the gateway env, so the gateway accepts both the new and the old token while pic-sure-mcp is redeployed and no request is rejected during the cutover. The stack deploy starts the gateway before pic-sure-mcp, so the gateway already accepts the new token when pic-sure-mcp starts presenting it. Once both are up, this job renders the gateway again without rotating, which writes MCP_SERVICE_TOKEN_PREVIOUS blank, and redeploys the gateway alone, so the old token stops working. Every render that does not rotate writes the previous value blank in the same way, so it never outlives the next gateway render and redeploy. When this stack's rendered gateway.env and mcp.env hold different tokens, the rotation carries the mcp.env value into MCP_SERVICE_TOKEN_PREVIOUS with a warning, because that is the token the running pic-sure-mcp presents, and drops the gateway.env value.
 
 The gateway carries a secret from every set, so it always renders and always redeploys. The other services are pulled in only by the flag that needs them, and a flag left false makes the render read those values back out of this stack&apos;s own env files and preserve them unchanged. Rotating both in one run is the usual case after an exposure, because a leaked gateway.env carries every one of these values, and it restarts the gateway once instead of twice.
 
@@ -16,9 +16,9 @@ Only the selected stack is touched. Every one of these values lives in a per-sta
 
 Why the redeploy is not optional: containers bake their env at create time. A rotated QUERY_SERVICE_INTERNAL_TOKEN that no container has picked up leaves InternalTokenFilter rejecting the stale value with 403, which the gateway flattens into an opaque 500 on query downloads while every other endpoint keeps working. A rotated LOGGING_API_KEY leaves pic-sure-logging answering 401 while the logging client drops the audit event.
 
-With ROTATE_LOGGING_API_KEY, expect a short window between the Wildfly deploy and the logging deploy where the gateway, visualization and pic-sure-mcp already present the new key and pic-sure-logging still checks the old one. One key covers all four services, so the two sides cannot cut over at the same instant; the window is a cost of the single-key design rather than a defect.
+With ROTATE_LOGGING_API_KEY, expect a short window between the Wildfly deploy and the logging deploy where the gateway, visualization and pic-sure-mcp already present the new key and pic-sure-logging still checks the old one. One key covers all four services, so the two sides cannot cut over at the same instant; the window is a cost of the single-key design rather than a defect. The logging deploy runs even when the Wildfly deploy fails, and the job still fails afterwards. A failed pic-sure-mcp deploy leaves pic-sure-mcp on the old logging key until it is redeployed, while pic-sure-logging and the rest of the stack move to the new key.
 
-ROTATE_LOGGING_API_KEY also leaves a manual tail, and the job says so when it finishes. The frontend reads LOGGING_API_KEY from configs/pic-sure-frontend/&lt;target_stack&gt;/bdc.env, which is uploaded by hand and not rendered here. Download this stack&apos;s rendered logging.env to read the new key, download the same stack&apos;s bdc.env through Download PIC-SURE-Frontend Configuration, set LOGGING_API_KEY to match, upload it and redeploy the frontend. Until then the frontend&apos;s audit events are dropped while gateway and visualization audit continues normally. The key is never printed to this job&apos;s console.
+ROTATE_LOGGING_API_KEY also leaves a manual tail, and the job says so when it finishes. The frontend reads LOGGING_API_KEY from configs/pic-sure-frontend/&lt;target_stack&gt;/bdc.env, which is uploaded by hand and not rendered here. Download this stack&apos;s rendered logging.env to read the new key, download the same stack&apos;s bdc.env through Download PIC-SURE-Frontend Configuration, set LOGGING_API_KEY to match, upload it and redeploy the frontend. Until then the frontend&apos;s audit events are dropped while the gateway, visualization and pic-sure-mcp keep auditing normally. The key is never printed to this job&apos;s console.
 
 ROTATE_STACK_SECRETS changes AGGREGATE_OBFUSCATION_SALT, so this stack&apos;s reported aggregate counts shift for queries run before and after. The two stacks already carry different salts and report slightly different counts for the same query; that is a property of per-stack salts rather than a fault.
 
@@ -163,7 +163,7 @@ pipeline {
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;ROTATE_MCP_SERVICE_TOKEN&apos;, value: rotateMcp]
                         ]
 
-                        build job: &apos;PIC-SURE Wildfly Stack Deploy&apos;, parameters: [
+                        def stackDeploy = build job: &apos;PIC-SURE Wildfly Stack Deploy&apos;, propagate: false, parameters: [
                             [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: params.S3_BUCKET_NAME],
                             [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_GATEWAY&apos;, value: true],
@@ -172,6 +172,12 @@ pipeline {
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_MCP&apos;, value: renderMcp],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_VISUALIZATION&apos;, value: rotateLogging]
                         ]
+                        def stackDeployResult = stackDeploy.result
+                        def stackDeployFailed = stackDeployResult != &apos;SUCCESS&apos;
+
+                        if (stackDeployFailed &amp;&amp; rotateLogging) {
+                            echo &quot;PIC-SURE Wildfly Stack Deploy finished ${stackDeployResult}. Deploying pic-sure-logging on the new LOGGING_API_KEY anyway, so the services that did come up keep auditing; any of them that did not stays on the old key until it is redeployed. This run fails once the logging deploy is done.&quot;
+                        }
 
                         if (rotateLogging) {
                             build job: &apos;PIC-SURE Logging Deploy&apos;, parameters: [
@@ -180,6 +186,14 @@ pipeline {
                             ]
 
                             echo &quot;LOGGING_API_KEY was rotated. configs/pic-sure-frontend/${targetStack}/bdc.env still holds the old key: update it and redeploy the frontend, or this stack&apos;s frontend audit events are dropped.&quot;
+                        }
+
+                        if (stackDeployFailed &amp;&amp; rotateMcp) {
+                            echo &quot;MCP_SERVICE_TOKEN was rotated, but the render that clears MCP_SERVICE_TOKEN_PREVIOUS is skipped after a failed deploy, so the gateway on stack ${targetStack} still accepts the previous token until it is next rendered and redeployed.&quot;
+                        }
+
+                        if (stackDeployFailed) {
+                            error(&quot;PIC-SURE Wildfly Stack Deploy finished ${stackDeployResult} on stack ${targetStack}. Its console names the service that failed. Redeploy that service once the cause is fixed. For pic-sure-mcp that is PIC-SURE MCP Build and Deploy, which renders mcp.env from the values this run wrote.&quot;)
                         }
 
                         if (rotateMcp) {

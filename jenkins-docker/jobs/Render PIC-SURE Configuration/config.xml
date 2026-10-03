@@ -11,15 +11,15 @@ ROTATE_STACK_SECRETS and ROTATE_LOGGING_API_KEY mint instead of reusing. Each re
 
 LOGGING_API_KEY has one more consumer this job does not render. The frontend reads it from configs/pic-sure-frontend/&lt;target_stack&gt;/bdc.env, which is uploaded by hand through Upload PIC-SURE-Frontend Configuration. Minting a new key here leaves that file holding the old one until someone updates it, and until then the frontend's audit events are dropped.
 
-TARGET_STACK means what it says for seven of the eight objects. picsure-dictionary.env is the exception: its key carries no stack segment, so every stack's deploy pulls that one file and rendering the dictionary reaches all of them at once.
+TARGET_STACK means what it says for eight of the nine objects. picsure-dictionary.env is the exception: its key carries no stack segment, so every stack's deploy pulls that one file and rendering the dictionary reaches all of them at once.
 
 operations.env carries no database password. It names the AWS Secrets Manager MySQL driver and passes database_app_user_secret_name as the datasource username, so the operations service reads the rotating app-user password itself when it connects. The host is database_host_address, the same value PSAMA is built with.
 
 The dictionary's DATASOURCE_URL and DATASOURCE_USERNAME are never minted. Each is read back out of the rendered picsure-dictionary.env, falls back to the controller global the dictionary image was built from when the object does not carry it (database_psql_host_address and database_psql_app_user_secret_name), and stops the run only when both sources are empty.
 
-MCP_SERVICE_TOKEN is shared by the gateway and pic-sure-mcp and is handled apart from the three above: it is read back out of this stack's rendered gateway.env and mcp.env. ROTATE_MCP_SERVICE_TOKEN mints a new current value and writes the outgoing one into the gateway's MCP_SERVICE_TOKEN_PREVIOUS, so the gateway accepts both while pic-sure-mcp is redeployed. It requires RENDER_GATEWAY and RENDER_MCP both true, refuses when gateway.env and mcp.env disagree about the outgoing value, and both services must be redeployed afterwards. Use the Rotate PIC-SURE Stack Secrets job.
+MCP_SERVICE_TOKEN is shared by the gateway and pic-sure-mcp and is handled apart from the three above: it is read back out of this stack's rendered gateway.env and mcp.env. ROTATE_MCP_SERVICE_TOKEN mints a new current value and writes the outgoing one into the gateway's MCP_SERVICE_TOKEN_PREVIOUS, so the gateway accepts both while pic-sure-mcp is redeployed. It requires RENDER_GATEWAY and RENDER_MCP both true, and both services must be redeployed afterwards. Use the Rotate PIC-SURE Stack Secrets job. When gateway.env and mcp.env disagree about the outgoing value, the rotation carries the mcp.env value into MCP_SERVICE_TOKEN_PREVIOUS with a warning, because that is the token the running pic-sure-mcp presents. A render that does not rotate refuses on that disagreement and sends you to the rotation.
 
-Only a rotating render writes MCP_SERVICE_TOKEN_PREVIOUS. Every other render of the gateway writes it blank, so the old token is accepted until the next gateway render and no longer. Rotate PIC-SURE Stack Secrets runs that render itself once pic-sure-mcp is up on the new token, then redeploys the gateway.
+Only a rotating render writes MCP_SERVICE_TOKEN_PREVIOUS. Every other render of the gateway writes it blank, so the old token is accepted until the gateway is next rendered and redeployed, and no longer. Rotate PIC-SURE Stack Secrets runs that render itself once pic-sure-mcp is up on the new token, then redeploys the gateway.
 
 A gateway render on a stack where nothing carries MCP_SERVICE_TOKEN yet, with RENDER_MCP false, writes the gateway's MCP_SERVICE_TOKEN blank instead of minting one. The gateway starts with a warning and rejects every X-PIC-SURE-MCP-TOKEN until a run that renders both the gateway and pic-sure-mcp mints the token. Rendering pic-sure-mcp always needs a token, so a first render of it requires RENDER_GATEWAY as well.
 
@@ -103,7 +103,7 @@ One thing to watch in the console. Terraform prints the rendered picsure-diction
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
           <name>ROTATE_MCP_SERVICE_TOKEN</name>
-          <description>Mint a new MCP_SERVICE_TOKEN and carry the old one into MCP_SERVICE_TOKEN_PREVIOUS in the gateway env, so the gateway accepts both while pic-sure-mcp is redeployed. The value is stack-local. It requires RENDER_GATEWAY and RENDER_MCP both true, refuses when the rendered gateway.env and mcp.env hold different tokens, and both services must be redeployed afterwards. Any later gateway render that does not rotate writes MCP_SERVICE_TOKEN_PREVIOUS blank. Use the Rotate PIC-SURE Stack Secrets job with this box ticked; it does the render, the redeploys and that final gateway render.</description>
+          <description>Mint a new MCP_SERVICE_TOKEN and carry the old one into MCP_SERVICE_TOKEN_PREVIOUS in the gateway env, so the gateway accepts both while pic-sure-mcp is redeployed. The value is stack-local. It requires RENDER_GATEWAY and RENDER_MCP both true, and both services must be redeployed afterwards. When the rendered gateway.env and mcp.env hold different tokens, the mcp.env value is the one carried into MCP_SERVICE_TOKEN_PREVIOUS, with a warning. Any later gateway render that does not rotate writes MCP_SERVICE_TOKEN_PREVIOUS blank. Use the Rotate PIC-SURE Stack Secrets job with this box ticked; it does the render, the redeploys and that final gateway render.</description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
       </parameterDefinitions>
@@ -452,8 +452,19 @@ resolve_shared_value() {
   done
 
   if [ &quot;$distinct&quot; -gt 1 ]; then
+    case &quot;$key&quot; in
+      LOGGING_API_KEY)
+        rotation_flag=ROTATE_LOGGING_API_KEY
+        ;;
+      MCP_SERVICE_TOKEN)
+        rotation_flag=ROTATE_MCP_SERVICE_TOKEN
+        ;;
+      *)
+        rotation_flag=ROTATE_STACK_SECRETS
+        ;;
+    esac
     echo &quot;Error: the env files rendered for stack ${TARGET_STACK} hold different values for ${key}.&quot; &gt;&amp;2
-    echo &quot;Run the Rotate PIC-SURE Stack Secrets job to put one value back across the services that share it, then re-run this job.&quot; &gt;&amp;2
+    echo &quot;Run the Rotate PIC-SURE Stack Secrets job with ${rotation_flag} to put one value back across the services that share it, then re-run this job.&quot; &gt;&amp;2
     return 1
   fi
 
@@ -680,16 +691,20 @@ if [ &quot;$render_gateway&quot; = &quot;true&quot; ] || [ &quot;$render_mcp&quo
   mcp_service_token_previous_origin=&quot;blank, this run does not rotate&quot;
   if [ &quot;$rotate_mcp_service_token&quot; = &quot;true&quot; ]; then
     echo &quot;ROTATE_MCP_SERVICE_TOKEN is true: minting a new MCP_SERVICE_TOKEN for the gateway and pic-sure-mcp on stack ${TARGET_STACK}. The gateway env keeps the old value as MCP_SERVICE_TOKEN_PREVIOUS.&quot;
-    if ! resolve_shared_value &quot;MCP_SERVICE_TOKEN&quot; &quot;$gateway_mcp_env_copy&quot; &quot;$mcp_env_copy&quot; 2&gt;/dev/null; then
-      echo &quot;Error: refusing to rotate MCP_SERVICE_TOKEN on stack ${TARGET_STACK}: the rendered gateway.env and mcp.env hold different tokens, and only one of them can be carried into MCP_SERVICE_TOKEN_PREVIOUS.&quot; &gt;&amp;2
-      echo &quot;The redeployed gateway would reject the other one for as long as a pic-sure-mcp container still presented it. Put the token pic-sure-mcp is running with into both objects, then re-run the rotation.&quot; &gt;&amp;2
-      exit 1
-    fi
-    mcp_service_token_previous=&quot;$resolved_value&quot;
-    if [ &quot;$resolved_origin&quot; = &quot;reused&quot; ]; then
-      mcp_service_token_previous_origin=&quot;the outgoing MCP_SERVICE_TOKEN&quot;
+    if resolve_shared_value &quot;MCP_SERVICE_TOKEN&quot; &quot;$gateway_mcp_env_copy&quot; &quot;$mcp_env_copy&quot; 2&gt;/dev/null; then
+      mcp_service_token_previous=&quot;$resolved_value&quot;
+      if [ &quot;$resolved_origin&quot; = &quot;reused&quot; ]; then
+        mcp_service_token_previous_origin=&quot;the outgoing MCP_SERVICE_TOKEN&quot;
+      else
+        mcp_service_token_previous_origin=&quot;blank, nothing rendered for this stack carried a token to carry over&quot;
+      fi
     else
-      mcp_service_token_previous_origin=&quot;blank, nothing rendered for this stack carried a token to carry over&quot;
+      read_env_value &quot;$mcp_env_copy&quot; &quot;MCP_SERVICE_TOKEN&quot;
+      mcp_service_token_previous=&quot;$env_value&quot;
+      mcp_service_token_previous_origin=&quot;the outgoing MCP_SERVICE_TOKEN from mcp.env, which gateway.env did not match&quot;
+      echo &quot;WARNING: the rendered gateway.env and mcp.env for stack ${TARGET_STACK} hold different MCP_SERVICE_TOKEN values.&quot; &gt;&amp;2
+      echo &quot;WARNING: carrying the mcp.env value into MCP_SERVICE_TOKEN_PREVIOUS, because that is the token the running pic-sure-mcp presents. The gateway.env value is dropped.&quot; &gt;&amp;2
+      echo &quot;WARNING: a pic-sure-mcp container started from anything other than the current mcp.env is rejected by the gateway until the redeploy that follows this render.&quot; &gt;&amp;2
     fi
   else
     resolve_shared_value &quot;MCP_SERVICE_TOKEN&quot; &quot;$gateway_mcp_env_copy&quot; &quot;$mcp_env_copy&quot;
@@ -854,7 +869,7 @@ fi
 
 if [ &quot;$render_mcp&quot; = &quot;true&quot; ]; then
   apply_args+=(
-    -var=&quot;env_public_dns_name=${env_public_dns_name}&quot;
+    -var=&quot;env_public_dns_name=${env_public_dns_name:-}&quot;
     -var=&quot;mcp_adapter_python_min_version=${mcp_adapter_python_min_version:-}&quot;
     -var=&quot;mcp_adapter_r_tag=${mcp_adapter_r_tag:-}&quot;
   )
