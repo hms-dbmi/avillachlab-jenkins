@@ -17,7 +17,7 @@ operations.env carries no database password. It names the AWS Secrets Manager My
 
 The dictionary's DATASOURCE_URL and DATASOURCE_USERNAME are never minted. Each is read back out of the rendered picsure-dictionary.env, falls back to the controller global the dictionary image was built from when the object does not carry it (database_psql_host_address and database_psql_app_user_secret_name), and stops the run only when both sources are empty.
 
-MCP_SERVICE_TOKEN is shared by the gateway and pic-sure-mcp and is handled apart from the three above: it is read back out of this stack's rendered gateway.env and mcp.env. ROTATE_MCP_SERVICE_TOKEN mints a new current value and writes the outgoing one into the gateway's MCP_SERVICE_TOKEN_PREVIOUS, so the gateway accepts both while pic-sure-mcp is redeployed. It requires RENDER_GATEWAY and RENDER_MCP both true, and both services must be redeployed afterwards. Use the Rotate PIC-SURE Stack Secrets job. When gateway.env and mcp.env disagree about the outgoing value, the rotation carries the mcp.env value into MCP_SERVICE_TOKEN_PREVIOUS with a warning, because that is the token the running pic-sure-mcp presents. A render that does not rotate refuses on that disagreement and sends you to the rotation.
+MCP_SERVICE_TOKEN is shared by the gateway and pic-sure-mcp and is handled apart from the three above: it is read back out of this stack's rendered gateway.env and mcp.env. ROTATE_MCP_SERVICE_TOKEN mints a new current value and writes the outgoing one into the gateway's MCP_SERVICE_TOKEN_PREVIOUS, so the gateway accepts both while pic-sure-mcp is redeployed. It requires RENDER_GATEWAY and RENDER_MCP both true, and both services must be redeployed afterwards. Use the Rotate PIC-SURE Stack Secrets job. When gateway.env and mcp.env disagree about the outgoing value, the rotation carries the mcp.env value into MCP_SERVICE_TOKEN_PREVIOUS with a warning, because that is the token pic-sure-mcp was last rendered with. A render that does not rotate refuses on that disagreement and sends you to the rotation.
 
 Only a rotating render writes MCP_SERVICE_TOKEN_PREVIOUS. Every other render of the gateway writes it blank, so the old token is accepted until the gateway is next rendered and redeployed, and no longer. Rotate PIC-SURE Stack Secrets runs that render itself once pic-sure-mcp is up on the new token, then redeploys the gateway.
 
@@ -428,6 +428,7 @@ resolve_shared_value() {
   local third_source=${4:-}
   local source_file
   local candidate
+  local rotation_flag
   local first_value=&quot;&quot;
   local distinct=0
 
@@ -453,9 +454,6 @@ resolve_shared_value() {
 
   if [ &quot;$distinct&quot; -gt 1 ]; then
     case &quot;$key&quot; in
-      LOGGING_API_KEY)
-        rotation_flag=ROTATE_LOGGING_API_KEY
-        ;;
       MCP_SERVICE_TOKEN)
         rotation_flag=ROTATE_MCP_SERVICE_TOKEN
         ;;
@@ -703,7 +701,7 @@ if [ &quot;$render_gateway&quot; = &quot;true&quot; ] || [ &quot;$render_mcp&quo
       mcp_service_token_previous=&quot;$env_value&quot;
       mcp_service_token_previous_origin=&quot;the outgoing MCP_SERVICE_TOKEN from mcp.env, which gateway.env did not match&quot;
       echo &quot;WARNING: the rendered gateway.env and mcp.env for stack ${TARGET_STACK} hold different MCP_SERVICE_TOKEN values.&quot; &gt;&amp;2
-      echo &quot;WARNING: carrying the mcp.env value into MCP_SERVICE_TOKEN_PREVIOUS, because that is the token the running pic-sure-mcp presents. The gateway.env value is dropped.&quot; &gt;&amp;2
+      echo &quot;WARNING: carrying the mcp.env value into MCP_SERVICE_TOKEN_PREVIOUS, because that is the token pic-sure-mcp was last rendered with. The gateway.env value is dropped.&quot; &gt;&amp;2
       echo &quot;WARNING: a pic-sure-mcp container started from anything other than the current mcp.env is rejected by the gateway until the redeploy that follows this render.&quot; &gt;&amp;2
     fi
   else

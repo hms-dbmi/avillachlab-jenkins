@@ -8,7 +8,7 @@ Pick what to rotate. At least one is required:
   ROTATE_LOGGING_API_KEY: LOGGING_API_KEY, shared by gateway, visualization, pic-sure-mcp and pic-sure-logging.
   ROTATE_MCP_SERVICE_TOKEN: MCP_SERVICE_TOKEN, shared by gateway and pic-sure-mcp.
 
-ROTATE_MCP_SERVICE_TOKEN keeps a previous value: the render writes the old token into MCP_SERVICE_TOKEN_PREVIOUS in the gateway env, so the gateway accepts both the new and the old token while pic-sure-mcp is redeployed and no request is rejected during the cutover. The stack deploy starts the gateway before pic-sure-mcp, so the gateway already accepts the new token when pic-sure-mcp starts presenting it. Once both are up, this job renders the gateway again without rotating, which writes MCP_SERVICE_TOKEN_PREVIOUS blank, and redeploys the gateway alone, so the old token stops working. Every render that does not rotate writes the previous value blank in the same way, so it never outlives the next gateway render and redeploy. When this stack's rendered gateway.env and mcp.env hold different tokens, the rotation carries the mcp.env value into MCP_SERVICE_TOKEN_PREVIOUS with a warning, because that is the token the running pic-sure-mcp presents, and drops the gateway.env value.
+ROTATE_MCP_SERVICE_TOKEN keeps a previous value: the render writes the old token into MCP_SERVICE_TOKEN_PREVIOUS in the gateway env, so the gateway accepts both the new and the old token while pic-sure-mcp is redeployed and no request is rejected during the cutover. The stack deploy starts the gateway before pic-sure-mcp, so the gateway already accepts the new token when pic-sure-mcp starts presenting it. Once both are up, this job renders the gateway again without rotating, which writes MCP_SERVICE_TOKEN_PREVIOUS blank, and redeploys the gateway alone, so the old token stops working. Every render that does not rotate writes the previous value blank in the same way, so it never outlives the next gateway render and redeploy. When this stack's rendered gateway.env and mcp.env hold different tokens, the rotation carries the mcp.env value into MCP_SERVICE_TOKEN_PREVIOUS with a warning, because that is the token pic-sure-mcp was last rendered with, and drops the gateway.env value.
 
 The gateway carries a secret from every set, so it always renders and always redeploys. The other services are pulled in only by the flag that needs them, and a flag left false makes the render read those values back out of this stack&apos;s own env files and preserve them unchanged. Rotating both in one run is the usual case after an exposure, because a leaked gateway.env carries every one of these values, and it restarts the gateway once instead of twice.
 
@@ -189,11 +189,11 @@ pipeline {
                         }
 
                         if (stackDeployFailed &amp;&amp; rotateMcp) {
-                            echo &quot;MCP_SERVICE_TOKEN was rotated, but the render that clears MCP_SERVICE_TOKEN_PREVIOUS is skipped after a failed deploy, so the gateway on stack ${targetStack} still accepts the previous token until it is next rendered and redeployed.&quot;
+                            echo &quot;MCP_SERVICE_TOKEN was rotated, but the render that clears MCP_SERVICE_TOKEN_PREVIOUS is skipped after a failed deploy, so the gateway on stack ${targetStack} still accepts the previous token until it is next rendered and redeployed. Redeploy pic-sure-mcp with PIC-SURE MCP Build and Deploy before any new MCP_SERVICE_TOKEN rotation: until then the running container may still present the older token, and a second rotation would drop it.&quot;
                         }
 
                         if (stackDeployFailed) {
-                            error(&quot;PIC-SURE Wildfly Stack Deploy finished ${stackDeployResult} on stack ${targetStack}. Its console names the service that failed. Redeploy that service once the cause is fixed. For pic-sure-mcp that is PIC-SURE MCP Build and Deploy, which renders mcp.env from the values this run wrote.&quot;)
+                            error(&quot;PIC-SURE Wildfly Stack Deploy finished ${stackDeployResult} on stack ${targetStack}. Its console names the service that failed. Redeploy that service once the cause is fixed. For pic-sure-mcp that is PIC-SURE MCP Build and Deploy, which renders mcp.env from the values this run wrote. Run it before any new MCP_SERVICE_TOKEN rotation: until then the running container may still present the older token, and a second rotation would drop it.&quot;)
                         }
 
                         if (rotateMcp) {

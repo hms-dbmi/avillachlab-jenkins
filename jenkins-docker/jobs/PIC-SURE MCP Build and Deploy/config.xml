@@ -24,7 +24,7 @@
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
           <name>git_hash</name>
-          <description>Monorepo git hash for the reactor build. Leave blank to use the release control</description>
+          <description>Full commit SHA (40 hex characters) of the monorepo for the reactor build. Leave blank to use the release control. A ref without the services/pic-sure-mcp module is skipped only when this resolves to a full commit SHA.</description>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
         <hudson.model.ChoiceParameterDefinition>
@@ -69,7 +69,7 @@ def targetStack;
 pipeline {
     agent any
     parameters {
-        string(name: &apos;git_hash&apos;, defaultValue: &apos;&apos;, description: &apos;Monorepo git hash for the reactor build. Leave blank to use the release control&apos;)
+        string(name: &apos;git_hash&apos;, defaultValue: &apos;&apos;, description: &apos;Full commit SHA (40 hex characters) of the monorepo for the reactor build. Leave blank to use the release control. A ref without the services/pic-sure-mcp module is skipped only when this resolves to a full commit SHA.&apos;)
         choice(name: &apos;TARGET_STACK&apos;, choices: [&apos;staging&apos;,&apos;live&apos;], description: &apos;Based on selection we determine if is a or b stack.&apos;)
     }
 
@@ -134,6 +134,9 @@ pipeline {
                             [$class: &apos;StringParameterValue&apos;, name: &apos;MODULES&apos;, value: &apos;services/pic-sure-mcp&apos;]
                         ]
                         if (!fileExists(&quot;${mavenWorkspace}/services/pic-sure-mcp/pom.xml&quot;)) {
+                            if (!((requestedRef ?: &apos;&apos;) ==~ /[0-9a-fA-F]{40}/)) {
+                                error(&quot;The pic-sure ref checked out for stack ${targetStack} has no services/pic-sure-mcp module and PIC-SURE Maven Build #${mavenBuild.number} finished ${mavenBuild.result}, but the requested ref ${requestedRef ?: &apos;(empty)&apos;} is not a full commit SHA. A skip needs a full 40 character commit SHA to confirm the checkout landed on it.&quot;)
+                            }
                             def checkedOutHead = sh(script: &quot;git -C &apos;${mavenWorkspace}&apos; rev-parse HEAD&quot;, returnStdout: true).trim()
                             def requestedHead = sh(script: &quot;git -C &apos;${mavenWorkspace}&apos; rev-parse --verify --quiet &apos;${requestedRef}^{commit}&apos; || true&quot;, returnStdout: true).trim()
                             if (!requestedHead || checkedOutHead != requestedHead) {

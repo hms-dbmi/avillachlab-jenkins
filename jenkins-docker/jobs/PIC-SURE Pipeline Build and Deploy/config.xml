@@ -42,7 +42,7 @@
         </hudson.model.StringParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
           <name>INCLUDE_PIC_SURE_API</name>
-          <description>Include PIC-SURE API (gateway, operations, query, mcp) in the build and deploy process</description>
+          <description>Include PIC-SURE API (gateway, operations, query, mcp) in the build and deploy process. mcp deploys only when the checked-out pic-sure ref has the services/pic-sure-mcp module.</description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
