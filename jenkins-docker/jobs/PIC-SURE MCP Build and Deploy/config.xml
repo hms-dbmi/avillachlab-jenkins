@@ -125,13 +125,20 @@ pipeline {
                             error(&quot;No infrastructure_git_hash in build-spec.json; cannot render configuration.&quot;)
                         }
 
+                        def requestedRef = params.git_hash ?: build_hashes[&apos;PSA&apos;]
+                        def mavenWorkspace = &quot;/var/jenkins_home/workspace/PIC-SURE Maven Build - ${targetStack}&quot;
                         def mavenBuild = build job: &apos;PIC-SURE Maven Build&apos;, propagate: false, parameters: [
-                            [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: params.git_hash ?: build_hashes[&apos;PSA&apos;]],
+                            [$class: &apos;StringParameterValue&apos;, name: &apos;git_hash&apos;, value: requestedRef],
                             [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
                             [$class: &apos;StringParameterValue&apos;, name: &apos;pipeline_build_id&apos;, value: pipelineBuildId ?: &apos;MANUAL_RUN&apos;],
                             [$class: &apos;StringParameterValue&apos;, name: &apos;MODULES&apos;, value: &apos;services/pic-sure-mcp&apos;]
                         ]
-                        if (!fileExists(&quot;/var/jenkins_home/workspace/PIC-SURE Maven Build - ${targetStack}/services/pic-sure-mcp/pom.xml&quot;)) {
+                        if (!fileExists(&quot;${mavenWorkspace}/services/pic-sure-mcp/pom.xml&quot;)) {
+                            def checkedOutHead = sh(script: &quot;git -C &apos;${mavenWorkspace}&apos; rev-parse HEAD&quot;, returnStdout: true).trim()
+                            def requestedHead = sh(script: &quot;git -C &apos;${mavenWorkspace}&apos; rev-parse --verify --quiet &apos;${requestedRef}^{commit}&apos; || true&quot;, returnStdout: true).trim()
+                            if (!requestedHead || checkedOutHead != requestedHead) {
+                                error(&quot;PIC-SURE Maven Build #${mavenBuild.number} finished ${mavenBuild.result} with ${checkedOutHead} checked out, not the requested ${requestedRef} (${requestedHead ?: &apos;unresolved in the workspace&apos;}). The checkout failed, so the missing services/pic-sure-mcp module says nothing about the requested ref.&quot;)
+                            }
                             echo &quot;The pic-sure ref checked out for stack ${targetStack} has no services/pic-sure-mcp module (PIC-SURE Maven Build #${mavenBuild.number} ${mavenBuild.result}). Skipping the pic-sure-mcp image, render and deploy.&quot;
                             return
                         }
