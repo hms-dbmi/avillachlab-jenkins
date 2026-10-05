@@ -62,8 +62,8 @@ else
   echo &quot;ERROR: There is nothing to download. To create one:&quot; &gt;&amp;2
   echo &quot;ERROR:   1. Run this job against a stack that does have a bdc.env, or copy .env.example&quot; &gt;&amp;2
   echo &quot;ERROR:      from the PIC-SURE-Frontend repository.&quot; &gt;&amp;2
-  echo &quot;ERROR:   2. Set LOGGING_API_KEY to the value in this stack&apos;s rendered&quot; &gt;&amp;2
-  echo &quot;ERROR:      configs/pic-sure-logging/$target_stack/logging.env.&quot; &gt;&amp;2
+  echo &quot;ERROR:   2. Set LOGGING_API_KEY to the value in the rendered&quot; &gt;&amp;2
+  echo &quot;ERROR:      configs/pic-sure-logging/logging.env, which every stack shares.&quot; &gt;&amp;2
   echo &quot;ERROR:   3. Upload it with &apos;Upload PIC-SURE-Frontend Configuration&apos;, TARGET_STACK=$TARGET_STACK.&quot; &gt;&amp;2
   exit 1
 fi
