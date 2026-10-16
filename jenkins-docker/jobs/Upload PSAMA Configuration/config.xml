@@ -3,7 +3,7 @@
   <actions/>
   <description>Validates a psama.env against PSAMA&apos;s required-key rules and, only if it passes, uploads it to S3. The check is fail-closed: it requires every key PSAMA cannot start or authorize without, requires each identity provider&apos;s credentials whenever that provider&apos;s IS_ENABLED flag is true, and requires ENABLE_PUBLIC_ACCESS, TOS_ENABLED, CONSENT_BASED_AUTHORIZATION_ENABLED and APPLICATION_CLIENT_SECRET_IS_BASE_64 to read exactly true or false, because Spring also reads yes, on and 1 as true. An empty STRICT_AUTHORIZATION_APPLICATIONS is rejected as well: it makes no connection strict, and an empty merged access-rule set then grants rather than denies. Failures name the offending key only, never its value. An uploaded change takes effect only after redeploying PSAMA; the container bakes its env at create time. The rules are derived from PSAMA&apos;s own application.properties rather than from a live file, so run this job once per environment with VALIDATE_ONLY set against the current live psama.env before relying on the gate; that reports what the rules would reject without changing anything.
 
-Before uploading, the job sets LOGGING_SERVICE_URL and LOGGING_API_KEY in the file from the shared configs/pic-sure-logging/logging.env that Render PIC-SURE Configuration writes, replacing any value already in the file, so PSAMA presents the same audit logging key as every other service. A missing or blank shared key refuses the upload. REFRESH_LOGGING_KEY re-uploads the psama.env already in S3 with the current key, which is how Rotate PIC-SURE Stack Secrets carries a new key to PSAMA.</description>
+Before uploading, the job sets LOGGING_SERVICE_URL and LOGGING_API_KEY in the file from the shared configs/pic-sure-logging/logging.env that Render PIC-SURE Configuration writes, replacing any value already in the file, so PSAMA presents the same audit logging key as every other service. A missing or blank shared key refuses the upload. REFRESH_LOGGING_KEY re-uploads the psama.env already in S3 with the current key, which is how Rotate PIC-SURE Stack Secrets carries a new key to PSAMA. S3_BUCKET_NAME picks the bucket for both objects and defaults to the controller global stack_s3_bucket.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
@@ -17,6 +17,12 @@ Before uploading, the job sets LOGGING_SERVICE_URL and LOGGING_API_KEY in the fi
           <description>Run every validation rule and report the verdict without uploading. A file that fails still fails the build; this only suppresses the upload on success, so s3://.../configs/psama/psama.env is left untouched. Use it as a pre-flight: download the live psama.env, run it through here once per environment, and fix what it names before relying on the gate for a real upload.</description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>S3_BUCKET_NAME</name>
+          <description>Bucket that holds configs/psama/psama.env and the shared configs/pic-sure-logging/logging.env. Every read and write in this job uses it. Leave the default to use the controller global stack_s3_bucket; Rotate PIC-SURE Stack Secrets passes its own bucket so the refresh lands where that rotation rendered.</description>
+          <defaultValue>${stack_s3_bucket}</defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
           <name>REFRESH_LOGGING_KEY</name>
           <description>Ignore any uploaded file. Download the psama.env already in S3, run the same validation, set the current shared LOGGING_API_KEY in it and upload it back. Rotate PIC-SURE Stack Secrets runs this after minting a new key. PSAMA must be redeployed afterwards.</description>
@@ -49,7 +55,16 @@ for script_file in &quot;$source_scripts_folder&quot;*.sh; do
 done
 shopt -u nullglob
 
-: &quot;${stack_s3_bucket:?stack_s3_bucket is required}&quot;
+case &quot;${S3_BUCKET_NAME:-}&quot; in
+  &quot;&quot;|*&apos;$&apos;*|*&apos;{&apos;*)
+    echo &quot;Using the controller global stack_s3_bucket: ${stack_s3_bucket:-}&quot;
+    ;;
+  *)
+    stack_s3_bucket=&quot;$S3_BUCKET_NAME&quot;
+    echo &quot;Using S3_BUCKET_NAME: ${stack_s3_bucket}&quot;
+    ;;
+esac
+: &quot;${stack_s3_bucket:?no bucket resolved: set S3_BUCKET_NAME or the stack_s3_bucket global}&quot;
 
 ENV_FILE=&quot;psama.env&quot;
 validate_only=&quot;${VALIDATE_ONLY:-false}&quot;

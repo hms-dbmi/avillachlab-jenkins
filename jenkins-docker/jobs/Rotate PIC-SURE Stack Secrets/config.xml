@@ -153,6 +153,7 @@ pipeline {
 
                         if (rotateLogging) {
                             build job: &apos;Upload PSAMA Configuration&apos;, parameters: [
+                                [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: params.S3_BUCKET_NAME],
                                 [$class: &apos;BooleanParameterValue&apos;, name: &apos;REFRESH_LOGGING_KEY&apos;, value: true]
                             ]
                         }
