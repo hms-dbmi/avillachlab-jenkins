@@ -20,7 +20,7 @@ subversion
 ldap
 cloudbees-folder
 copyartifact
-saml
+saml:4.623.v7875d61cd9f5
 role-strategy
 uno-choice
 configuration-as-code
