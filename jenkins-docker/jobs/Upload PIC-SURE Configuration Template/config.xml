@@ -13,6 +13,7 @@
             <string>Gateway</string>
             <string>Operations</string>
             <string>Query</string>
+            <string>MCP</string>
             <string>HPDS Auth</string>
             <string>HPDS Open</string>
             <string>Visualization</string>
@@ -73,6 +74,10 @@ case &quot;$SERVICE&quot; in
     Query)
         template_file=&quot;query.env.tftpl&quot;
         template_prefix=&quot;configs/query/templates&quot;
+        ;;
+    MCP)
+        template_file=&quot;mcp.env.tftpl&quot;
+        template_prefix=&quot;configs/mcp/templates&quot;
         ;;
     &quot;HPDS Auth&quot;)
         template_file=&quot;hpds-auth.env.tftpl&quot;

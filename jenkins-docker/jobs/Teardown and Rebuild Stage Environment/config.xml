@@ -192,9 +192,9 @@ else
   echo &quot;Error: LOGGING_API_KEY comes from that file and gateway.env cannot be rendered without it.&quot; &gt;&amp;2
   echo &quot;Error: To fix it:&quot; &gt;&amp;2
   echo &quot;Error:   1. Run &apos;Render PIC-SURE Configuration&apos; with TARGET_STACK=${target_stack} and&quot; &gt;&amp;2
-  echo &quot;Error:      RENDER_LOGGING, RENDER_GATEWAY and RENDER_VISUALIZATION all true. That mints a&quot; &gt;&amp;2
-  echo &quot;Error:      key and writes the per-stack logging.env; all three must render together so&quot; &gt;&amp;2
-  echo &quot;Error:      they agree on it.&quot; &gt;&amp;2
+  echo &quot;Error:      RENDER_LOGGING, RENDER_GATEWAY, RENDER_VISUALIZATION and RENDER_MCP all true.&quot; &gt;&amp;2
+  echo &quot;Error:      That mints a key and writes the per-stack logging.env; all four must render&quot; &gt;&amp;2
+  echo &quot;Error:      together so they agree on it.&quot; &gt;&amp;2
   echo &quot;Error:   2. Update configs/pic-sure-frontend/${target_stack}/bdc.env with the same key via&quot; &gt;&amp;2
   echo &quot;Error:      &apos;Upload PIC-SURE-Frontend Configuration&apos;, or the frontend&apos;s audit events are dropped.&quot; &gt;&amp;2
   echo &quot;Error:   3. Re-run this job.&quot; &gt;&amp;2
@@ -396,6 +396,7 @@ else
   aws s3 --sse=AES256 cp scripts/deploy/deploy-gateway.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-gateway.sh
   aws s3 --sse=AES256 cp scripts/deploy/deploy-operations.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-operations.sh
   aws s3 --sse=AES256 cp scripts/deploy/deploy-query.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-query.sh
+  aws s3 --sse=AES256 cp scripts/deploy/deploy-mcp.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-mcp.sh
   aws s3 --sse=AES256 cp scripts/deploy/deploy-psama.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-psama.sh
   aws s3 --sse=AES256 cp scripts/deploy/deploy-dictionary.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-dictionary.sh
   aws s3 --sse=AES256 cp scripts/deploy/deploy-wildfly-stack.sh s3://$stack_s3_bucket/$target_stack/scripts/deploy-wildfly-stack.sh

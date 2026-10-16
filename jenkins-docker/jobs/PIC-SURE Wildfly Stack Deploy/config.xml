@@ -1,7 +1,7 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
   <actions/>
-  <description>Deploys wildfly-host containers (Gateway, Operations Service, HPDS Query Service, PSAMA, Dictionary, Visualization) sequentially via a single
+  <description>Deploys wildfly-host containers (Gateway, Operations Service, HPDS Query Service, MCP Service, PSAMA, Dictionary, Visualization) sequentially via a single
 SSM command to avoid systemd D-Bus race conditions, then waits for Spring Boot
 startup on all enabled containers in parallel.</description>
   <keepDependencies>false</keepDependencies>
@@ -34,6 +34,11 @@ startup on all enabled containers in parallel.</description>
         <hudson.model.BooleanParameterDefinition>
           <name>DEPLOY_QUERY</name>
           <description>Deploy PIC-SURE HPDS Query Service</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>DEPLOY_MCP</name>
+          <description>Deploy PIC-SURE MCP Service</description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
@@ -145,6 +150,9 @@ fi
 if [[ &quot;${DEPLOY_QUERY}&quot; == &quot;true&quot; ]]; then
   deploy_flags=&quot;${deploy_flags} --deploy_query&quot;
 fi
+if [[ &quot;${DEPLOY_MCP}&quot; == &quot;true&quot; ]]; then
+  deploy_flags=&quot;${deploy_flags} --deploy_mcp&quot;
+fi
 if [[ &quot;${DEPLOY_PSAMA}&quot; == &quot;true&quot; ]]; then
   deploy_flags=&quot;${deploy_flags} --deploy_psama&quot;
 fi
@@ -204,6 +212,11 @@ fi
 
 if [[ &quot;${DEPLOY_QUERY}&quot; == &quot;true&quot; ]]; then
   wait_for_spring_boot_ssm_logs &quot;${wildfly_instance_id}&quot; &quot;pic-sure-hpds-query-service&quot; &amp;
+  pids+=($!)
+fi
+
+if [[ &quot;${DEPLOY_MCP}&quot; == &quot;true&quot; ]]; then
+  wait_for_spring_boot_ssm_logs &quot;${wildfly_instance_id}&quot; &quot;pic-sure-mcp&quot; &amp;
   pids+=($!)
 fi
 
