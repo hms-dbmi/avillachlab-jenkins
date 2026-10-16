@@ -5,13 +5,13 @@
 
 The .tftpl is the file people edit. Pull it with Download PIC-SURE Configuration Template, change it, push it back with Upload PIC-SURE Configuration Template, then render. The rendered .env in S3 is a build artifact: hand-editing it accomplishes nothing, because the next render overwrites it.
 
-Secrets are reused, not minted. PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT are read back out of this stack's currently rendered gateway.env, operations.env and query.env, and LOGGING_API_KEY out of its logging.env. Re-rendering one service therefore leaves the values the other services are still running with alone. If the files that share a value disagree, the run aborts instead of picking one.
+Secrets are reused, not minted. PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT are read back out of this stack's currently rendered gateway.env, operations.env and query.env, and LOGGING_API_KEY out of the shared logging.env that every stack reads. Re-rendering one service therefore leaves the values the other services are still running with alone. If the files that share a value disagree, the run aborts instead of picking one.
 
-ROTATE_STACK_SECRETS and ROTATE_LOGGING_API_KEY mint instead of reusing. Each requires every consumer of its values to render in the same run: gateway, operations and query for the first; logging, gateway and visualization for the second. Both are checkboxes on Rotate PIC-SURE Stack Secrets, which is the job to use, because a new value is only safe once the matching redeploys have followed it. A first render, where the object does not exist yet, mints under the same all-consumers gate; an object that exists but holds a blank value aborts and sends you to the rotation job.
+ROTATE_STACK_SECRETS and ROTATE_LOGGING_API_KEY mint instead of reusing. Each requires every consumer of its values to render in the same run: gateway, operations and query for the first; logging, gateway, operations, visualization and dictionary for the second. Both are checkboxes on Rotate PIC-SURE Stack Secrets, which is the job to use, because a new value is only safe once the matching redeploys have followed it. A first render, where the object does not exist yet, mints under the same all-consumers gate; an object that exists but holds a blank value aborts and sends you to the rotation job.
 
-LOGGING_API_KEY has a fourth consumer this job does not render. The frontend reads it from configs/pic-sure-frontend/&lt;target_stack&gt;/bdc.env, which is uploaded by hand through Upload PIC-SURE-Frontend Configuration. Minting a new key here leaves that file holding the old one until someone updates it, and until then the frontend's audit events are dropped.
+LOGGING_API_KEY is one value for every stack. This job renders it into logging.env, which has no stack segment, and into the dictionary env and this stack's gateway, operations and visualization env files. Two consumers are not rendered here. Upload PSAMA Configuration adds the key to psama.env, and the frontend reads it from configs/pic-sure-frontend/&lt;target_stack&gt;/bdc.env, which is uploaded by hand through Upload PIC-SURE-Frontend Configuration. Minting a new key here leaves both of those files, and every other stack's gateway, operations and visualization env files, on the old key until each is uploaded or rendered again. Until then their audit events are dropped.
 
-TARGET_STACK means what it says for seven of the eight objects. picsure-dictionary.env is the exception: its key carries no stack segment, so every stack's deploy pulls that one file and rendering the dictionary reaches all of them at once.
+TARGET_STACK means what it says for six of the eight objects. picsure-dictionary.env and logging.env are the exceptions: their keys carry no stack segment, so every stack's deploy pulls those files and rendering either one reaches all of them at once.
 
 operations.env carries no database password. It names the AWS Secrets Manager MySQL driver and passes database_app_user_secret_name as the datasource username, so the operations service reads the rotating app-user password itself when it connects. The host is database_host_address, the same value PSAMA is built with.
 
@@ -85,7 +85,7 @@ One thing to watch in the console. Terraform prints the rendered picsure-diction
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
           <name>ROTATE_LOGGING_API_KEY</name>
-          <description>Mint a new LOGGING_API_KEY instead of reusing the rendered one. The key is stack-local: configs/pic-sure-logging/&lt;target_stack&gt;/logging.env is this stack&apos;s own object, and no other stack is read or written. pic-sure-logging checks the key and the gateway and visualization services present it, so it requires RENDER_LOGGING, RENDER_GATEWAY and RENDER_VISUALIZATION all true and all three must be redeployed afterwards. A fourth consumer is not rendered here: the frontend reads the key from configs/pic-sure-frontend/&lt;target_stack&gt;/bdc.env, which is uploaded by hand, so a rotation has to update that file for this stack as well or the frontend&apos;s audit events are dropped. Use the Rotate PIC-SURE Stack Secrets job with this box ticked; it does the render and the redeploys and names the frontend follow-up at the end.</description>
+          <description>Mint a new LOGGING_API_KEY instead of reusing the rendered one. One key serves every stack: configs/pic-sure-logging/logging.env has no stack segment. pic-sure-logging checks the key, and the gateway, operations, visualization and dictionary services present it, so this requires RENDER_LOGGING, RENDER_GATEWAY, RENDER_OPERATIONS, RENDER_VISUALIZATION and RENDER_DICTIONARY all true, and all five must be redeployed afterwards. The rotation reaches more than this stack. Every other stack&apos;s gateway, operations and visualization must be rendered and redeployed too, PSAMA must be re-uploaded through Upload PSAMA Configuration and redeployed, and each stack&apos;s configs/pic-sure-frontend/&lt;target_stack&gt;/bdc.env must be updated by hand, or those services&apos; audit events are dropped. Use the Rotate PIC-SURE Stack Secrets job with this box ticked; it does this stack&apos;s render and redeploys and names the follow-ups at the end.</description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
       </parameterDefinitions>
@@ -193,8 +193,15 @@ if [ &quot;$render_gateway&quot; = &quot;true&quot; ] &amp;&amp; [ &quot;$render
 fi
 
 all_logging_consumers_selected=false
-if [ &quot;$render_logging&quot; = &quot;true&quot; ] &amp;&amp; [ &quot;$render_gateway&quot; = &quot;true&quot; ] &amp;&amp; [ &quot;$render_visualization&quot; = &quot;true&quot; ]; then
+if [ &quot;$render_logging&quot; = &quot;true&quot; ] &amp;&amp; [ &quot;$render_gateway&quot; = &quot;true&quot; ] &amp;&amp; [ &quot;$render_operations&quot; = &quot;true&quot; ] &amp;&amp;
+   [ &quot;$render_visualization&quot; = &quot;true&quot; ] &amp;&amp; [ &quot;$render_dictionary&quot; = &quot;true&quot; ]; then
   all_logging_consumers_selected=true
+fi
+
+logging_consumer_selected=false
+if [ &quot;$render_logging&quot; = &quot;true&quot; ] || [ &quot;$render_gateway&quot; = &quot;true&quot; ] || [ &quot;$render_operations&quot; = &quot;true&quot; ] ||
+   [ &quot;$render_visualization&quot; = &quot;true&quot; ] || [ &quot;$render_dictionary&quot; = &quot;true&quot; ]; then
+  logging_consumer_selected=true
 fi
 
 # The gateway, operations and query services share PICSURE_APPLICATION_TOKEN,
@@ -207,11 +214,12 @@ if [ &quot;$rotate_stack_secrets&quot; = &quot;true&quot; ] &amp;&amp; [ &quot;$
   exit 1
 fi
 
-# pic-sure-logging checks LOGGING_API_KEY; the gateway and the visualization service present it.
-# A consumer left on the old key is answered with 401 and its logging client drops the event.
+# pic-sure-logging checks LOGGING_API_KEY; the gateway, operations, visualization and dictionary
+# services present it. A consumer left on the old key is answered with 401 and its logging client
+# drops the event.
 if [ &quot;$rotate_logging_api_key&quot; = &quot;true&quot; ] &amp;&amp; [ &quot;$all_logging_consumers_selected&quot; != &quot;true&quot; ]; then
-  echo &quot;Error: ROTATE_LOGGING_API_KEY changes a value that the pic-sure-logging, gateway and visualization services share between them.&quot; &gt;&amp;2
-  echo &quot;Set RENDER_LOGGING, RENDER_GATEWAY and RENDER_VISUALIZATION all true so the three render together, then redeploy all three.&quot; &gt;&amp;2
+  echo &quot;Error: ROTATE_LOGGING_API_KEY changes a value that the pic-sure-logging, gateway, operations, visualization and dictionary services share between them.&quot; &gt;&amp;2
+  echo &quot;Set RENDER_LOGGING, RENDER_GATEWAY, RENDER_OPERATIONS, RENDER_VISUALIZATION and RENDER_DICTIONARY all true so the five render together, then redeploy all five.&quot; &gt;&amp;2
   exit 1
 fi
 
@@ -540,20 +548,21 @@ if [ &quot;$render_services&quot; = &quot;true&quot; ]; then
   echo &quot;  AGGREGATE_OBFUSCATION_SALT: ${aggregate_obfuscation_salt_origin}&quot;
 fi
 
-# LOGGING_API_KEY is checked by pic-sure-logging and presented by the gateway and the
-# visualization service, so all three env files for this stack must carry the same value.
-# A fourth consumer, the frontend, reads it from configs/pic-sure-frontend/${TARGET_STACK}/bdc.env,
-# which is uploaded by hand and not rendered here. An absent object is a bootstrap and mints
-# under the all-three gate; a present object with a blank key aborts and refers you to the
-# rotation job, which pairs the mint with the redeploys that make it safe.
+# LOGGING_API_KEY is checked by pic-sure-logging and presented by the gateway, operations,
+# visualization and dictionary services, so every env file this job renders must carry the same
+# value. One key serves every stack and lives in the stackless logging.env. PSAMA and the frontend
+# also present it but are not rendered here: Upload PSAMA Configuration adds it to psama.env, and
+# configs/pic-sure-frontend/&lt;target_stack&gt;/bdc.env is uploaded by hand. An absent object is a
+# bootstrap and mints under the all-consumers gate; a present object with a blank key aborts and
+# refers you to the rotation job, which pairs the mint with the redeploys that make it safe.
 logging_api_key=&quot;&quot;
-if [ &quot;$render_logging&quot; = &quot;true&quot; ] || [ &quot;$render_gateway&quot; = &quot;true&quot; ] || [ &quot;$render_visualization&quot; = &quot;true&quot; ]; then
-  logging_env_key=&quot;configs/pic-sure-logging/${TARGET_STACK}/logging.env&quot;
-  logging_env_legacy_key=&quot;configs/pic-sure-logging/logging.env&quot;
+if [ &quot;$logging_consumer_selected&quot; = &quot;true&quot; ]; then
+  logging_env_key=&quot;configs/pic-sure-logging/logging.env&quot;
+  logging_env_stack_key=&quot;configs/pic-sure-logging/${TARGET_STACK}/logging.env&quot;
   logging_env_copy=&quot;&quot;
 
   if [ &quot;$rotate_logging_api_key&quot; = &quot;true&quot; ]; then
-    echo &quot;ROTATE_LOGGING_API_KEY is true: minting a new LOGGING_API_KEY for pic-sure-logging, gateway and visualization.&quot;
+    echo &quot;ROTATE_LOGGING_API_KEY is true: minting a new LOGGING_API_KEY for pic-sure-logging, gateway, operations, visualization and dictionary.&quot;
   else
     new_temp_file &quot;logging.env&quot;
     logging_env_candidate=&quot;$temp_file_path&quot;
@@ -566,21 +575,21 @@ if [ &quot;$render_logging&quot; = &quot;true&quot; ] || [ &quot;$render_gateway
         echo &quot;Error: the message above is from the shared S3 download helper. It was reading the rendered logging env back from s3://${stack_s3_bucket}/${logging_env_key} to recover LOGGING_API_KEY, and there is no template or repository fallback for a rendered env file, so this run stops.&quot; &gt;&amp;2
         exit &quot;$download_status&quot;
       fi
-      # Before treating this as a first render, look at the pre-migration key. logging.env moved
-      # from a stack-independent path to a per-stack one, and a stack whose object has not been
-      # copied across yet would otherwise look unrendered, mint a fresh LOGGING_API_KEY and leave
-      # the frontend's bdc.env holding the old one.
-      if download_s3_template &quot;$logging_env_legacy_key&quot; &quot;$logging_env_candidate&quot;; then
-        echo &quot;WARNING: s3://${stack_s3_bucket}/${logging_env_key} does not exist yet; reading LOGGING_API_KEY back from the pre-migration s3://${stack_s3_bucket}/${logging_env_legacy_key} instead.&quot; &gt;&amp;2
-        echo &quot;WARNING: this render writes the per-stack key, so the fallback stops applying once it succeeds.&quot; &gt;&amp;2
+      # Before treating this as a first render, look at this stack&apos;s per-stack object. logging.env
+      # moved from per-stack keys back to one stackless key, and a stack that has not rendered the
+      # shared object yet would otherwise look unrendered and mint a key its running containers and
+      # the frontend&apos;s bdc.env do not hold.
+      if download_s3_template &quot;$logging_env_stack_key&quot; &quot;$logging_env_candidate&quot;; then
+        echo &quot;WARNING: s3://${stack_s3_bucket}/${logging_env_key} does not exist yet; adopting LOGGING_API_KEY from this stack&apos;s per-stack s3://${stack_s3_bucket}/${logging_env_stack_key} as the shared key.&quot; &gt;&amp;2
+        echo &quot;WARNING: every other stack&apos;s gateway, operations and visualization must be rendered and redeployed afterwards so they carry the same key.&quot; &gt;&amp;2
         logging_env_copy=&quot;$logging_env_candidate&quot;
       else
         download_status=$?
         if [ &quot;$download_status&quot; -ne 1 ]; then
-          echo &quot;Error: the message above is from the shared S3 download helper, reading the pre-migration logging env at s3://${stack_s3_bucket}/${logging_env_legacy_key}. There is no further fallback for a rendered env file, so this run stops.&quot; &gt;&amp;2
+          echo &quot;Error: the message above is from the shared S3 download helper, reading the per-stack logging env at s3://${stack_s3_bucket}/${logging_env_stack_key}. There is no further fallback for a rendered env file, so this run stops.&quot; &gt;&amp;2
           exit &quot;$download_status&quot;
         fi
-        echo &quot;neither s3://${stack_s3_bucket}/${logging_env_key} nor s3://${stack_s3_bucket}/${logging_env_legacy_key} is rendered yet&quot;
+        echo &quot;neither s3://${stack_s3_bucket}/${logging_env_key} nor s3://${stack_s3_bucket}/${logging_env_stack_key} is rendered yet&quot;
       fi
     fi
   fi
@@ -591,14 +600,14 @@ if [ &quot;$render_logging&quot; = &quot;true&quot; ] || [ &quot;$render_gateway
 
   if [ &quot;$logging_api_key_origin&quot; = &quot;generate&quot; ]; then
     if [ &quot;$rotate_logging_api_key&quot; != &quot;true&quot; ] &amp;&amp; [ -n &quot;$logging_env_copy&quot; ]; then
-      echo &quot;Error: s3://${stack_s3_bucket}/${logging_env_key} exists but carries no non-empty LOGGING_API_KEY.&quot; &gt;&amp;2
-      echo &quot;Minting a key here would leave this stack&apos;s running gateway, visualization and pic-sure-logging containers on the old one until each is redeployed.&quot; &gt;&amp;2
-      echo &quot;Run the Rotate PIC-SURE Stack Secrets job with ROTATE_LOGGING_API_KEY to change this value: it renders and redeploys all three for this stack, which is what makes a new key safe.&quot; &gt;&amp;2
+      echo &quot;Error: the rendered logging.env exists but carries no non-empty LOGGING_API_KEY.&quot; &gt;&amp;2
+      echo &quot;Minting a key here would leave every running consumer on every stack on the old one until each is redeployed.&quot; &gt;&amp;2
+      echo &quot;Run the Rotate PIC-SURE Stack Secrets job with ROTATE_LOGGING_API_KEY to change this value: it renders and redeploys this stack&apos;s consumers and names the follow-ups for the rest.&quot; &gt;&amp;2
       exit 1
     fi
     if [ &quot;$all_logging_consumers_selected&quot; != &quot;true&quot; ]; then
       echo &quot;Error: nothing is rendered at s3://${stack_s3_bucket}/${logging_env_key}, so this run would have to mint LOGGING_API_KEY.&quot; &gt;&amp;2
-      echo &quot;That value is shared by the pic-sure-logging, gateway and visualization services: set RENDER_LOGGING, RENDER_GATEWAY and RENDER_VISUALIZATION all true so all three render together on a first render.&quot; &gt;&amp;2
+      echo &quot;That value is shared by the pic-sure-logging, gateway, operations, visualization and dictionary services: set RENDER_LOGGING, RENDER_GATEWAY, RENDER_OPERATIONS, RENDER_VISUALIZATION and RENDER_DICTIONARY all true so all five render together on a first render.&quot; &gt;&amp;2
       exit 1
     fi
     generate_shared_token
@@ -686,7 +695,7 @@ if [ &quot;$render_gateway&quot; = &quot;true&quot; ]; then
   export TF_VAR_picsure_token_introspection_token=&quot;$picsure_token_introspection_token&quot;
 fi
 
-if [ &quot;$render_logging&quot; = &quot;true&quot; ] || [ &quot;$render_gateway&quot; = &quot;true&quot; ] || [ &quot;$render_visualization&quot; = &quot;true&quot; ]; then
+if [ &quot;$logging_consumer_selected&quot; = &quot;true&quot; ]; then
   export TF_VAR_logging_api_key=&quot;$logging_api_key&quot;
 fi
 

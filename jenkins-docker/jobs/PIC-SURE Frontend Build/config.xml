@@ -80,8 +80,8 @@ else
   echo &quot;ERROR: To fix it:&quot; &gt;&amp;2
   echo &quot;ERROR:   1. Get a starting file: run &apos;Download PIC-SURE-Frontend Configuration&apos; against a&quot; &gt;&amp;2
   echo &quot;ERROR:      stack that has one, or copy .env.example from the PIC-SURE-Frontend repository.&quot; &gt;&amp;2
-  echo &quot;ERROR:   2. Set LOGGING_API_KEY to the value in this stack&apos;s rendered&quot; &gt;&amp;2
-  echo &quot;ERROR:      configs/pic-sure-logging/$TARGET_STACK/logging.env. A mismatch is not fatal, but&quot; &gt;&amp;2
+  echo &quot;ERROR:   2. Set LOGGING_API_KEY to the value in the rendered&quot; &gt;&amp;2
+  echo &quot;ERROR:      configs/pic-sure-logging/logging.env, which every stack shares. A mismatch is not fatal, but&quot; &gt;&amp;2
   echo &quot;ERROR:      pic-sure-logging answers the frontend&apos;s audit events with 401 and they are dropped.&quot; &gt;&amp;2
   echo &quot;ERROR:   3. Upload it with &apos;Upload PIC-SURE-Frontend Configuration&apos;, TARGET_STACK=$TARGET_STACK.&quot; &gt;&amp;2
   echo &quot;ERROR:   4. Re-run this build.&quot; &gt;&amp;2

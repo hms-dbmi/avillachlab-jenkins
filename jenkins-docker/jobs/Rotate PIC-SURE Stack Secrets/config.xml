@@ -5,17 +5,17 @@
 
 Pick what to rotate. At least one is required:
   ROTATE_STACK_SECRETS - PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT, shared by gateway, operations and query.
-  ROTATE_LOGGING_API_KEY - LOGGING_API_KEY, shared by gateway, visualization and pic-sure-logging.
+  ROTATE_LOGGING_API_KEY - LOGGING_API_KEY, shared by gateway, operations, visualization, dictionary, PSAMA, the frontend and pic-sure-logging on every stack.
 
 The gateway carries secrets from both sets, so it always renders and always redeploys. The other services are pulled in only by the flag that needs them, and a flag left false makes the render read those values back out of this stack&apos;s own env files and preserve them unchanged. Rotating both in one run is the usual case after an exposure, because a leaked gateway.env carries all four, and it restarts the gateway once instead of twice.
 
-Only the selected stack is touched. Every one of these values lives in a per-stack object and no request crosses between stacks, so the other stack keeps its own values and is never rendered, redeployed or read.
+ROTATE_STACK_SECRETS touches only the selected stack. Those values live in per-stack objects and no request crosses between stacks, so the other stack keeps its own values and is never rendered, redeployed or read. LOGGING_API_KEY is different: one key serves every stack, held in the stackless configs/pic-sure-logging/logging.env. This job renders and redeploys the selected stack's consumers, but every other stack's gateway, operations and visualization keep the old key until they are rendered and redeployed too, and their audit events are dropped until then.
 
 Why the redeploy is not optional: containers bake their env at create time. A rotated QUERY_SERVICE_INTERNAL_TOKEN that no container has picked up leaves InternalTokenFilter rejecting the stale value with 403, which the gateway flattens into an opaque 500 on query downloads while every other endpoint keeps working. A rotated LOGGING_API_KEY leaves pic-sure-logging answering 401 while the logging client drops the audit event.
 
-With ROTATE_LOGGING_API_KEY, expect a short window between the Wildfly deploy and the logging deploy where the gateway and visualization already present the new key and pic-sure-logging still checks the old one. One key covers all three services, so the two sides cannot cut over at the same instant; the window is a cost of the single-key design rather than a defect.
+With ROTATE_LOGGING_API_KEY, expect a short window between the Wildfly deploy and the logging deploy where the services already present the new key and pic-sure-logging still checks the old one. One key covers every service, so the two sides cannot cut over at the same instant; the window is a cost of the single-key design rather than a defect.
 
-ROTATE_LOGGING_API_KEY also leaves a manual tail, and the job says so when it finishes. The frontend reads LOGGING_API_KEY from configs/pic-sure-frontend/&lt;target_stack&gt;/bdc.env, which is uploaded by hand and not rendered here. Download this stack&apos;s rendered logging.env to read the new key, download the same stack&apos;s bdc.env through Download PIC-SURE-Frontend Configuration, set LOGGING_API_KEY to match, upload it and redeploy the frontend. Until then the frontend&apos;s audit events are dropped while gateway and visualization audit continues normally. The key is never printed to this job&apos;s console.
+ROTATE_LOGGING_API_KEY also refreshes PSAMA: it runs Upload PSAMA Configuration with REFRESH_LOGGING_KEY, which writes the new key into the shared psama.env, then redeploys PSAMA with the other services. It leaves a manual tail, and the job says so when it finishes. Render and redeploy the gateway, operations and visualization on every other stack. The frontend reads LOGGING_API_KEY from configs/pic-sure-frontend/&lt;target_stack&gt;/bdc.env, which is uploaded by hand and not rendered here. Download the rendered configs/pic-sure-logging/logging.env to read the new key, then for each stack download its bdc.env through Download PIC-SURE-Frontend Configuration, set LOGGING_API_KEY to match, upload it and redeploy the frontend. Until then those services&apos; audit events are dropped. The key is never printed to this job&apos;s console.
 
 ROTATE_STACK_SECRETS changes AGGREGATE_OBFUSCATION_SALT, so this stack&apos;s reported aggregate counts shift for queries run before and after. The two stacks already carry different salts and report slightly different counts for the same query; that is a property of per-stack salts rather than a fault.
 
@@ -39,7 +39,7 @@ TOKEN_INTROSPECTION_TOKEN is not rotated here. PSAMA holds it in the application
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
           <name>ROTATE_LOGGING_API_KEY</name>
-          <description>Mint a new LOGGING_API_KEY. Pulls in visualization and pic-sure-logging alongside the gateway, and redeploys all three. Leaves a manual step for this stack&apos;s frontend bdc.env; see the job description.</description>
+          <description>Mint a new LOGGING_API_KEY. Pulls in operations, visualization, dictionary, PSAMA and pic-sure-logging alongside the gateway on this stack, and redeploys them. The key is shared by every stack, so it leaves manual steps for the other stacks and every frontend bdc.env; see the job description.</description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.StringParameterDefinition>
@@ -140,23 +140,31 @@ pipeline {
                             [$class: &apos;StringParameterValue&apos;, name: &apos;INFRASTRUCTURE_GIT_HASH&apos;, value: infrastructureGitHash],
                             [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_GATEWAY&apos;, value: true],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPERATIONS&apos;, value: rotateStack],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPERATIONS&apos;, value: rotateStack || rotateLogging],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_QUERY&apos;, value: rotateStack],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_AUTH_HPDS&apos;, value: false],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPEN_HPDS&apos;, value: false],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_VISUALIZATION&apos;, value: rotateLogging],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_LOGGING&apos;, value: rotateLogging],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_DICTIONARY&apos;, value: false],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_DICTIONARY&apos;, value: rotateLogging],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;ROTATE_STACK_SECRETS&apos;, value: rotateStack],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;ROTATE_LOGGING_API_KEY&apos;, value: rotateLogging]
                         ]
 
+                        if (rotateLogging) {
+                            build job: &apos;Upload PSAMA Configuration&apos;, parameters: [
+                                [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: params.S3_BUCKET_NAME],
+                                [$class: &apos;BooleanParameterValue&apos;, name: &apos;REFRESH_LOGGING_KEY&apos;, value: true]
+                            ]
+                        }
                         build job: &apos;PIC-SURE Wildfly Stack Deploy&apos;, parameters: [
                             [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: params.S3_BUCKET_NAME],
                             [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_GATEWAY&apos;, value: true],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_OPERATIONS&apos;, value: rotateStack],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_OPERATIONS&apos;, value: rotateStack || rotateLogging],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_QUERY&apos;, value: rotateStack],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_PSAMA&apos;, value: rotateLogging],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_DICTIONARY&apos;, value: rotateLogging],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_VISUALIZATION&apos;, value: rotateLogging]
                         ]
 
@@ -166,7 +174,7 @@ pipeline {
                                 [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
                             ]
 
-                            echo &quot;LOGGING_API_KEY was rotated. configs/pic-sure-frontend/${targetStack}/bdc.env still holds the old key: update it and redeploy the frontend, or this stack&apos;s frontend audit events are dropped.&quot;
+                            echo &quot;LOGGING_API_KEY was rotated for every stack. Render and redeploy gateway, operations and visualization on each other stack, and update every stack&apos;s configs/pic-sure-frontend/&lt;stack&gt;/bdc.env and redeploy its frontend, or their audit events are dropped.&quot;
                         }
                     }
                 }
