@@ -1,7 +1,7 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
   <actions/>
-  <description>Validates a psama.env against PSAMA&apos;s required-key rules and, only if it passes, uploads it to S3. The check is fail-closed: it requires every key PSAMA cannot start or authorize without, requires each identity provider&apos;s credentials whenever that provider&apos;s IS_ENABLED flag is true, and requires ENABLE_PUBLIC_ACCESS, TOS_ENABLED, CONSENT_BASED_AUTHORIZATION_ENABLED and APPLICATION_CLIENT_SECRET_IS_BASE_64 to read exactly true or false, because Spring also reads yes, on and 1 as true. An empty STRICT_AUTHORIZATION_APPLICATIONS is rejected as well: it makes no connection strict, and an empty merged access-rule set then grants rather than denies. Failures name the offending key only, never its value. An uploaded change takes effect only after redeploying PSAMA; the container bakes its env at create time. The rules are derived from PSAMA&apos;s own application.properties rather than from a live file, so run this job once per environment with VALIDATE_ONLY set against the current live psama.env before relying on the gate; that reports what the rules would reject without changing anything.
+  <description>Validates a psama.env against PSAMA&apos;s required-key rules and, only if it passes, uploads it to S3. The check is fail-closed: it requires the keys PSAMA has no usable default for (APPLICATION_CLIENT_SECRET, DATASOURCE_URL and DATASOURCE_USERNAME), requires each identity provider&apos;s credentials whenever that provider&apos;s IS_ENABLED flag is true, and requires ENABLE_PUBLIC_ACCESS, TOS_ENABLED, CONSENT_BASED_AUTHORIZATION_ENABLED and APPLICATION_CLIENT_SECRET_IS_BASE_64 to read exactly true or false, because Spring also reads yes, on and 1 as true. A STRICT_AUTHORIZATION_APPLICATIONS that is defined but empty is rejected as well: it makes no connection strict, and an empty merged access-rule set then grants rather than denies. Leaving it out keeps PSAMA&apos;s default. Every other key is optional and falls back to PSAMA&apos;s application.properties default. Failures name the offending key only, never its value. An uploaded change takes effect only after redeploying PSAMA; the container bakes its env at create time. The rules are derived from PSAMA&apos;s own application.properties rather than from a live file, so run this job once per environment with VALIDATE_ONLY set against the current live psama.env before relying on the gate; that reports what the rules would reject without changing anything.
 
 Before uploading, the job sets LOGGING_SERVICE_URL and LOGGING_API_KEY in the file from the shared configs/pic-sure-logging/logging.env that Render PIC-SURE Configuration writes, replacing any value already in the file, so PSAMA presents the same audit logging key as every other service. A missing or blank shared key refuses the upload. REFRESH_LOGGING_KEY re-uploads the psama.env already in S3 with the current key, which is how Rotate PIC-SURE Stack Secrets carries a new key to PSAMA. S3_BUCKET_NAME picks the bucket for both objects and defaults to the controller global stack_s3_bucket.</description>
   <keepDependencies>false</keepDependencies>
@@ -132,29 +132,21 @@ provider_is_enabled() {
 
 required_keys=(
     APPLICATION_CLIENT_SECRET
-    APPLICATION_CLIENT_SECRET_IS_BASE_64
     DATASOURCE_URL
     DATASOURCE_USERNAME
-    STRICT_AUTHORIZATION_APPLICATIONS
-    ENABLE_PUBLIC_ACCESS
-    CONSENT_BASED_AUTHORIZATION_ENABLED
-    TOS_ENABLED
-    USER_ID_CLAIM
-    TOKEN_INCLUSION_ROLES
-    TOKEN_EXPIRATION_TIME
-    MAX_SESSION_TIME
-    LONG_TERM_TOKEN_EXPIRATION_TIME
-    SERVER_PORT
 )
 for key in &quot;${required_keys[@]}&quot;; do
     if ! require_single_non_empty &quot;$key&quot;; then
         echo &quot;Error: $ENV_FILE must define exactly one non-empty $key value; refusing to upload.&quot; &gt;&amp;2
-        if [[ &quot;$key&quot; == &quot;STRICT_AUTHORIZATION_APPLICATIONS&quot; ]]; then
-            echo &quot;An empty value makes no connection strict, and an empty merged access-rule set then grants rather than denies.&quot; &gt;&amp;2
-        fi
         exit 1
     fi
 done
+
+if [[ &quot;$(definition_count STRICT_AUTHORIZATION_APPLICATIONS)&quot; -gt 0 ]] &amp;&amp; ! require_single_non_empty STRICT_AUTHORIZATION_APPLICATIONS; then
+    echo &quot;Error: $ENV_FILE defines STRICT_AUTHORIZATION_APPLICATIONS but not as exactly one non-empty value; refusing to upload.&quot; &gt;&amp;2
+    echo &quot;An empty value makes no connection strict, and an empty merged access-rule set then grants rather than denies. Leave the key out to keep PSAMA&apos;s default.&quot; &gt;&amp;2
+    exit 1
+fi
 
 for key in ENABLE_PUBLIC_ACCESS TOS_ENABLED CONSENT_BASED_AUTHORIZATION_ENABLED APPLICATION_CLIENT_SECRET_IS_BASE_64; do
     require_canonical_boolean &quot;$key&quot;
