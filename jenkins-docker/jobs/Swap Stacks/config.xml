@@ -29,7 +29,7 @@ pipeline {
                     sh &apos;cat build-spec.json&apos;
                     sh &apos;cat pipeline_git_commit.txt&apos;
                     sh &apos;pwd&apos;
-                    def buildSpec = new JsonSlurper().parse(new File(&quot;${env.WORKSPACE}/build-spec.json&quot;))
+                    def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/Swap Stacks/build-spec.json&apos;))
                     println(buildSpec)
                     infrastructure_git_hash = buildSpec.infrastructure_git_hash
                 }
@@ -43,7 +43,7 @@ pipeline {
                     retrieveDepStateId = result.number
                     copyArtifacts filter: &apos;*&apos;, projectName: &apos;Retrieve Deployment State&apos;, selector: specific(&quot;&quot;+retrieveDepStateId)
                     sh &apos;cat stacks.json&apos;
-                    stacksJson = new File(&quot;${env.WORKSPACE}/stacks.json&quot;).text
+                    stacksJson = new File(&apos;/var/jenkins_home/workspace/Retrieve Deployment State/stacks.json&apos;).text
                     def stacks = new JsonSlurperClassic().parseText(stacksJson)
                     def staging_stack = stacks.environments.next_prod
                     def live_stack = stacks.environments.prod

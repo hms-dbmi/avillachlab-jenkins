@@ -38,9 +38,7 @@ import hudson.*
 import hudson.model.*
 import groovy.json.JsonSlurper;
 
-def ws = build.workspace.remote
-
-def buildSpec = new JsonSlurper().parse(new File(&quot;${ws}/build-spec.json&quot;));
+def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/Check For Updates/build-spec.json&apos;));
 
 def envVars= Hudson.instance.getItem(&quot;Check For Updates&quot;).lastBuild.properties.get(&quot;envVars&quot;);
 
@@ -102,15 +100,13 @@ import hudson.*
 import hudson.model.*
 import groovy.json.JsonSlurper;
 
-def ws = build.workspace.remote
-
-def buildSpec = new JsonSlurper().parse(new File(&quot;${ws}/build-spec.json&quot;));
+def buildSpec = new JsonSlurper().parse(new File(&quot;/var/jenkins_home/workspace/Check For Updates/build-spec.json&quot;));
 
 def envVars= Hudson.instance.getItem(&quot;Check For Updates&quot;).lastBuild.properties.get(&quot;envVars&quot;);
 
 String dataset_s3_object_key ;
-if(new File(&quot;${ws}/toBeRekeyed.txt&quot;).exists()){
-    def bucket_hash = new File(&quot;${ws}/toBeRekeyed.txt&quot;).text
+if(new File(&quot;/var/jenkins_home/workspace/Check For Updates/toBeRekeyed.txt&quot;).exists()){
+    def bucket_hash = new File(&quot;/var/jenkins_home/workspace/Check For Updates/toBeRekeyed.txt&quot;).text
     Jenkins.instance.getItemByFullName(&quot;Import_and_Rekey_HPDS_Data&quot;)
     .scheduleBuild2(0, new ParametersAction([
         new StringParameterValue(&quot;source_s3_url&quot;, buildSpec.source_dataset_s3_url.trim()),
@@ -118,14 +114,14 @@ if(new File(&quot;${ws}/toBeRekeyed.txt&quot;).exists()){
         new StringParameterValue(&quot;destination_bucket_hash&quot;, bucket_hash.trim()),
         new BooleanParameterValue(&quot;isDestigmatized&quot;,false)
         ])).get()
-    dataset_s3_object_key = new File(&quot;${ws}/toBeRekeyed.txt&quot;).text
+    dataset_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/toBeRekeyed.txt&quot;).text
 } else {
-    dataset_s3_object_key = new File(&quot;${ws}/alreadyRekeyed.txt&quot;).text
+    dataset_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/alreadyRekeyed.txt&quot;).text
 }
 
 String destigmatized_dataset_s3_object_key ;
-if(new File(&quot;${ws}/destigmatized_toBeRekeyed.txt&quot;).exists()){
-    def bucket_hash = new File(&quot;${ws}/destigmatized_toBeRekeyed.txt&quot;).text
+if(new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_toBeRekeyed.txt&quot;).exists()){
+    def bucket_hash = new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_toBeRekeyed.txt&quot;).text
     Jenkins.instance.getItemByFullName(&quot;Import_and_Rekey_HPDS_Data&quot;)
     .scheduleBuild2(0, new ParametersAction([
         new StringParameterValue(&quot;source_s3_url&quot;, buildSpec.source_destigmatized_dataset_s3_url.trim()),
@@ -133,12 +129,12 @@ if(new File(&quot;${ws}/destigmatized_toBeRekeyed.txt&quot;).exists()){
         new StringParameterValue(&quot;destination_bucket_hash&quot;, bucket_hash.trim()),
         new BooleanParameterValue(&quot;isDestigmatized&quot;,true)
         ])).get()
-    destigmatized_dataset_s3_object_key = new File(&quot;${ws}/destigmatized_toBeRekeyed.txt&quot;).text
+    destigmatized_dataset_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_toBeRekeyed.txt&quot;).text
 } else {
-    destigmatized_dataset_s3_object_key = new File(&quot;${ws}/destigmatized_alreadyRekeyed.txt&quot;).text
+    destigmatized_dataset_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_alreadyRekeyed.txt&quot;).text
 }
 
-genomic_s3_object_key = new File(&quot;${ws}/genomicDatasetKey.txt&quot;).text
+genomic_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/genomicDatasetKey.txt&quot;).text
 
 Jenkins.instance.getItemByFullName(&quot;Deployment Pipeline&quot;)
     .scheduleBuild2(0, new ParametersAction([
