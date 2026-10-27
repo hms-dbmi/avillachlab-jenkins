@@ -75,8 +75,8 @@ pipeline {
                     sh &apos;cat build-spec.json&apos;
                     sh &apos;cat pipeline_git_commit.txt&apos;
                     sh &apos;pwd&apos;
-                    def buildSpec = new JsonSlurper().parse(new File(&apos;/var/jenkins_home/workspace/Production Fix - Privileges/build-spec.json&apos;))
-                    pipelineBuildId = new File(&apos;/var/jenkins_home/workspace/Production Fix - Privileges/pipeline_git_commit.txt&apos;).text.trim()
+                    def buildSpec = new JsonSlurper().parse(new File(&quot;${env.WORKSPACE}/build-spec.json&quot;))
+                    pipelineBuildId = new File(&quot;${env.WORKSPACE}/pipeline_git_commit.txt&quot;).text.trim()
                     for(def build : buildSpec.application){
                         build_hashes[build.project_job_git_key] = build.git_hash
                     }
