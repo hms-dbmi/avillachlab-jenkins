@@ -83,7 +83,8 @@ USER $JENKINS_USERNAME
 # Check if PLUGINS_FILE is provided and copy it, then run jenkins-plugin-cli
 COPY $PLUGINS_FILE /usr/share/jenkins/ref/plugins.txt 
 
-RUN /bin/jenkins-plugin-cli -f /usr/share/jenkins/ref/plugins.txt || echo "Some errors occurred during plugin installation."
+RUN /bin/jenkins-plugin-cli -f /usr/share/jenkins/ref/plugins.txt && \
+    test -f /usr/share/jenkins/ref/plugins/role-strategy.jpi
 
 COPY $CONFIG_XML_FILE /var/jenkins_home/config.xml
 COPY $CASC_FILE /var/jenkins_home/casc_configs/jenkins.yaml
