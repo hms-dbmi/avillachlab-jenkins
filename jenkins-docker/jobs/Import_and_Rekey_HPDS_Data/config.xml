@@ -134,6 +134,8 @@ sha256_of() {
 key_exists() {
     local bucket=&quot;$1&quot; key=&quot;$2&quot; out
     if out=$(aws s3api list-objects-v2 --bucket &quot;${bucket}&quot; --prefix &quot;${key}&quot; --output json 2&gt; /dev/null); then
+        # jq 1.6 -e exits 0 on empty input: an empty listing must mean &quot;not there&quot;
+        [ -n &quot;${out}&quot; ] || return 1
         printf &apos;%s&apos; &quot;${out}&quot; | jq -e --arg k &quot;${key}&quot; &apos;any(.Contents[]?; .Key == $k)&apos; &gt; /dev/null
     else
         aws s3api head-object --bucket &quot;${bucket}&quot; --key &quot;${key}&quot; &gt; /dev/null 2&gt;&amp;1
@@ -155,6 +157,8 @@ if [ &quot;${install_path}&quot; = &quot;dataset&quot; ]; then
 
     aws s3 cp &quot;${source_s3_url}manifest.json&quot; &quot;${work}/manifest.json&quot; --only-show-errors \
         || refuse &quot;cannot read ${source_s3_url}manifest.json (not a released dataset prefix?)&quot;
+    # jq 1.6 -e exits 0 on empty input, so the checks below need a non-empty file
+    [ -s &quot;${work}/manifest.json&quot; ] || refuse &quot;${source_s3_url}manifest.json is empty&quot;
 
     jq -e --arg v &quot;${HPDS_VARIANT}&quot; &apos;
         def okpath: type == &quot;string&quot; and test(&quot;^[A-Za-z0-9._/-]+$&quot;)

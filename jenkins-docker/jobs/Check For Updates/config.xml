@@ -77,6 +77,8 @@ dataset_marker=&quot;/data/hpds/pheno/datasets/&quot;
 key_exists() {
     local key=&quot;$1&quot; out
     if out=$(aws s3api list-objects-v2 --bucket &quot;${stack_s3_bucket}&quot; --prefix &quot;${key}&quot; --output json 2&gt; /dev/null); then
+        # jq 1.6 -e exits 0 on empty input: an empty listing must mean &quot;not there&quot;
+        [ -n &quot;${out}&quot; ] || return 1
         printf &apos;%s&apos; &quot;${out}&quot; | jq -e --arg k &quot;${key}&quot; &apos;any(.Contents[]?; .Key == $k)&apos; &gt; /dev/null
     else
         aws s3api head-object --bucket &quot;${stack_s3_bucket}&quot; --key &quot;${key}&quot; &gt; /dev/null 2&gt;&amp;1
