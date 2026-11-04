@@ -12,7 +12,7 @@ source_s3_url:
 - dataset prefix (ends with /, has manifest.json schema bdc-hpds-pheno-release/1): per-file staging. Server-side copies of the
   variant&apos;s files with the instance role (no assume_role, no docker), byte check of every copy, metadata.json also copied to
   fence_mapping.json, manifest.tsv written last. Refuses: unknown variant, bad manifest, open variant with the full
-  columnMeta, a stage prefix that already has manifest.tsv. A run that died before manifest.tsv can be retried.
+  columnMeta (stored sha or, when present, the gunzipped content sha of full and open is equal), a stage prefix that already has manifest.tsv. A run that died before manifest.tsv can be retried.
 
 IAM the instance role of this Jenkins needs for the dataset-prefix path (granted by Thomas, not by this job):
 - source bucket (bdc-etl-data-d0d6191): s3:ListBucket (prefix data/hpds/pheno/datasets/*) and s3:GetObject on data/hpds/pheno/datasets/*
@@ -108,7 +108,7 @@ esac
 source_s3_url=&quot;$(printf &apos;%s&apos; &quot;${source_s3_url}&quot; | tr -d &apos;[:space:]&apos;)&quot;
 destination_bucket_hash=&quot;$(printf &apos;%s&apos; &quot;${destination_bucket_hash}&quot; | tr -d &apos;[:space:]&apos;)&quot;
 
-[[ &quot;${source_s3_url}&quot; =~ ^s3://[a-z0-9][a-z0-9.-]*/[A-Za-z0-9._/=-]+$ ]] || refuse &quot;source_s3_url &apos;${source_s3_url}&apos; is not an s3:// object or prefix URL&quot;
+[[ &quot;${source_s3_url}&quot; =~ ^s3://[a-z0-9][a-z0-9.-]*/[A-Za-z0-9._/=+%:-]+$ ]] || refuse &quot;source_s3_url &apos;${source_s3_url}&apos; is not an s3:// object or prefix URL&quot;
 [[ &quot;${destination_bucket_hash}&quot; =~ ^[0-9a-f]{7,40}$ ]] || refuse &quot;destination_bucket_hash &apos;${destination_bucket_hash}&apos; is not a git hash&quot;
 [ -n &quot;${stack_s3_bucket}&quot; ] || refuse &quot;stack_s3_bucket is not set&quot;
 
@@ -178,8 +178,10 @@ if [ &quot;${install_path}&quot; = &quot;dataset&quot; ]; then
             (.removal.open_columnmeta_sha256 | type == &quot;string&quot; and length &gt; 0)
             and (.removal.full_columnmeta_sha256 | type == &quot;string&quot; and length &gt; 0)
             and (.removal.open_columnmeta_sha256 != .removal.full_columnmeta_sha256)
+            and (((.removal.full_columnmeta_content_sha256 | type) == &quot;string&quot; and (.removal.open_columnmeta_content_sha256 | type) == &quot;string&quot;
+                  and .removal.full_columnmeta_content_sha256 == .removal.open_columnmeta_content_sha256) | not)
             and all(.variants.open[] | select(.dest == &quot;columnMeta.javabin&quot;); .src != &quot;columnMeta.javabin&quot;)
-        &apos; &quot;${work}/manifest.json&quot; &gt; /dev/null || refuse &quot;open variant would ship the full columnMeta.javabin (concepts were not removed)&quot;
+        &apos; &quot;${work}/manifest.json&quot; &gt; /dev/null || refuse &quot;open variant would ship the full columnMeta.javabin (concepts were not removed, or full and open columnMeta contents are identical)&quot;
     else
         jq -e &apos;all(.variants.auth[]; (.src | startswith(&quot;open/&quot;)) | not)&apos; &quot;${work}/manifest.json&quot; &gt; /dev/null \
             || refuse &quot;auth variant must not use files from open/&quot;
@@ -202,18 +204,24 @@ if [ &quot;${install_path}&quot; = &quot;dataset&quot; ]; then
 
     while IFS=$&apos;\t&apos; read -r e_src e_dest e_bytes e_sha e_etag; do
         echo &quot;staging ${e_src} -&gt; ${e_dest} (${e_bytes} bytes)&quot;
-        aws s3 cp &quot;${source_s3_url}${e_src}&quot; &quot;s3://${stack_s3_bucket}/${stage_key_prefix}${e_dest}&quot; --sse AES256 --only-show-errors
-        head_json=&quot;$(aws s3api head-object --bucket &quot;${stack_s3_bucket}&quot; --key &quot;${stage_key_prefix}${e_dest}&quot;)&quot;
+        # Every aws call in this loop reads /dev/null: the loop reads entries.tsv on stdin and a CLI that reads stdin would end it early.
+        aws s3 cp &quot;${source_s3_url}${e_src}&quot; &quot;s3://${stack_s3_bucket}/${stage_key_prefix}${e_dest}&quot; --sse AES256 --only-show-errors &lt; /dev/null
+        head_json=&quot;$(aws s3api head-object --bucket &quot;${stack_s3_bucket}&quot; --key &quot;${stage_key_prefix}${e_dest}&quot; &lt; /dev/null)&quot;
         got_bytes=&quot;$(printf &apos;%s&apos; &quot;${head_json}&quot; | jq -r &apos;.ContentLength&apos;)&quot;
         [ &quot;${got_bytes}&quot; = &quot;${e_bytes}&quot; ] || refuse &quot;${e_dest}: staged ${got_bytes} bytes, manifest says ${e_bytes}&quot;
         printf &apos;%s\t%s\t%s\t%s\t%s\n&apos; &quot;${e_dest}&quot; &quot;${e_bytes}&quot; &quot;${e_sha}&quot; &quot;${e_etag}&quot; &quot;${e_src}&quot; &gt;&gt; &quot;${work}/manifest.tsv&quot;
         if [ &quot;${e_dest}&quot; = &quot;metadata.json&quot; ]; then
-            aws s3 cp &quot;${source_s3_url}${e_src}&quot; &quot;s3://${stack_s3_bucket}/data/${destination_bucket_hash}/fence_mapping.json&quot; --sse AES256 --only-show-errors
+            aws s3 cp &quot;${source_s3_url}${e_src}&quot; &quot;s3://${stack_s3_bucket}/data/${destination_bucket_hash}/fence_mapping.json&quot; --sse AES256 --only-show-errors &lt; /dev/null
         fi
     done &lt; &quot;${work}/entries.tsv&quot;
 
+    # Never publish a manifest.tsv that lists fewer files than the variant has.
+    expected_rows=&quot;$(jq -r --arg v &quot;${HPDS_VARIANT}&quot; &apos;.variants[$v] | length&apos; &quot;${work}/manifest.json&quot;)&quot;
+    written_rows=&quot;$(tail -n +7 &quot;${work}/manifest.tsv&quot; | wc -l | tr -d &apos; &apos;)&quot;
+    [ &quot;${written_rows}&quot; = &quot;${expected_rows}&quot; ] || refuse &quot;manifest.tsv has ${written_rows} data rows, the ${HPDS_VARIANT} variant has ${expected_rows} entries; not uploading it&quot;
+
     # manifest.tsv last: its presence marks the stage prefix complete and immutable.
-    aws s3 cp &quot;${work}/manifest.tsv&quot; &quot;s3://${stack_s3_bucket}/${stage_key_prefix}manifest.tsv&quot; --sse AES256 --only-show-errors
+    aws s3 cp &quot;${work}/manifest.tsv&quot; &quot;s3://${stack_s3_bucket}/${stage_key_prefix}manifest.tsv&quot; --sse AES256 --only-show-errors &lt; /dev/null
     echo &quot;Staged ${HPDS_VARIANT} from ${source_s3_url} (dataset ${dataset_id}) to s3://${stack_s3_bucket}/${stage_key_prefix}&quot;
     exit 0
 fi

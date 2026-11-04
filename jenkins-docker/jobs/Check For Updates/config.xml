@@ -83,12 +83,24 @@ key_exists() {
     fi
 }
 
-# Deploy key = commit that last changed the line of build-spec.json that holds the given field.
-deploy_key() {
+# Commit that last changed the line of build-spec.json that holds the given field.
+# A boundary commit (root or shallow clone) is blamed as &quot;^&lt;hash&gt;&quot;; the marker is not part of the hash.
+blame_commit() {
     local key
     key=$(git blame --abbrev=39 build-spec.json | grep &quot;$1&quot; | cut -f 1 -d &apos; &apos;)
+    echo &quot;${key#^}&quot;
+}
+
+# Deploy key = blame commit; must look like a git hash (7-40 hex) because it becomes an S3 key segment.
+deploy_key() {
+    local key
+    key=$(blame_commit &quot;$1&quot;)
     if [ -z &quot;${key}&quot; ]; then
         echo &quot;ERROR: no line for $1 in build-spec.json&quot; &gt;&amp;2
+        exit 1
+    fi
+    if ! [[ &quot;${key}&quot; =~ ^[0-9a-f]{7,40}$ ]]; then
+        echo &quot;ERROR: blame commit &apos;${key}&apos; for $1 is not a git hash&quot; &gt;&amp;2
         exit 1
     fi
     echo &quot;${key}&quot;
@@ -131,7 +143,7 @@ check_variant() {
 check_variant source_dataset_s3_url javabins_rekeyed/ javabins_rekeyed toBeRekeyed.txt alreadyRekeyed.txt auth
 check_variant source_destigmatized_dataset_s3_url destigmatized_javabins_rekeyed/ destigmatized_javabins_rekeyed destigmatized_toBeRekeyed.txt destigmatized_alreadyRekeyed.txt open
 
-LAST_GENOMIC_DATASET_MODIFICATION_COMMIT=$(git blame --abbrev=39 build-spec.json | grep source_genomic_dataset_s3_url | cut -f 1 -d &apos; &apos;)
+LAST_GENOMIC_DATASET_MODIFICATION_COMMIT=$(blame_commit source_genomic_dataset_s3_url)
 echo &quot;${LAST_GENOMIC_DATASET_MODIFICATION_COMMIT}&quot; &gt; genomicDatasetKey.txt
 </command>
       <configuredLocalRules/>

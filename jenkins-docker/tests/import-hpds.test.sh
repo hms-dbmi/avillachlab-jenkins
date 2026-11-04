@@ -33,6 +33,8 @@ cat > "$BIN/aws" << 'FAKE_AWS'
 #!/bin/bash
 # fake aws: bucket/key lives at $FAKE_S3/<bucket>/<key>; every call is logged.
 echo "aws $*" >> "$FAKE_AWS_LOG"
+# a CLI that reads stdin (FAKE_AWS_EAT_STDIN=1) would swallow the rest of a while-read loop's input
+[ -z "${FAKE_AWS_EAT_STDIN:-}" ] || cat > /dev/null
 bucket="" key="" prefix=""
 pos=()
 while [ $# -gt 0 ]; do
@@ -106,6 +108,7 @@ STACK=stack-bucket
 HASH=0123456789abcdef0123456789abcdef01234567
 
 sha() { shasum -a 256 "$1" | cut -d ' ' -f 1; }
+sha256_text() { printf '%s' "$1" | shasum -a 256 | cut -d ' ' -f 1; }
 
 # ---------------------------------------------------------------- extracted scripts
 python3 -I "$HERE/extract-shell.py" "$IMPORT_XML" > "$T/import.sh" || { echo "cannot extract import shell"; exit 1; }
@@ -134,7 +137,8 @@ make_dataset() {
     }
     {
         printf '{"schema":"bdc-hpds-pheno-release/1","dataset_id":"%s","url":"%s",' "$DATASET_ID" "$DATASET_URL"
-        printf '"removal":{"concepts_in_list":1,"full_columnmeta_sha256":"%s","open_columnmeta_sha256":"%s"},' "$(sha "$d/columnMeta.javabin")" "$open_sha"
+        printf '"removal":{"concepts_in_list":1,"full_columnmeta_sha256":"%s","open_columnmeta_sha256":"%s",' "$(sha "$d/columnMeta.javabin")" "$open_sha"
+        printf '"full_columnmeta_content_sha256":"%s","open_columnmeta_content_sha256":"%s"},' "$(sha256_text FULL-CONTENT)" "$(sha256_text OPEN-CONTENT)"
         printf '"variants":{"auth":['
         entry allObservationsStore.javabin allObservationsStore.javabin nosha; printf ','
         entry columnMeta.javabin columnMeta.javabin; printf ','
@@ -156,7 +160,7 @@ reset_world() {
     mkdir -p "$FAKE_S3" "$T/ws"
     : > "$FAKE_AWS_LOG"
     : > "$FAKE_DOCKER_LOG"
-    unset FAKE_FAIL_COPY FAKE_CORRUPT_COPY FAKE_LIST_DENIED
+    unset FAKE_FAIL_COPY FAKE_CORRUPT_COPY FAKE_LIST_DENIED FAKE_AWS_EAT_STDIN
 }
 
 # run_import <variant> <source url> ; exit code in $rc, stderr in $T/err
@@ -166,7 +170,7 @@ run_import() {
     (
         cd "$T/ws" || exit 99
         HPDS_VARIANT="$1" source_s3_url="$2" destination_bucket_hash="$HASH" stack_s3_bucket="$STACK" \
-            WORKSPACE="$T/ws" JENKINS_HOME="$T/jh" bash "$T/import.sh" > "$T/out" 2> "$T/err"
+            WORKSPACE="$T/ws" JENKINS_HOME="$T/jh" bash "$T/import.sh" > "$T/out" 2> "$T/err" < /dev/null
     )
     rc=$?
 }
@@ -222,6 +226,28 @@ run_import open "$DATASET_URL"
 check "sha-equal refusal staged nothing" test ! -e "$STAGE/destigmatized_javabins_rekeyed"
 run_import auth "$DATASET_URL"
 [ "$rc" = 0 ] && ok "auth is unaffected by equal shas" || bad "auth with equal shas (rc=$rc)"
+
+# content shas: the stored files differ (RemoveConceptFromMetadata always re-gzips) but the gunzipped content is the same
+reset_world
+make_dataset
+jq '.removal.open_columnmeta_content_sha256 = .removal.full_columnmeta_content_sha256' "$DATASET_DIR/manifest.json" > "$T/m.json" && mv "$T/m.json" "$DATASET_DIR/manifest.json"
+run_import open "$DATASET_URL"
+[ "$rc" != 0 ] && grep -q 'REFUSED' "$T/err" && ok "open refuses when the gunzipped content shas are equal" || bad "open content-sha-equal refusal (rc=$rc)"
+check "content-sha-equal refusal staged nothing" test ! -e "$STAGE/destigmatized_javabins_rekeyed"
+run_import auth "$DATASET_URL"
+[ "$rc" = 0 ] && ok "auth is unaffected by equal content shas" || bad "auth with equal content shas (rc=$rc)"
+
+reset_world
+make_dataset
+jq 'del(.removal.full_columnmeta_content_sha256, .removal.open_columnmeta_content_sha256)' "$DATASET_DIR/manifest.json" > "$T/m.json" && mv "$T/m.json" "$DATASET_DIR/manifest.json"
+run_import open "$DATASET_URL"
+[ "$rc" = 0 ] && ok "open without content shas in the manifest still stages (stored-file shas are checked)" || bad "open without content shas (rc=$rc)"
+
+reset_world
+make_dataset
+jq 'del(.removal.full_columnmeta_content_sha256)' "$DATASET_DIR/manifest.json" > "$T/m.json" && mv "$T/m.json" "$DATASET_DIR/manifest.json"
+run_import open "$DATASET_URL"
+[ "$rc" = 0 ] && ok "open with only one content sha present stages" || bad "open with one content sha (rc=$rc)"
 
 reset_world
 make_dataset
@@ -288,6 +314,33 @@ run_import auth "$DATASET_URL"
 run_import auth "$DATASET_URL"
 [ "$rc" != 0 ] && ok "after the retry the prefix is immutable (third run refused)" || bad "third run refusal"
 
+# a CLI that reads stdin must not shorten the stage
+for v in auth open; do
+    reset_world
+    make_dataset
+    export FAKE_AWS_EAT_STDIN=1
+    run_import "$v" "$DATASET_URL"
+    [ "$rc" = 0 ] && ok "$v: aws that consumes stdin does not end the loop (rc 0)" || { bad "$v: stdin-eating aws (rc=$rc)"; cat "$T/err"; }
+    sd="$([ "$v" = auth ] && echo javabins_rekeyed || echo destigmatized_javabins_rekeyed)"
+    rows="$(tail -n +7 "$STAGE/$sd/manifest.tsv" 2> /dev/null | wc -l | tr -d ' ')"
+    want="$(jq ".variants.$v | length" "$DATASET_DIR/manifest.json")"
+    [ "$rows" = "$want" ] && ok "$v: manifest.tsv lists all $want entries" || bad "$v: manifest.tsv rows $rows, want $want"
+    unset FAKE_AWS_EAT_STDIN
+done
+
+# guard: if the loop were cut short anyway, manifest.tsv must not be uploaded. Simulated by removing the </dev/null redirects.
+reset_world
+make_dataset
+sed 's|< /dev/null||g' "$T/import.sh" > "$T/import-noredirect.sh"
+check "guard test: redirects were really removed" test "$(grep -c '< /dev/null' "$T/import-noredirect.sh")" = 0
+export FAKE_AWS_EAT_STDIN=1
+rm -rf "$T/ws"; mkdir -p "$T/ws"
+(cd "$T/ws" && HPDS_VARIANT=auth source_s3_url="$DATASET_URL" destination_bucket_hash="$HASH" stack_s3_bucket="$STACK" bash "$T/import-noredirect.sh" > "$T/out" 2> "$T/err" < /dev/null)
+rc=$?
+unset FAKE_AWS_EAT_STDIN
+[ "$rc" != 0 ] && grep -q 'data rows' "$T/err" && ok "short manifest.tsv is refused before upload" || bad "short manifest.tsv guard (rc=$rc)"
+check "short manifest.tsv was not uploaded" test ! -e "$STAGE/javabins_rekeyed/manifest.tsv"
+
 reset_world
 make_dataset
 export FAKE_CORRUPT_COPY=columnMeta.javabin
@@ -336,6 +389,19 @@ check "legacy open uploads destigmatized_javabins_rekeyed.tar" test -f "$STAGE/d
 check "legacy open loads the ETL image" grep -q '^docker load' "$FAKE_DOCKER_LOG"
 check "legacy open runs RemoveConceptFromMetadata" grep -q 'docker run .*LOADER_NAME=RemoveConceptFromMetadata fake-hpds-etl:1' "$FAKE_DOCKER_LOG"
 check "legacy open copies conceptsToRemove.txt next to the data" test -f "$T/ws/local/hpds/conceptsToRemove.txt"
+
+# legacy URLs that worked before the stricter URL check (+ % : = in the key) must still be accepted
+make_legacy
+odd="pheno/final+v1%3A2=a:b.tar"
+cp "$FAKE_S3/legacy-src/pheno/final.tar" "$FAKE_S3/legacy-src/$odd"
+run_import auth "s3://legacy-src/$odd"
+[ "$rc" = 0 ] && ok "legacy .tar URL with + % : = passes the URL check and stages" || { bad "legacy odd URL (rc=$rc)"; cat "$T/err"; }
+check "legacy odd URL: tar is staged" test -f "$STAGE/javabins_rekeyed.tar"
+for badurl in "s3://legacy-src/pheno/a b.tar" 's3://legacy-src/pheno/a;b.tar' 's3://legacy-src/pheno/$(x).tar' "s3://legacy-src/pheno/a'b.tar"; do
+    make_legacy
+    run_import auth "$badurl"
+    [ "$rc" != 0 ] && ok "URL check still refuses: $badurl" || bad "URL check accepted: $badurl"
+done
 
 make_legacy
 run_import auth "s3://legacy-src/pheno/missing/"
@@ -424,7 +490,43 @@ mkdir -p "$FAKE_S3/$STACK/data/$C1/javabins_rekeyed"
 export FAKE_LIST_DENIED=1
 run_cfu
 unset FAKE_LIST_DENIED
+check "CFU: list denied: existing auth manifest.tsv is detected as staged via head-object" cfu_has alreadyRekeyed.txt "$C1"
+check "CFU: list denied: auth is not scheduled" cfu_lacks toBeRekeyed.txt
+check "CFU: list denied: head-object was used for the auth manifest.tsv" grep -q "s3api head-object --bucket $STACK --key data/$C1/javabins_rekeyed/manifest.tsv" "$FAKE_AWS_LOG"
 check "CFU: list denied falls back to head-object (manifest.tsv head 404 is 'not staged')" cfu_has destigmatized_toBeRekeyed.txt "$C1"
+
+# Rollback: a build-spec.json whose lines come from the root (boundary) commit is blamed as ^<hash>; the ^ is not part of the key.
+reset_world
+cfu_repo "s3://example-bucket/legacy/final.tar" "s3://example-bucket/legacy/final-destig.tar"
+(
+    cd "$REPO" || exit 1
+    git checkout -q --orphan rollback
+    git rm -rq --cached . > /dev/null
+    git add build-spec.json
+    git commit -q -m 'root spec'
+)
+R1="$(git -C "$REPO" rev-parse HEAD)"
+check "boundary fixture: git blame marks the line with ^" bash -c "cd '$REPO' && git blame --abbrev=39 build-spec.json | grep -q '^\^'"
+run_cfu
+[ "$rc" = 0 ] && ok "CFU: boundary (^) blame commit does not block the run" || { bad "CFU boundary blame (rc=$rc)"; cat "$T/err"; }
+check "CFU: boundary auth key has no ^ and is a prefix of the commit" bash -c "k=\$(cat '$REPO/toBeRekeyed.txt'); [[ \$k =~ ^[0-9a-f]{7,40}\$ ]] && [[ '$R1' == \$k* ]]"
+check "CFU: boundary open key has no ^" bash -c "k=\$(cat '$REPO/destigmatized_toBeRekeyed.txt'); [[ \$k =~ ^[0-9a-f]{7,40}\$ ]]"
+check "CFU: boundary genomic key has no ^" bash -c "k=\$(cat '$REPO/genomicDatasetKey.txt'); [[ \$k =~ ^[0-9a-f]{7,40}\$ ]]"
+check "CFU: boundary keys carry no ^ anywhere" test "$(cat "$REPO"/*.txt | grep -c '\^')" = 0
+
+# the hex check still stops garbage from becoming an S3 key segment
+reset_world
+cfu_repo "s3://example-bucket/legacy/final.tar" "s3://example-bucket/legacy/final-destig.tar"
+mkdir -p "$T/fakegit"
+cat > "$T/fakegit/git" << 'FAKE_GIT'
+#!/bin/bash
+[ "$1" = blame ] && { echo 'zzzz (x 2026-01-01 1) "source_dataset_s3_url": "x"'; exit 0; }
+exec /usr/bin/env -i PATH="$ORIG_PATH" git "$@"
+FAKE_GIT
+chmod +x "$T/fakegit/git"
+(cd "$REPO" && ORIG_PATH="$PATH" PATH="$T/fakegit:$PATH" stack_s3_bucket="$STACK" bash "$T/cfu.sh" > "$T/out" 2> "$T/err")
+rc=$?
+[ "$rc" != 0 ] && grep -q 'not a git hash' "$T/err" && ok "CFU: a non-hex blame commit is refused" || bad "CFU non-hex blame (rc=$rc)"
 
 reset_world
 cfu_repo "$PFX_A" "s3://$SRC_BUCKET/data/hpds/pheno/datasets/2026-11-05T0000Z/"
