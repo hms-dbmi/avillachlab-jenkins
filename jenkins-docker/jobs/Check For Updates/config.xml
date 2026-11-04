@@ -60,34 +60,93 @@ if (run.getResult() != Result.SUCCESS) {
     </hudson.plugins.groovy.SystemGroovy>
     <hudson.tasks.Shell>
       <command>#!/bin/bash
+# shellcheck disable=SC2154  # stack_s3_bucket, source_s3_url, ... are provided by Jenkins
+set -e
 
-LAST_DATASET_MODIFICATION_COMMIT=`git blame --abbrev=39 build-spec.json | grep source_dataset_s3_url | cut -f 1 -d &apos; &apos;`
+# Decides, per HPDS variant, whether the dataset named in build-spec.json still has to be staged.
+# Outputs (read by the next SystemGroovy step):
+#   toBeRekeyed.txt / alreadyRekeyed.txt                          auth variant
+#   destigmatized_toBeRekeyed.txt / destigmatized_alreadyRekeyed.txt   open variant
+#   genomicDatasetKey.txt
+# &quot;Already staged&quot; = data/&lt;key&gt;/&lt;stage_prefix&gt;manifest.tsv exists (per-file staging)
+#                    or data/&lt;key&gt;/&lt;legacy tar name&gt; exists (legacy .tar staging).
 
-aws s3api head-object --bucket $stack_s3_bucket --key &quot;data/${LAST_DATASET_MODIFICATION_COMMIT}/javabins_rekeyed.tar&quot; || not_exist=true
-if [ $not_exist ]; then
-  echo $LAST_DATASET_MODIFICATION_COMMIT &gt; toBeRekeyed.txt
-  echo &quot;Will rekey new dataset.&quot;
-else
-  echo $LAST_DATASET_MODIFICATION_COMMIT &gt; alreadyRekeyed.txt
-  echo &quot;Using existing dataset (Skipping rekey).&quot;
+dataset_marker=&quot;/data/hpds/pheno/datasets/&quot;
+
+# ListBucket on data/* is granted while HeadObject on a missing key may answer 403, so list first.
+key_exists() {
+    local key=&quot;$1&quot; out
+    if out=$(aws s3api list-objects-v2 --bucket &quot;${stack_s3_bucket}&quot; --prefix &quot;${key}&quot; --output json 2&gt; /dev/null); then
+        # jq 1.6 -e exits 0 on empty input: an empty listing must mean &quot;not there&quot;
+        [ -n &quot;${out}&quot; ] || return 1
+        printf &apos;%s&apos; &quot;${out}&quot; | jq -e --arg k &quot;${key}&quot; &apos;any(.Contents[]?; .Key == $k)&apos; &gt; /dev/null
+    else
+        aws s3api head-object --bucket &quot;${stack_s3_bucket}&quot; --key &quot;${key}&quot; &gt; /dev/null 2&gt;&amp;1
+    fi
+}
+
+# Commit that last changed the line of build-spec.json that holds the given field.
+# A boundary commit (root or shallow clone) is blamed as &quot;^&lt;hash&gt;&quot;; the marker is not part of the hash.
+blame_commit() {
+    local key
+    key=$(git blame --abbrev=39 build-spec.json | grep &quot;$1&quot; | cut -f 1 -d &apos; &apos;)
+    echo &quot;${key#^}&quot;
+}
+
+# Deploy key = blame commit; must look like a git hash (7-40 hex) because it becomes an S3 key segment.
+deploy_key() {
+    local key
+    key=$(blame_commit &quot;$1&quot;)
+    if [ -z &quot;${key}&quot; ]; then
+        echo &quot;ERROR: no line for $1 in build-spec.json&quot; &gt;&amp;2
+        exit 1
+    fi
+    if ! [[ &quot;${key}&quot; =~ ^[0-9a-f]{7,40}$ ]]; then
+        echo &quot;ERROR: blame commit &apos;${key}&apos; for $1 is not a git hash&quot; &gt;&amp;2
+        exit 1
+    fi
+    echo &quot;${key}&quot;
+}
+
+spec_url() {
+    jq -r --arg f &quot;$1&quot; &apos;.[$f] // &quot;&quot;&apos; build-spec.json | tr -d &apos;[:space:]&apos;
+}
+
+is_dataset_prefix() {
+    case &quot;$1&quot; in
+        *&quot;${dataset_marker}&quot;*) return 0 ;;
+    esac
+    return 1
+}
+
+# Dataset prefixes carry both variants in one dataset: the two URLs must be the same.
+auth_url=$(spec_url source_dataset_s3_url)
+open_url=$(spec_url source_destigmatized_dataset_s3_url)
+if is_dataset_prefix &quot;${auth_url}&quot; || is_dataset_prefix &quot;${open_url}&quot;; then
+    if [ &quot;${auth_url}&quot; != &quot;${open_url}&quot; ]; then
+        echo &quot;ERROR: source_dataset_s3_url (${auth_url}) and source_destigmatized_dataset_s3_url (${open_url}) must be identical for a dataset prefix&quot; &gt;&amp;2
+        exit 1
+    fi
 fi
 
+# check_variant &lt;field&gt; &lt;stage prefix&gt; &lt;legacy tar name&gt; &lt;to-be-staged file&gt; &lt;already-staged file&gt; &lt;label&gt;
+check_variant() {
+    local field=&quot;$1&quot; stage_prefix=&quot;$2&quot; legacy_name=&quot;$3&quot; todo_file=&quot;$4&quot; done_file=&quot;$5&quot; label=&quot;$6&quot; key
+    key=$(deploy_key &quot;${field}&quot;)
+    if key_exists &quot;data/${key}/${stage_prefix}manifest.tsv&quot; || key_exists &quot;data/${key}/${legacy_name}.tar&quot;; then
+        echo &quot;${key}&quot; &gt; &quot;${done_file}&quot;
+        echo &quot;Using existing ${label} dataset (Skipping staging).&quot;
+    else
+        echo &quot;${key}&quot; &gt; &quot;${todo_file}&quot;
+        echo &quot;Will stage new ${label} dataset.&quot;
+    fi
+}
 
-LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT=`git blame --abbrev=39 build-spec.json | grep source_destigmatized_dataset_s3_url | cut -f 1 -d &apos; &apos;`
+check_variant source_dataset_s3_url javabins_rekeyed/ javabins_rekeyed toBeRekeyed.txt alreadyRekeyed.txt auth
+check_variant source_destigmatized_dataset_s3_url destigmatized_javabins_rekeyed/ destigmatized_javabins_rekeyed destigmatized_toBeRekeyed.txt destigmatized_alreadyRekeyed.txt open
 
-aws s3api head-object --bucket $stack_s3_bucket --key &quot;data/${LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT}/destigmatized_javabins_rekeyed.tar&quot; || not_exist_destig=false
-
-if [ $not_exist_destig ]; then
-  echo $LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT &gt; destigmatized_toBeRekeyed.txt
-  echo &quot;Will rekey new destigmatized dataset.&quot;
-else
-  echo $LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT &gt; destigmatized_alreadyRekeyed.txt
-  echo &quot;Using existing destigmatized dataset (Skipping rekey).&quot;
-fi
-
-LAST_GENOMIC_DATASET_MODIFICATION_COMMIT=`git blame --abbrev=39 build-spec.json | grep source_genomic_dataset_s3_url | cut -f 1 -d &apos; &apos;`
-echo $LAST_GENOMIC_DATASET_MODIFICATION_COMMIT &gt; genomicDatasetKey.txt
-
+LAST_GENOMIC_DATASET_MODIFICATION_COMMIT=$(blame_commit source_genomic_dataset_s3_url)
+echo &quot;${LAST_GENOMIC_DATASET_MODIFICATION_COMMIT}&quot; &gt; genomicDatasetKey.txt
 </command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
@@ -104,16 +163,23 @@ def buildSpec = new JsonSlurper().parse(new File(&quot;/var/jenkins_home/workspa
 
 def envVars= Hudson.instance.getItem(&quot;Check For Updates&quot;).lastBuild.properties.get(&quot;envVars&quot;);
 
+// Stage one HPDS variant (auth|open). Anything but SUCCESS aborts before the Deployment Pipeline is scheduled.
+def runImport = { String variant, String sourceUrl, String bucketHash -&gt;
+    def run = Jenkins.instance.getItemByFullName(&quot;Import_and_Rekey_HPDS_Data&quot;)
+    .scheduleBuild2(0, new ParametersAction([
+        new StringParameterValue(&quot;source_s3_url&quot;, sourceUrl.trim()),
+        new StringParameterValue(&quot;HPDS_VARIANT&quot;, variant),
+        new StringParameterValue(&quot;destination_bucket_hash&quot;, bucketHash.trim())
+        ])).get()
+    if (run.getResult() != Result.SUCCESS) {
+        throw new AbortException(&quot;Import_and_Rekey_HPDS_Data (&quot; + variant + &quot;) finished &quot; + run.getResult() + &quot;; Deployment Pipeline not started&quot;)
+    }
+}
+
 String dataset_s3_object_key ;
 if(new File(&quot;/var/jenkins_home/workspace/Check For Updates/toBeRekeyed.txt&quot;).exists()){
     def bucket_hash = new File(&quot;/var/jenkins_home/workspace/Check For Updates/toBeRekeyed.txt&quot;).text
-    Jenkins.instance.getItemByFullName(&quot;Import_and_Rekey_HPDS_Data&quot;)
-    .scheduleBuild2(0, new ParametersAction([
-        new StringParameterValue(&quot;source_s3_url&quot;, buildSpec.source_dataset_s3_url.trim()),
-        new StringParameterValue(&quot;output_file_name&quot;, &quot;javabins_rekeyed&quot;),
-        new StringParameterValue(&quot;destination_bucket_hash&quot;, bucket_hash.trim()),
-        new BooleanParameterValue(&quot;isDestigmatized&quot;,false)
-        ])).get()
+    runImport(&quot;auth&quot;, buildSpec.source_dataset_s3_url, bucket_hash)
     dataset_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/toBeRekeyed.txt&quot;).text
 } else {
     dataset_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/alreadyRekeyed.txt&quot;).text
@@ -122,13 +188,7 @@ if(new File(&quot;/var/jenkins_home/workspace/Check For Updates/toBeRekeyed.txt&
 String destigmatized_dataset_s3_object_key ;
 if(new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_toBeRekeyed.txt&quot;).exists()){
     def bucket_hash = new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_toBeRekeyed.txt&quot;).text
-    Jenkins.instance.getItemByFullName(&quot;Import_and_Rekey_HPDS_Data&quot;)
-    .scheduleBuild2(0, new ParametersAction([
-        new StringParameterValue(&quot;source_s3_url&quot;, buildSpec.source_destigmatized_dataset_s3_url.trim()),
-        new StringParameterValue(&quot;output_file_name&quot;, &quot;destigmatized_javabins_rekeyed&quot;),
-        new StringParameterValue(&quot;destination_bucket_hash&quot;, bucket_hash.trim()),
-        new BooleanParameterValue(&quot;isDestigmatized&quot;,true)
-        ])).get()
+    runImport(&quot;open&quot;, buildSpec.source_destigmatized_dataset_s3_url, bucket_hash)
     destigmatized_dataset_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_toBeRekeyed.txt&quot;).text
 } else {
     destigmatized_dataset_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_alreadyRekeyed.txt&quot;).text

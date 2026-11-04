@@ -1,7 +1,23 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
   <actions/>
-  <description></description>
+  <description>Stages one HPDS variant of a pheno dataset into the stack bucket as data/&lt;destination_bucket_hash&gt;/...
+Triggered by Check For Updates (once per variant).
+
+HPDS_VARIANT: auth -&gt; javabins_rekeyed/ (legacy tar javabins_rekeyed.tar), open -&gt; destigmatized_javabins_rekeyed/
+(legacy tar destigmatized_javabins_rekeyed.tar, concepts removed).
+
+source_s3_url:
+- ends with .tar: legacy path (assume curated-datasets-s3-role, download, open: RemoveConceptFromMetadata in docker, re-tar, upload).
+- dataset prefix (ends with /, has manifest.json schema bdc-hpds-pheno-release/1): per-file staging. Server-side copies of the
+  variant&apos;s files with the instance role (no assume_role, no docker), byte check of every copy, metadata.json also copied to
+  fence_mapping.json, manifest.tsv written last. Refuses: unknown variant, bad manifest, open variant with the full
+  columnMeta (stored sha or, when present, the gunzipped content sha of full and open is equal), a stage prefix that already has manifest.tsv. A run that died before manifest.tsv can be retried.
+
+IAM the instance role of this Jenkins needs for the dataset-prefix path (granted by Thomas, not by this job):
+- source bucket (bdc-etl-data-d0d6191): s3:ListBucket (prefix data/hpds/pheno/datasets/*) and s3:GetObject on data/hpds/pheno/datasets/*
+- stack bucket (stack_s3_bucket): s3:ListBucket (prefix data/*), s3:GetObject and s3:PutObject on data/* (SSE-S3, no KMS)
+The legacy .tar path keeps using curated-datasets-s3-role.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@338.va_0a_b_50e29397">
@@ -12,21 +28,24 @@
       <parameterDefinitions>
         <hudson.model.StringParameterDefinition>
           <name>source_s3_url</name>
+          <description>.tar object (legacy) or dataset prefix ending with /</description>
           <trim>false</trim>
         </hudson.model.StringParameterDefinition>
-        <hudson.model.StringParameterDefinition>
-          <name>output_file_name</name>
-          <trim>false</trim>
-        </hudson.model.StringParameterDefinition>
+        <hudson.model.ChoiceParameterDefinition>
+          <name>HPDS_VARIANT</name>
+          <description>auth stages javabins_rekeyed/, open stages destigmatized_javabins_rekeyed/</description>
+          <choices class="java.util.Arrays$ArrayList">
+            <a class="string-array">
+              <string>auth</string>
+              <string>open</string>
+            </a>
+          </choices>
+        </hudson.model.ChoiceParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>destination_bucket_hash</name>
           <description>the git hash of the commit that changed the data set</description>
           <trim>true</trim>
         </hudson.model.StringParameterDefinition>
-        <hudson.model.BooleanParameterDefinition>
-          <name>isDestigmatized</name>
-          <defaultValue>false</defaultValue>
-        </hudson.model.BooleanParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -57,9 +76,162 @@
   <builders>
     <hudson.tasks.Shell>
       <command>#!/bin/bash
+# shellcheck disable=SC2154  # stack_s3_bucket, source_s3_url, ... are provided by Jenkins
 set -e
 
-curated_datasets_s3_role="arn:aws:iam::515157839325:role/curated-datasets-s3-role"
+# Stages one HPDS variant (HPDS_VARIANT = auth|open) of a pheno dataset into the stack bucket.
+#   source_s3_url ends with .tar -&gt; legacy path: download the tar, (open: remove concepts), re-tar, upload.
+#   source_s3_url is a dataset prefix (ends with /) -&gt; per-file staging driven by its manifest.json.
+# Contract: bdc-hpds-pheno-release/1 (manifest.json) and bdc-hpds-deploy/1 (manifest.tsv).
+
+refuse() {
+    echo &quot;REFUSED: $*&quot; &gt;&amp;2
+    exit 1
+}
+
+case &quot;${HPDS_VARIANT}&quot; in
+    auth)
+        stage_prefix=&quot;javabins_rekeyed/&quot;
+        legacy_name=&quot;javabins_rekeyed&quot;
+        remove_concepts=false
+        ;;
+    open)
+        stage_prefix=&quot;destigmatized_javabins_rekeyed/&quot;
+        legacy_name=&quot;destigmatized_javabins_rekeyed&quot;
+        remove_concepts=true
+        ;;
+    *)
+        refuse &quot;unknown HPDS_VARIANT &apos;${HPDS_VARIANT}&apos; (expected auth or open)&quot;
+        ;;
+esac
+
+source_s3_url=&quot;$(printf &apos;%s&apos; &quot;${source_s3_url}&quot; | tr -d &apos;[:space:]&apos;)&quot;
+destination_bucket_hash=&quot;$(printf &apos;%s&apos; &quot;${destination_bucket_hash}&quot; | tr -d &apos;[:space:]&apos;)&quot;
+
+[[ &quot;${source_s3_url}&quot; =~ ^s3://[a-z0-9][a-z0-9.-]*/[A-Za-z0-9._/=+%:-]+$ ]] || refuse &quot;source_s3_url &apos;${source_s3_url}&apos; is not an s3:// object or prefix URL&quot;
+[[ &quot;${destination_bucket_hash}&quot; =~ ^[0-9a-f]{7,40}$ ]] || refuse &quot;destination_bucket_hash &apos;${destination_bucket_hash}&apos; is not a git hash&quot;
+[ -n &quot;${stack_s3_bucket}&quot; ] || refuse &quot;stack_s3_bucket is not set&quot;
+
+if [[ &quot;${source_s3_url}&quot; == *.tar ]]; then
+    install_path=legacy
+elif [[ &quot;${source_s3_url}&quot; == */ ]]; then
+    install_path=dataset
+else
+    refuse &quot;source_s3_url must end with .tar (legacy) or / (dataset prefix)&quot;
+fi
+
+stage_key_prefix=&quot;data/${destination_bucket_hash}/${stage_prefix}&quot;
+
+sha256_of() {
+    if command -v sha256sum &gt; /dev/null 2&gt;&amp;1; then
+        sha256sum &quot;$1&quot; | cut -d &apos; &apos; -f 1
+    else
+        shasum -a 256 &quot;$1&quot; | cut -d &apos; &apos; -f 1
+    fi
+}
+
+# ListBucket on data/* is granted while HeadObject on a missing key may answer 403, so list first.
+key_exists() {
+    local bucket=&quot;$1&quot; key=&quot;$2&quot; out
+    if out=$(aws s3api list-objects-v2 --bucket &quot;${bucket}&quot; --prefix &quot;${key}&quot; --output json 2&gt; /dev/null); then
+        # jq 1.6 -e exits 0 on empty input: an empty listing must mean &quot;not there&quot;
+        [ -n &quot;${out}&quot; ] || return 1
+        printf &apos;%s&apos; &quot;${out}&quot; | jq -e --arg k &quot;${key}&quot; &apos;any(.Contents[]?; .Key == $k)&apos; &gt; /dev/null
+    else
+        aws s3api head-object --bucket &quot;${bucket}&quot; --key &quot;${key}&quot; &gt; /dev/null 2&gt;&amp;1
+    fi
+}
+
+if [ &quot;${install_path}&quot; = &quot;dataset&quot; ]; then
+    ### Per-file staging from a dataset prefix. One identity (the instance role); no docker.
+    # Needs (granted by Thomas, see the job description):
+    #   source bucket: s3:ListBucket + s3:GetObject on data/hpds/pheno/datasets/*
+    #   stack bucket:  s3:ListBucket + s3:GetObject + s3:PutObject on data/*
+    if key_exists &quot;${stack_s3_bucket}&quot; &quot;${stage_key_prefix}manifest.tsv&quot;; then
+        refuse &quot;s3://${stack_s3_bucket}/${stage_key_prefix}manifest.tsv already exists; staged prefixes are immutable&quot;
+    fi
+
+    work=dataset_work
+    rm -rf &quot;${work}&quot;
+    mkdir -p &quot;${work}&quot;
+
+    aws s3 cp &quot;${source_s3_url}manifest.json&quot; &quot;${work}/manifest.json&quot; --only-show-errors \
+        || refuse &quot;cannot read ${source_s3_url}manifest.json (not a released dataset prefix?)&quot;
+    # jq 1.6 -e exits 0 on empty input, so the checks below need a non-empty file
+    [ -s &quot;${work}/manifest.json&quot; ] || refuse &quot;${source_s3_url}manifest.json is empty&quot;
+
+    jq -e --arg v &quot;${HPDS_VARIANT}&quot; &apos;
+        def okpath: type == &quot;string&quot; and test(&quot;^[A-Za-z0-9._/-]+$&quot;)
+            and (startswith(&quot;/&quot;) | not) and (endswith(&quot;/&quot;) | not)
+            and (test(&quot;//&quot;) | not) and (test(&quot;(^|/)\\.{1,2}(/|$)&quot;) | not);
+        .schema == &quot;bdc-hpds-pheno-release/1&quot;
+        and (.dataset_id | type == &quot;string&quot; and test(&quot;^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{4}Z$&quot;))
+        and (.variants[$v] | type == &quot;array&quot; and length &gt; 0)
+        and all(.variants[$v][];
+            (.src | okpath) and (.dest | okpath)
+            and (.bytes | type == &quot;number&quot; and . &gt;= 0 and . == floor)
+            and (.sha256 == null or (.sha256 | type == &quot;string&quot; and test(&quot;^[0-9a-f]{64}$&quot;)))
+            and (.etag == null or (.etag | type == &quot;string&quot; and test(&quot;^[!-~]*$&quot;))))
+        and ([.variants[$v][].dest] | length) == ([.variants[$v][].dest] | unique | length)
+        and any(.variants[$v][]; .dest == &quot;metadata.json&quot;)
+        and any(.variants[$v][]; .dest == &quot;columnMeta.javabin&quot;)
+    &apos; &quot;${work}/manifest.json&quot; &gt; /dev/null || refuse &quot;manifest.json is not a valid bdc-hpds-pheno-release/1 manifest with a usable &apos;${HPDS_VARIANT}&apos; variant&quot;
+
+    if [ &quot;${HPDS_VARIANT}&quot; = &quot;open&quot; ]; then
+        jq -e &apos;
+            (.removal.open_columnmeta_sha256 | type == &quot;string&quot; and length &gt; 0)
+            and (.removal.full_columnmeta_sha256 | type == &quot;string&quot; and length &gt; 0)
+            and (.removal.open_columnmeta_sha256 != .removal.full_columnmeta_sha256)
+            and (((.removal.full_columnmeta_content_sha256 | type) == &quot;string&quot; and (.removal.open_columnmeta_content_sha256 | type) == &quot;string&quot;
+                  and .removal.full_columnmeta_content_sha256 == .removal.open_columnmeta_content_sha256) | not)
+            and all(.variants.open[] | select(.dest == &quot;columnMeta.javabin&quot;); .src != &quot;columnMeta.javabin&quot;)
+        &apos; &quot;${work}/manifest.json&quot; &gt; /dev/null || refuse &quot;open variant would ship the full columnMeta.javabin (concepts were not removed, or full and open columnMeta contents are identical)&quot;
+    else
+        jq -e &apos;all(.variants.auth[]; (.src | startswith(&quot;open/&quot;)) | not)&apos; &quot;${work}/manifest.json&quot; &gt; /dev/null \
+            || refuse &quot;auth variant must not use files from open/&quot;
+    fi
+
+    dataset_id=&quot;$(jq -r &apos;.dataset_id&apos; &quot;${work}/manifest.json&quot;)&quot;
+    manifest_sha=&quot;$(sha256_of &quot;${work}/manifest.json&quot;)&quot;
+
+    {
+        echo &quot;# bdc-hpds-deploy/1&quot;
+        echo &quot;# variant=${HPDS_VARIANT}&quot;
+        echo &quot;# dataset_id=${dataset_id}&quot;
+        echo &quot;# source=${source_s3_url}&quot;
+        echo &quot;# manifest_sha256=${manifest_sha}&quot;
+        printf &apos;dest\tbytes\tsha256\tetag\tsrc\n&apos;
+    } &gt; &quot;${work}/manifest.tsv&quot;
+
+    jq -r --arg v &quot;${HPDS_VARIANT}&quot; &apos;.variants[$v][] | [.src, .dest, (.bytes | tostring), (.sha256 // &quot;-&quot;), (.etag // &quot;-&quot;)] | @tsv&apos; \
+        &quot;${work}/manifest.json&quot; &gt; &quot;${work}/entries.tsv&quot;
+
+    while IFS=$&apos;\t&apos; read -r e_src e_dest e_bytes e_sha e_etag; do
+        echo &quot;staging ${e_src} -&gt; ${e_dest} (${e_bytes} bytes)&quot;
+        # Every aws call in this loop reads /dev/null: the loop reads entries.tsv on stdin and a CLI that reads stdin would end it early.
+        aws s3 cp &quot;${source_s3_url}${e_src}&quot; &quot;s3://${stack_s3_bucket}/${stage_key_prefix}${e_dest}&quot; --sse AES256 --only-show-errors &lt; /dev/null
+        head_json=&quot;$(aws s3api head-object --bucket &quot;${stack_s3_bucket}&quot; --key &quot;${stage_key_prefix}${e_dest}&quot; &lt; /dev/null)&quot;
+        got_bytes=&quot;$(printf &apos;%s&apos; &quot;${head_json}&quot; | jq -r &apos;.ContentLength&apos;)&quot;
+        [ &quot;${got_bytes}&quot; = &quot;${e_bytes}&quot; ] || refuse &quot;${e_dest}: staged ${got_bytes} bytes, manifest says ${e_bytes}&quot;
+        printf &apos;%s\t%s\t%s\t%s\t%s\n&apos; &quot;${e_dest}&quot; &quot;${e_bytes}&quot; &quot;${e_sha}&quot; &quot;${e_etag}&quot; &quot;${e_src}&quot; &gt;&gt; &quot;${work}/manifest.tsv&quot;
+        if [ &quot;${e_dest}&quot; = &quot;metadata.json&quot; ]; then
+            aws s3 cp &quot;${source_s3_url}${e_src}&quot; &quot;s3://${stack_s3_bucket}/data/${destination_bucket_hash}/fence_mapping.json&quot; --sse AES256 --only-show-errors &lt; /dev/null
+        fi
+    done &lt; &quot;${work}/entries.tsv&quot;
+
+    # Never publish a manifest.tsv that lists fewer files than the variant has.
+    expected_rows=&quot;$(jq -r --arg v &quot;${HPDS_VARIANT}&quot; &apos;.variants[$v] | length&apos; &quot;${work}/manifest.json&quot;)&quot;
+    written_rows=&quot;$(tail -n +7 &quot;${work}/manifest.tsv&quot; | wc -l | tr -d &apos; &apos;)&quot;
+    [ &quot;${written_rows}&quot; = &quot;${expected_rows}&quot; ] || refuse &quot;manifest.tsv has ${written_rows} data rows, the ${HPDS_VARIANT} variant has ${expected_rows} entries; not uploading it&quot;
+
+    # manifest.tsv last: its presence marks the stage prefix complete and immutable.
+    aws s3 cp &quot;${work}/manifest.tsv&quot; &quot;s3://${stack_s3_bucket}/${stage_key_prefix}manifest.tsv&quot; --sse AES256 --only-show-errors &lt; /dev/null
+    echo &quot;Staged ${HPDS_VARIANT} from ${source_s3_url} (dataset ${dataset_id}) to s3://${stack_s3_bucket}/${stage_key_prefix}&quot;
+    exit 0
+fi
+
+### Legacy .tar path (unchanged behaviour; output name and concept removal derive from the variant).
+curated_datasets_s3_role=&quot;arn:aws:iam::515157839325:role/curated-datasets-s3-role&quot;
 
 # Source folder containing the scripts
 source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
@@ -70,29 +242,31 @@ for script_file in &quot;$source_scripts_folder&quot;*.sh; do
     chmod +x &quot;$script_file&quot;
     if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
         echo &quot;sourcing $script_file&quot;
+        # shellcheck source=/dev/null
         source &quot;$script_file&quot;
     fi
 done
 
-stack=$(get_stack &quot;staging&quot;)
-
-### Build ETL Image
-aws s3 --sse=AES256 cp s3://${stack_s3_bucket}/${stack}/containers/pic-sure-hpds-etl.tar.gz pic-sure-hpds-etl.tar.gz --no-progress
-
-HPDS_ETL_IMAGE=$(docker load &lt; ./pic-sure-hpds-etl.tar.gz | cut -d &apos; &apos; -f 3)
-echo $HPDS_ETL_IMAGE
-ls -alh &quot;$(pwd)&quot;
-
 mkdir -p local/hpds/
 mkdir -p local/source/
 
+if [ &quot;${remove_concepts}&quot; = &quot;true&quot; ]; then
+    stack=$(get_stack &quot;staging&quot;)
+
+    ### Build ETL Image
+    aws s3 --sse=AES256 cp &quot;s3://${stack_s3_bucket}/${stack}/containers/pic-sure-hpds-etl.tar.gz&quot; pic-sure-hpds-etl.tar.gz --no-progress
+
+    HPDS_ETL_IMAGE=$(docker load &lt; ./pic-sure-hpds-etl.tar.gz | cut -d &apos; &apos; -f 3)
+    echo &quot;$HPDS_ETL_IMAGE&quot;
+    ls -alh &quot;$(pwd)&quot;
+fi
 
 ### Pull data set to rekey.
 if [ -n &quot;${curated_datasets_s3_role}&quot; ]; then
     assume_role &quot;${curated_datasets_s3_role}&quot;
 fi
 
-aws s3 cp ${source_s3_url} local/source/javabins.tar --no-progress
+aws s3 cp &quot;${source_s3_url}&quot; local/source/javabins.tar --no-progress
 
 ### Try extracting as compressed tar
 if tar -xzvf local/source/javabins.tar -C local/source; then
@@ -111,28 +285,24 @@ if [ -n &quot;${curated_datasets_s3_role}&quot; ]; then
     reset_role
 fi
 
-if [ &quot;${disable_rekey}&quot; != &quot;true&quot; ]; then
-  # For caution replicate data into local/hpds as rekey use to write there.
-  cp -r local/source/* local/hpds/
-  
-  ### If destigmatized data set, remove concepts
-  if [ &quot;${isDestigmatized}&quot; = &apos;true&apos; ]; then
-      # RemoveConceptFromMetadata reads the rekeyed data set in /opt/local/hpds generated by the rekey.
-      # add concepts to remove to /opt/local/hpds that contains the list of concepts to destigmatize
-      cp local/source/conceptsToRemove.txt local/hpds/
-      docker run -e HEAPSIZE=20480 -e JAVA_OPTS=&quot;-Xms4g&quot; -i -v &quot;${WORKSPACE}&quot;/local:/opt/local:Z -e LOADER_NAME=RemoveConceptFromMetadata $HPDS_ETL_IMAGE
-  fi
-  
-  cd &quot;$WORKSPACE&quot;/local/hpds/
-else
-  cd &quot;$WORKSPACE&quot;/local/source
-fi 
+# For caution replicate data into local/hpds as the loader used to write there.
+cp -r local/source/* local/hpds/
+
+### Open variant: remove concepts
+if [ &quot;${remove_concepts}&quot; = &quot;true&quot; ]; then
+    # RemoveConceptFromMetadata reads the data set in /opt/local/hpds.
+    # add concepts to remove to /opt/local/hpds that contains the list of concepts to destigmatize
+    cp local/source/conceptsToRemove.txt local/hpds/
+    docker run -e HEAPSIZE=20480 -e JAVA_OPTS=&quot;-Xms4g&quot; -i -v &quot;${WORKSPACE}&quot;/local:/opt/local:Z -e LOADER_NAME=RemoveConceptFromMetadata &quot;$HPDS_ETL_IMAGE&quot;
+fi
+
+cd &quot;$WORKSPACE&quot;/local/hpds/
 
 # Leave the data set artifact as non-compressed for the rest of it&apos;s lifecycle
-tar -cvf &quot;${output_file_name}.tar&quot; *.javabin encryption_key metadata.json
+tar -cvf &quot;${legacy_name}.tar&quot; -- *.javabin encryption_key metadata.json
 
-aws s3 --sse=AES256 cp &quot;${output_file_name}.tar&quot; s3://${stack_s3_bucket}/data/${destination_bucket_hash}/${output_file_name}.tar --quiet
-aws s3 --sse=AES256 cp metadata.json s3://${stack_s3_bucket}/data/${destination_bucket_hash}/fence_mapping.json
+aws s3 --sse=AES256 cp &quot;${legacy_name}.tar&quot; &quot;s3://${stack_s3_bucket}/data/${destination_bucket_hash}/${legacy_name}.tar&quot; --quiet
+aws s3 --sse=AES256 cp metadata.json &quot;s3://${stack_s3_bucket}/data/${destination_bucket_hash}/fence_mapping.json&quot;
 </command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
