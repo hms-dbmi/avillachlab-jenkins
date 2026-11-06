@@ -12,7 +12,8 @@ HPDS_VARIANT: both (default) = auth, then open, in one build; a failed auth stop
 javabins_rekeyed.tar), open -&gt; destigmatized_javabins_rekeyed/ (legacy tar destigmatized_javabins_rekeyed.tar, concepts removed).
 Per variant the source URL and the deploy key (blame commit of the source_dataset_s3_url / source_destigmatized_dataset_s3_url line)
 are derived from build-spec.json by the same rules as Check For Updates. A variant that is already staged is skipped
-("already staged, skipping"); staged data is never overwritten.
+("already staged, skipping"); a staged prefix (manifest.tsv) or tar is never overwritten. data/&lt;key&gt;/fence_mapping.json sits outside
+the stage prefixes and is rewritten by every variant this job stages (same metadata.json, as before).
 
 Source URL:
 - ends with .tar: legacy path (assume curated-datasets-s3-role, download, open: RemoveConceptFromMetadata in docker, re-tar, upload).
@@ -24,7 +25,9 @@ Source URL:
 IAM the instance role of this Jenkins needs for the dataset-prefix path (granted by Thomas, not by this job):
 - source bucket (bdc-etl-data-d0d6191): s3:ListBucket (prefix data/hpds/pheno/datasets/*) and s3:GetObject on data/hpds/pheno/datasets/*
 - stack bucket (stack_s3_bucket): s3:ListBucket (prefix data/*), s3:GetObject and s3:PutObject on data/* (SSE-S3, no KMS)
-The legacy .tar path keeps using curated-datasets-s3-role.</description>
+The legacy .tar path keeps using curated-datasets-s3-role and sources the scripts in the Bash_Functions job workspace
+(assume_role, reset_role, get_stack); Check For Updates no longer runs Bash_Functions first, so if that workspace is missing,
+build Bash_Functions once before a legacy run.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@338.va_0a_b_50e29397">
@@ -382,8 +385,9 @@ stage_legacy() {
         cd &quot;${WORKSPACE}&quot;/local/hpds/
         # Leave the data set artifact as non-compressed for the rest of it&apos;s lifecycle
         tar -cvf &quot;${legacy_name}.tar&quot; -- *.javabin encryption_key metadata.json
-        aws s3 --sse=AES256 cp &quot;${legacy_name}.tar&quot; &quot;s3://${stack_s3_bucket}/data/${deploy_key_value}/${legacy_name}.tar&quot; --quiet
+        # fence_mapping.json first: the tar is the &quot;staged&quot; marker, so it must be the last upload.
         aws s3 --sse=AES256 cp metadata.json &quot;s3://${stack_s3_bucket}/data/${deploy_key_value}/fence_mapping.json&quot;
+        aws s3 --sse=AES256 cp &quot;${legacy_name}.tar&quot; &quot;s3://${stack_s3_bucket}/data/${deploy_key_value}/${legacy_name}.tar&quot; --quiet
     )
 }
 

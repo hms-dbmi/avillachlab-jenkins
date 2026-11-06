@@ -539,6 +539,7 @@ run_import auth "s3://legacy-src/pheno/final.tar"
 check "legacy auth uploads javabins_rekeyed.tar" test -f "$STAGE/javabins_rekeyed.tar"
 check "legacy auth tar holds the expected members" bash -c "tar -tf '$STAGE/javabins_rekeyed.tar' | sort | tr '\n' ' ' | grep -qx 'allObservationsStore.javabin columnMeta.javabin encryption_key metadata.json '"
 check "legacy auth writes fence_mapping.json" cmp "$STAGE/fence_mapping.json" "$T/legacy-src/metadata.json"
+check "legacy: the tar (staged marker) is the last upload, after fence_mapping.json" sh -c "grep 'aws s3 .*cp' '$FAKE_AWS_LOG' | tail -1 | grep -q 'javabins_rekeyed.tar'"
 check "legacy auth assumes curated-datasets-s3-role" grep -q 'sts assume-role --role-arn arn:aws:iam::[0-9]*:role/curated-datasets-s3-role' "$FAKE_AWS_LOG"
 check "legacy auth resets the role" grep -q '^reset_role' "$FAKE_AWS_LOG"
 check "legacy auth does not run the removal" test "$(grep -c 'docker run' "$FAKE_DOCKER_LOG")" = 0
@@ -794,9 +795,11 @@ check "CFU: URL mismatch writes no key files" cfu_no_keys
 reset_world
 cfu_repo "$PFX_A" "s3://example-bucket/legacy/final-destig.tar"
 run_cfu
-[ "$rc" != 0 ] && ok "CFU: dataset prefix on one side and .tar on the other fails" || bad "CFU prefix vs tar"
+[ "$rc" != 0 ] && grep -q 'must be identical' "$T/err" && ok "CFU: dataset prefix on one side and .tar on the other fails" || bad "CFU prefix vs tar (rc=$rc)"
+check "CFU: prefix vs tar writes no key files" cfu_no_keys
 run_import_in_repo both
-[ "$rc" != 0 ] && ok "Import: dataset prefix on one side and .tar on the other fails" || bad "Import prefix vs tar"
+[ "$rc" != 0 ] && grep -q 'must be identical' "$T/err" && ok "Import: dataset prefix on one side and .tar on the other fails" || bad "Import prefix vs tar (rc=$rc)"
+check "Import: prefix vs tar stages nothing and calls no aws" test ! -s "$FAKE_AWS_LOG"
 
 # legacy .tar URLs may differ; a later commit on the auth URL gives auth a new key and keeps the open key
 reset_world
