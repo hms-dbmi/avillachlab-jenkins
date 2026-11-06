@@ -5,8 +5,9 @@
 
 Shell step (first): computes the auth and open deploy keys from build-spec.json (blame commit of the
 source_dataset_s3_url / source_destigmatized_dataset_s3_url lines) and checks that data/&lt;key&gt;/ is staged in the stack bucket
-(per-file: &lt;stage prefix&gt;manifest.tsv, legacy: &lt;name&gt;.tar). If a variant is not staged the build FAILS before anything is built
-or scheduled, and says which variant to stage.
+(per-file: &lt;stage prefix&gt;manifest.tsv, legacy: &lt;name&gt;.tar), and that data/&lt;auth key&gt;/fence_mapping.json exists (the PSAMA deploy
+copies it into its container). If a variant is not staged, or the fence mapping is missing, the build FAILS before anything is built
+or scheduled, and says what to stage.
 
 This job does not stage data. Order of a data release: commit the new URLs in build-spec.json, run Import_and_Rekey_HPDS_Data
 with HPDS_VARIANT=both (by hand), then run this job (or wait for its scheduled run). Rollback: put the old tar URLs back in
@@ -45,7 +46,8 @@ When both variants are staged: Bash_Functions and PIC-SURE Pipeline run, then De
 # shellcheck disable=SC2154  # stack_s3_bucket is provided by Jenkins
 set -e
 
-# Fails fast unless the data for the current deploy keys is already staged in the stack bucket.
+# Fails fast unless the data for the current deploy keys is already staged in the stack bucket
+# (both variants, plus data/&lt;auth key&gt;/fence_mapping.json).
 # Nothing is staged here: run Import_and_Rekey_HPDS_Data (by hand) for a variant that is reported missing.
 # Outputs (read by the last SystemGroovy step, only when both variants are staged):
 #   datasetKey.txt                 auth deploy key
@@ -159,6 +161,13 @@ if [ &quot;${auth_missing}&quot; = true ] || [ &quot;${open_missing}&quot; = tru
     if [ &quot;${open_missing}&quot; = true ]; then
         echo &quot;ERROR: open dataset is not staged: deploy key ${open_key}, source $(spec_url source_destigmatized_dataset_s3_url); run Import_and_Rekey_HPDS_Data with HPDS_VARIANT=${hint}&quot; &gt;&amp;2
     fi
+    echo &quot;Nothing was scheduled.&quot; &gt;&amp;2
+    exit 1
+fi
+
+# The PSAMA deploy copies data/&lt;auth key&gt;/fence_mapping.json into its container, so &quot;staged&quot; also requires it.
+if ! key_exists &quot;data/${auth_key}/fence_mapping.json&quot;; then
+    echo &quot;ERROR: auth dataset is staged but fence_mapping.json missing: deploy key ${auth_key} (data/${auth_key}/fence_mapping.json); run Import_and_Rekey_HPDS_Data with HPDS_VARIANT=auth&quot; &gt;&amp;2
     echo &quot;Nothing was scheduled.&quot; &gt;&amp;2
     exit 1
 fi

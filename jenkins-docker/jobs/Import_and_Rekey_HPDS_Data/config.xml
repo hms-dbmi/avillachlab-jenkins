@@ -2,7 +2,8 @@
 <project>
   <actions/>
   <description>Stages the HPDS data named in build-spec.json (of the release-control checkout) into the stack bucket as data/&lt;deploy key&gt;/...
-Run by hand; Check For Updates does not call this job. It only checks that the data for the current deploy keys is staged.
+Run by hand; Check For Updates does not call this job. It only checks that the data for the current deploy keys is staged
+and that data/&lt;auth key&gt;/fence_mapping.json exists.
 
 Order of a data release: (1) commit the new source URLs in build-spec.json, (2) run this job with HPDS_VARIANT=both,
 (3) run Check For Updates (or wait for the scheduled run) to deploy.
@@ -27,7 +28,24 @@ IAM the instance role of this Jenkins needs for the dataset-prefix path:
 - stack bucket (stack_s3_bucket): s3:ListBucket (prefix data/*), s3:GetObject and s3:PutObject on data/* (SSE-S3, no KMS)
 The legacy .tar path keeps using curated-datasets-s3-role and sources the scripts in the Bash_Functions job workspace
 (assume_role, reset_role, get_stack); Check For Updates no longer runs Bash_Functions first, so if that workspace is missing,
-build Bash_Functions once before a legacy run.</description>
+build Bash_Functions once before a legacy run or before a build with DEPLOY_TO_STAGING_STACK.
+
+DEPLOY_TO_STAGING_STACK (default false = stage only, nothing else happens):
+Each deploy Jenkins has two stacks, named in deployment_state_metadata/stacks.json of the stack bucket: live (environments.prod)
+and staging (environments.next_prod). With true, after every requested variant is staged or already staged, a second build step
+deploys to the STAGING stack only, in this order, each job started with TARGET_STACK = the staging stack and waited for:
+(1) PIC-SURE HPDS Auth Deploy (auth deploy key, genomic deploy key), (2) PIC-SURE HPDS Open Deploy (open deploy key),
+(3) PIC-SURE Auth Micro App Deploy (auth deploy key). The first job that does not end SUCCESS fails the build; later ones are not started.
+Why PSAMA: it copies data/&lt;auth deploy key&gt;/fence_mapping.json into its container when it starts, so it is redeployed with the dataset.
+The genomic deploy key is computed as in Check For Updates (blame commit of the source_genomic_dataset_s3_url line).
+The deploy needs the data of BOTH variants: with HPDS_VARIANT=auth or open the other variant must already be staged for its current
+deploy key. The build is refused, and nothing is deployed, when: the other variant is not staged, the staging or the live stack cannot
+be resolved or is empty, both are the same stack, fence_mapping.json is missing, or the genomic deploy key is empty or not a git hash.
+The live stack cannot be targeted: the job has no stack parameter and the deploy step reads the stack only from the file the checks
+write (staging_deploy.properties in the workspace, deleted at the start of every build).
+A later Deployment Pipeline run rebuilds the staging stack and overwrites what this deployed.
+The jobs are started with their default bucket parameters (the stack bucket); other parameters keep their defaults.
+The last line of the build says either &quot;staging stack &lt;name&gt;: HPDS auth, HPDS open, PSAMA deployed&quot; or &quot;staging deploy: not requested&quot;.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@338.va_0a_b_50e29397">
@@ -47,6 +65,11 @@ build Bash_Functions once before a legacy run.</description>
             </a>
           </choices>
         </hudson.model.ChoiceParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>DEPLOY_TO_STAGING_STACK</name>
+          <description>After the requested variants are staged, deploy HPDS auth, HPDS open and PSAMA to the staging stack (environments.next_prod in stacks.json). Needs both variants staged for their current deploy keys and data/&lt;auth key&gt;/fence_mapping.json. Never targets the live stack. Default false: stage only.</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -80,12 +103,17 @@ build Bash_Functions once before a legacy run.</description>
 # shellcheck disable=SC2154  # stack_s3_bucket, HPDS_VARIANT, ... are provided by Jenkins
 set -e
 
+# A properties file from an earlier build must never reach the deploy step.
+rm -f staging_deploy.properties
+
 # Stages the HPDS data named in build-spec.json (release-control checkout in the workspace) into the stack bucket.
 # HPDS_VARIANT = both (auth, then open), auth or open. Run by hand; Check For Updates only checks that this was done.
 # Per variant the source URL and the deploy key come from build-spec.json, exactly as Check For Updates computes them.
 #   source URL ends with .tar -&gt; legacy path: download the tar, (open: remove concepts), re-tar, upload.
 #   source URL is a dataset prefix (ends with /) -&gt; per-file staging driven by its manifest.json.
 # A variant that is already staged is skipped, never overwritten.
+# DEPLOY_TO_STAGING_STACK=true: once both variants are staged and the checks pass, write staging_deploy.properties; the
+# SystemGroovy step after this one then deploys HPDS auth, HPDS open and PSAMA to the staging stack (never the live stack).
 # Contract: bdc-hpds-pheno-release/1 (manifest.json) and bdc-hpds-deploy/1 (manifest.tsv).
 
 refuse() {
@@ -98,6 +126,12 @@ case &quot;${HPDS_VARIANT}&quot; in
     auth) variants=&quot;auth&quot; ;;
     open) variants=&quot;open&quot; ;;
     *) refuse &quot;unknown HPDS_VARIANT &apos;${HPDS_VARIANT}&apos; (expected both, auth or open)&quot; ;;
+esac
+
+case &quot;${DEPLOY_TO_STAGING_STACK:-false}&quot; in
+    true) deploy_to_staging=true ;;
+    false) deploy_to_staging=false ;;
+    *) refuse &quot;unknown DEPLOY_TO_STAGING_STACK &apos;${DEPLOY_TO_STAGING_STACK}&apos; (expected true or false)&quot; ;;
 esac
 
 [ -n &quot;${stack_s3_bucket}&quot; ] || refuse &quot;stack_s3_bucket is not set&quot;
@@ -418,11 +452,142 @@ for variant in ${variants}; do
     summary=&quot;${summary}${variant}: staged (deploy key ${deploy_key_value})&quot;$&apos;\n&apos;
 done
 
+### Optional deploy to the staging stack (DEPLOY_TO_STAGING_STACK=true).
+# The deploy needs the data of BOTH variants and the fence mapping, whichever variant was requested here. Everything is
+# checked first; staging_deploy.properties is written only when every check passed. The SystemGroovy step after this
+# shell step deploys from that file alone: it has no stack parameter and never targets the live stack.
+prepare_staging_deploy() {
+    local v auth_key=&quot;&quot; open_key=&quot;&quot; genomic_key staging_stack live_stack props_tmp=&quot;staging_deploy.properties.tmp&quot;
+
+    for v in auth open; do
+        variant_setup &quot;${v}&quot;
+        is_staged &quot;${deploy_key_value}&quot; &quot;${stage_prefix}&quot; &quot;${legacy_name}&quot; \
+            || refuse &quot;staging deploy needs the ${v} data, which is not staged for deploy key ${deploy_key_value}; run this job with HPDS_VARIANT=${v} (or both) first&quot;
+        if [ &quot;${v}&quot; = auth ]; then auth_key=&quot;${deploy_key_value}&quot;; else open_key=&quot;${deploy_key_value}&quot;; fi
+    done
+
+    # Stack names come from stacks.json (live = environments.prod, staging = environments.next_prod) via get_stack.
+    if [ &quot;${bash_functions_loaded}&quot; = false ] &amp;&amp; [ ! -d &quot;${JENKINS_HOME}/workspace/Bash_Functions&quot; ]; then
+        refuse &quot;staging deploy: the Bash_Functions workspace ${JENKINS_HOME}/workspace/Bash_Functions is missing; build Bash_Functions once&quot;
+    fi
+    load_bash_functions
+    command -v get_stack &gt; /dev/null 2&gt;&amp;1 || refuse &quot;staging deploy: get_stack is not defined by the Bash_Functions workspace&quot;
+    staging_stack=$(get_stack staging) || refuse &quot;staging deploy: cannot resolve the staging stack&quot;
+    live_stack=$(get_stack live) || refuse &quot;staging deploy: cannot resolve the live stack&quot;
+    [ -n &quot;${staging_stack}&quot; ] &amp;&amp; [ &quot;${staging_stack}&quot; != null ] || refuse &quot;staging deploy: the staging stack is empty&quot;
+    [ -n &quot;${live_stack}&quot; ] &amp;&amp; [ &quot;${live_stack}&quot; != null ] || refuse &quot;staging deploy: the live stack is empty&quot;
+    [[ &quot;${staging_stack}&quot; =~ ^[A-Za-z0-9._-]+$ ]] || refuse &quot;staging deploy: staging stack name &apos;${staging_stack}&apos; is not a plain name&quot;
+    [ &quot;${staging_stack}&quot; != &quot;${live_stack}&quot; ] || refuse &quot;staging deploy: the staging stack and the live stack are both &apos;${staging_stack}&apos;; not deploying&quot;
+
+    key_exists &quot;data/${auth_key}/fence_mapping.json&quot; \
+        || refuse &quot;staging deploy: data/${auth_key}/fence_mapping.json is missing in s3://${stack_s3_bucket}; the PSAMA deploy needs it&quot;
+
+    genomic_key=$(blame_commit source_genomic_dataset_s3_url)
+    [ -n &quot;${genomic_key}&quot; ] || refuse &quot;staging deploy: no source_genomic_dataset_s3_url line in build-spec.json&quot;
+    [[ &quot;${genomic_key}&quot; =~ ^[0-9a-f]{7,40}$ ]] || refuse &quot;staging deploy: blame commit &apos;${genomic_key}&apos; for source_genomic_dataset_s3_url is not a git hash&quot;
+
+    {
+        echo &quot;target_stack=${staging_stack}&quot;
+        echo &quot;auth_key=${auth_key}&quot;
+        echo &quot;open_key=${open_key}&quot;
+        echo &quot;genomic_key=${genomic_key}&quot;
+    } &gt; &quot;${props_tmp}&quot;
+    mv &quot;${props_tmp}&quot; staging_deploy.properties
+    echo &quot;staging deploy: checks passed; HPDS auth, HPDS open and PSAMA are deployed to the staging stack &apos;${staging_stack}&apos; by the next build step (live stack &apos;${live_stack}&apos; is not touched)&quot;
+}
+
 printf &apos;%s&apos; &quot;${summary}&quot;
+if [ &quot;${deploy_to_staging}&quot; = true ]; then
+    prepare_staging_deploy
+fi
 echo &quot;Next: run Check For Updates (or wait for the scheduled run) to deploy.&quot;
 </command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
+    <hudson.plugins.groovy.SystemGroovy plugin="groovy@457.v99900cb_85593">
+      <source class="hudson.plugins.groovy.StringSystemScriptSource">
+        <script plugin="script-security@1362.v67dc1f0e1b_b_3">
+          <script>import jenkins.*
+import jenkins.model.*
+import hudson.*
+import hudson.model.*
+
+// Deploys the staged HPDS data and the fence mapping to the STAGING stack, only when the shell step above asked for it by
+// writing staging_deploy.properties (target_stack, auth_key, open_key, genomic_key) after all of its checks passed.
+// The stack, the keys and the three jobs come from that file and from this script. There is no stack parameter and no
+// stack lookup here: the only stack this script can deploy to is the one named in that file.
+def propsFile = build.workspace?.child(&quot;staging_deploy.properties&quot;)
+if (propsFile == null || !propsFile.exists()) {
+    if (&quot;true&quot;.equals(build.buildVariables?.get(&quot;DEPLOY_TO_STAGING_STACK&quot;))) {
+        throw new AbortException(&quot;DEPLOY_TO_STAGING_STACK is true but staging_deploy.properties is missing; nothing was deployed&quot;)
+    }
+    println &quot;staging deploy: not requested&quot;
+    return
+}
+
+def props = new Properties()
+props.load(new StringReader(propsFile.readToString()))
+
+def need = { String name, String pattern -&gt;
+    String value = (props.getProperty(name) ?: &quot;&quot;).trim()
+    if (!(value ==~ pattern)) {
+        throw new AbortException(&quot;staging_deploy.properties: &quot; + name + &quot; is missing or malformed; nothing was deployed&quot;)
+    }
+    return value
+}
+String stack = need(&quot;target_stack&quot;, /[A-Za-z0-9._-]+/)
+String authKey = need(&quot;auth_key&quot;, /[0-9a-f]{7,40}/)
+String openKey = need(&quot;open_key&quot;, /[0-9a-f]{7,40}/)
+String genomicKey = need(&quot;genomic_key&quot;, /[0-9a-f]{7,40}/)
+
+// Schedules a job and waits for it. Parameters that are not given keep their default value, as in a manual build.
+def deploy = { String jobName, Map&lt;String, String&gt; given -&gt;
+    def job = Jenkins.instance.getItemByFullName(jobName)
+    if (job == null) {
+        throw new AbortException(jobName + &quot; does not exist; later deploys were not started&quot;)
+    }
+    def values = []
+    job.getProperty(ParametersDefinitionProperty)?.parameterDefinitions?.each { pd -&gt;
+        if (!given.containsKey(pd.name)) {
+            def dv = pd.getDefaultParameterValue()
+            if (dv != null) {
+                values &lt;&lt; dv
+            }
+        }
+    }
+    given.each { k, v -&gt; values &lt;&lt; new StringParameterValue(k, v) }
+    println &quot;staging deploy: starting &quot; + jobName + &quot; on stack &quot; + stack
+    def future = job.scheduleBuild2(0, new ParametersAction(values))
+    if (future == null) {
+        throw new AbortException(jobName + &quot; could not be scheduled; later deploys were not started&quot;)
+    }
+    def run = future.get()
+    if (run.getResult() != Result.SUCCESS) {
+        throw new AbortException(jobName + &quot; failed (&quot; + run.getResult() + &quot;); later deploys were not started&quot;)
+    }
+    println &quot;staging deploy: &quot; + jobName + &quot; succeeded&quot;
+}
+
+deploy(&quot;PIC-SURE HPDS Auth Deploy&quot;, [
+    TARGET_STACK                 : stack,
+    DATA_S3_OBJECT_KEY           : authKey,
+    GENOMIC_DATASET_S3_OBJECT_KEY: genomicKey,
+])
+deploy(&quot;PIC-SURE HPDS Open Deploy&quot;, [
+    TARGET_STACK                       : stack,
+    DESTIGMATIZED_DATASET_S3_OBJECT_KEY: openKey,
+])
+deploy(&quot;PIC-SURE Auth Micro App Deploy&quot;, [
+    TARGET_STACK         : stack,
+    DATASET_S3_OBJECT_KEY: authKey,
+])
+
+println &quot;staging stack &quot; + stack + &quot;: HPDS auth, HPDS open, PSAMA deployed&quot;
+</script>
+          <sandbox>false</sandbox>
+        </script>
+      </source>
+    </hudson.plugins.groovy.SystemGroovy>
   </builders>
   <publishers/>
   <buildWrappers>
