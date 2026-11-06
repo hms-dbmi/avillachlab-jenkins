@@ -51,6 +51,8 @@ missing and cannot be restored (auth staged as a legacy tar), or the genomic dep
 The live stack cannot be targeted from this job: it has no stack parameter and looks up no stack. The deploy job is started only from
 the file the checks write (staging_deploy.properties in the workspace, deleted at the start of every build), which holds the three
 keys and nothing else. If the deploy job does not end SUCCESS this build fails and names it.
+Aborting this build only stops its wait: the deploy job it started keeps running (and releases its lock at the end). To stop the
+deployment, abort the job HPDS Data - Deploy to Staging Stack itself.
 On success the build prints &quot;Deployed to the staging stack only. A later Deployment Pipeline run rebuilds the staging stack from
 build-spec.json.&quot; (Deployment Pipeline targets the staging stack too; the live stack changes only by a stack swap.)
 The deploy step is a non-sandboxed system Groovy script that runs on EVERY build (with the flag off it only prints

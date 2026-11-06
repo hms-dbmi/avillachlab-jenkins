@@ -119,7 +119,7 @@ sha256_text() { printf '%s' "$1" | shasum -a 256 | cut -d ' ' -f 1; }
 description_of() {
     python3 -I -c 'import sys, xml.etree.ElementTree as E; sys.stdout.write(" ".join((E.parse(sys.argv[1]).getroot().findtext("description") or "").split()))' "$1"
 }
-description_of "$IMPORT_XML" > "$T/import.desc" || { echo "cannot read the Import description"; exit 1; }
+description_of "$IMPORT_XML" > "$T/import.desc" || { echo "cannot read the stage job description"; exit 1; }
 description_of "$CFU_XML" > "$T/cfu.desc" || { echo "cannot read the Check For Updates description"; exit 1; }
 [ -s "$T/import.desc" ] && [ -s "$T/cfu.desc" ] || { echo "empty job description"; exit 1; }
 python3 -I "$HERE/extract-shell.py" "$IMPORT_XML" > "$T/import.sh" || { echo "cannot extract import shell"; exit 1; }
@@ -380,8 +380,8 @@ rc=$?
 check "no build-spec.json: no aws call" test ! -s "$FAKE_AWS_LOG"
 cfu_repo "$DATASET_URL" "s3://$SRC_BUCKET/data/hpds/pheno/datasets/2026-11-05T0000Z/"
 run_import_in_repo both
-[ "$rc" != 0 ] && grep -q 'must be identical' "$T/err" && ok "Import: differing dataset-prefix URLs are refused" || bad "Import URL mismatch (rc=$rc)"
-check "Import: URL mismatch stages nothing and calls no aws" test ! -s "$FAKE_AWS_LOG"
+[ "$rc" != 0 ] && grep -q 'must be identical' "$T/err" && ok "stage job: differing dataset-prefix URLs are refused" || bad "stage job URL mismatch (rc=$rc)"
+check "stage job: URL mismatch stages nothing and calls no aws" test ! -s "$FAKE_AWS_LOG"
 
 # ================================================================ Import: refusals
 reset_world
@@ -730,10 +730,10 @@ cfu_repo "s3://legacy-src/pheno/final.tar" "s3://legacy-src/pheno/final-destig.t
 )
 C2="$(git -C "$REPO" rev-parse HEAD)"
 run_import_in_repo both
-[ "$rc" = 0 ] && ok "Import: legacy URLs with different blame commits stage" || { bad "differing legacy keys (rc=$rc)"; cat "$T/err"; }
-check "Import: auth is staged under the commit that changed the auth URL" test -f "$FAKE_S3/$STACK/data/$C2/javabins_rekeyed.tar"
-check "Import: open is staged under the older commit" test -f "$FAKE_S3/$STACK/data/$C1/destigmatized_javabins_rekeyed.tar"
-check "Import: nothing else is staged" test "$(find "$FAKE_S3/$STACK/data" -name '*.tar' | wc -l | tr -d ' ')" = 2
+[ "$rc" = 0 ] && ok "stage job: legacy URLs with different blame commits stage" || { bad "differing legacy keys (rc=$rc)"; cat "$T/err"; }
+check "stage job: auth is staged under the commit that changed the auth URL" test -f "$FAKE_S3/$STACK/data/$C2/javabins_rekeyed.tar"
+check "stage job: open is staged under the older commit" test -f "$FAKE_S3/$STACK/data/$C1/destigmatized_javabins_rekeyed.tar"
+check "stage job: nothing else is staged" test "$(find "$FAKE_S3/$STACK/data" -name '*.tar' | wc -l | tr -d ' ')" = 2
 
 # ================================================================ Check For Updates: shell step (staged check)
 run_cfu() {
@@ -891,8 +891,8 @@ rc=$?
 rm -rf "$T/ws"; cp -R "$REPO" "$T/ws"
 (cd "$T/ws" && ORIG_PATH="$orig_path" PATH="$fake_path" HPDS_VARIANT=both stack_s3_bucket="$STACK" WORKSPACE="$T/ws" JENKINS_HOME="$T/jh" bash "$T/import.sh" > "$T/out" 2> "$T/err" < /dev/null)
 rc=$?
-[ "$rc" != 0 ] && grep -q 'not a git hash' "$T/err" && ok "Import: a non-hex blame commit is refused" || bad "Import non-hex blame (rc=$rc)"
-check "Import: non-hex blame commit stages nothing" test ! -d "$FAKE_S3/$STACK/data"
+[ "$rc" != 0 ] && grep -q 'not a git hash' "$T/err" && ok "stage job: a non-hex blame commit is refused" || bad "stage job non-hex blame (rc=$rc)"
+check "stage job: non-hex blame commit stages nothing" test ! -d "$FAKE_S3/$STACK/data"
 
 # differing dataset-prefix URLs and prefix-vs-tar
 reset_world
@@ -906,8 +906,8 @@ run_cfu
 [ "$rc" != 0 ] && grep -q 'must be identical' "$T/err" && ok "CFU: dataset prefix on one side and .tar on the other fails" || bad "CFU prefix vs tar (rc=$rc)"
 check "CFU: prefix vs tar writes no key files" cfu_no_keys
 run_import_in_repo both
-[ "$rc" != 0 ] && grep -q 'must be identical' "$T/err" && ok "Import: dataset prefix on one side and .tar on the other fails" || bad "Import prefix vs tar (rc=$rc)"
-check "Import: prefix vs tar stages nothing and calls no aws" test ! -s "$FAKE_AWS_LOG"
+[ "$rc" != 0 ] && grep -q 'must be identical' "$T/err" && ok "stage job: dataset prefix on one side and .tar on the other fails" || bad "stage job prefix vs tar (rc=$rc)"
+check "stage job: prefix vs tar stages nothing and calls no aws" test ! -s "$FAKE_AWS_LOG"
 
 # legacy .tar URLs may differ; a later commit on the auth URL gives auth a new key and keeps the open key
 reset_world
@@ -941,9 +941,9 @@ check "shared helper block is identical in both jobs" cmp "$T/shared.import" "$T
 # parity <label> ; REPO is the fixture, the fake S3 holds its sources
 parity() {
     run_import_in_repo both
-    [ "$rc" = 0 ] || { bad "parity $1: Import stages (rc=$rc)"; cat "$T/err"; return; }
+    [ "$rc" = 0 ] || { bad "parity $1: the stage job stages (rc=$rc)"; cat "$T/err"; return; }
     run_cfu
-    [ "$rc" = 0 ] && ok "parity $1: CFU finds the data Import staged (same deploy keys)" || { bad "parity $1: CFU (rc=$rc)"; cat "$T/err"; return; }
+    [ "$rc" = 0 ] && ok "parity $1: CFU finds the data the stage job staged (same deploy keys)" || { bad "parity $1: CFU (rc=$rc)"; cat "$T/err"; return; }
     local ak ok_
     ak="$(cat "$REPO/datasetKey.txt")"
     ok_="$(cat "$REPO/destigmatizedDatasetKey.txt")"
@@ -972,7 +972,7 @@ legacy_sources
 boundary_repo "s3://legacy-src/pheno/final.tar" "s3://legacy-src/pheno/final-destig.tar"
 parity "boundary (^) commit"
 check "parity: boundary key is the commit without ^" test "$(cat "$REPO/datasetKey.txt")" = "$RK"
-check "parity: Import staged under the key without ^" test -f "$FAKE_S3/$STACK/data/$RK/javabins_rekeyed.tar"
+check "parity: the stage job staged under the key without ^" test -f "$FAKE_S3/$STACK/data/$RK/javabins_rekeyed.tar"
 
 # ================================================================ Check For Updates: builders and Groovy steps (static checks)
 check "CFU: the shell step is the first builder" python3 -I - "$CFU_XML" << 'PY'
@@ -1463,7 +1463,7 @@ stage_manifest "$C1" destigmatized_javabins_rekeyed
 rm -f "${STAGE:?}/fence_mapping.json"
 run_cfu
 [ "$rc" = 1 ] && ok "CFU: both staged but fence_mapping.json missing exits 1" || { bad "CFU fence missing (rc=$rc)"; cat "$T/err"; }
-check "CFU: fence ERROR (per-file) names the variant, the deploy key, the file and the Import hint" grep -qx "ERROR: auth dataset is staged but fence_mapping.json missing: deploy key $C1 (data/$C1/fence_mapping.json); run HPDS Data - Stage to Stack Bucket with HPDS_VARIANT=auth (restores it from the staged metadata.json)" "$T/err"
+check "CFU: fence ERROR (per-file) names the variant, the deploy key, the file and the stage job hint" grep -qx "ERROR: auth dataset is staged but fence_mapping.json missing: deploy key $C1 (data/$C1/fence_mapping.json); run HPDS Data - Stage to Stack Bucket with HPDS_VARIANT=auth (restores it from the staged metadata.json)" "$T/err"
 check "CFU: fence ERROR (per-file) does not tell to restage under a new deploy key" test "$(grep -c 'new deploy key' "$T/err")" = 0
 check "CFU: fence missing says nothing was scheduled" grep -qx 'Nothing was scheduled.' "$T/err"
 check "CFU: fence missing writes no key files" cfu_no_keys
@@ -1489,12 +1489,12 @@ reset_world
 make_dataset
 cfu_repo "$DATASET_URL" "$DATASET_URL"
 run_import_in_repo both
-[ "$rc" = 0 ] || { bad "repair fixture: Import both (rc=$rc)"; cat "$T/err"; }
+[ "$rc" = 0 ] || { bad "repair fixture: stage both (rc=$rc)"; cat "$T/err"; }
 rm -f "${STAGE:?}/fence_mapping.json"
 run_cfu
-[ "$rc" = 1 ] && grep -q 'restores it from the staged metadata.json' "$T/err" && ok "CFU: per-file staged data without fence_mapping.json is refused with the Import hint" || bad "CFU before repair (rc=$rc)"
+[ "$rc" = 1 ] && grep -q 'restores it from the staged metadata.json' "$T/err" && ok "CFU: per-file staged data without fence_mapping.json is refused with the stage job hint" || bad "CFU before repair (rc=$rc)"
 run_import_in_repo auth
-[ "$rc" = 0 ] && ok "Import HPDS_VARIANT=auth (the CFU hint) exits 0" || { bad "repair by the hinted Import (rc=$rc)"; cat "$T/err"; }
+[ "$rc" = 0 ] && ok "stage job HPDS_VARIANT=auth (the CFU hint) exits 0" || { bad "repair by the hinted stage job (rc=$rc)"; cat "$T/err"; }
 run_cfu
 [ "$rc" = 0 ] && ok "CFU passes after the repair" || { bad "CFU after repair (rc=$rc)"; cat "$T/err"; }
 check "CFU after the repair writes the key files" bash -c "cd '$REPO' && test -s datasetKey.txt && test -s destigmatizedDatasetKey.txt && test -s genomicDatasetKey.txt"
@@ -1527,7 +1527,7 @@ run_cfu
 check "CFU: auth not staged: no fence ERROR" test "$(grep -c 'fence_mapping' "$T/err")" = 0
 
 # ================================================================ job definitions
-check "Import job: parameters are the HPDS_VARIANT choice both|auth|open (both is the default) and the boolean DEPLOY_TO_STAGING_STACK (default false)" python3 -I - "$IMPORT_XML" << 'PY'
+check "Stage job: parameters are the HPDS_VARIANT choice both|auth|open (both is the default) and the boolean DEPLOY_TO_STAGING_STACK (default false)" python3 -I - "$IMPORT_XML" << 'PY'
 import sys, xml.etree.ElementTree as E
 r = E.parse(sys.argv[1]).getroot()
 names = [e.findtext("name") for e in r.findall(".//parameterDefinitions/*")]
@@ -1539,13 +1539,13 @@ b = r.find(".//hudson.model.BooleanParameterDefinition")
 assert b.findtext("name") == "DEPLOY_TO_STAGING_STACK"
 assert b.findtext("defaultValue") == "false"
 PY
-check "Import job: source_s3_url and destination_bucket_hash are gone from the job" test "$(grep -cE 'source_s3_url|destination_bucket_hash' "$IMPORT_XML")" = 0
-check "Import job: release-control checkout is still configured" bash -c "grep -q '<url>\${release_control_git_repo}</url>' '$IMPORT_XML' && grep -q '<name>\${release_control_git_hash}</name>' '$IMPORT_XML'"
-check "Import job: description names standalone use, the order and the rollback" bash -c "grep -q 'Run by hand' '$T/import.desc' && grep -q 'commit the new source URLs' '$T/import.desc' && grep -q 'Rollback' '$T/import.desc' && grep -q 'curated-datasets-s3-role' '$T/import.desc' && grep -q 'bdc-etl-data-d0d6191' '$T/import.desc'"
-check "Import job: removed parameters are gone from both jobs" test "$(grep -cE 'isDestigmatized|output_file_name|disable_rekey' "$IMPORT_XML" "$CFU_XML" | awk -F: '{s+=$2} END {print s}')" = 0
+check "Stage job: source_s3_url and destination_bucket_hash are gone from the job" test "$(grep -cE 'source_s3_url|destination_bucket_hash' "$IMPORT_XML")" = 0
+check "Stage job: release-control checkout is still configured" bash -c "grep -q '<url>\${release_control_git_repo}</url>' '$IMPORT_XML' && grep -q '<name>\${release_control_git_hash}</name>' '$IMPORT_XML'"
+check "Stage job: description names standalone use, the order and the rollback" bash -c "grep -q 'Run by hand' '$T/import.desc' && grep -q 'commit the new source URLs' '$T/import.desc' && grep -q 'Rollback' '$T/import.desc' && grep -q 'curated-datasets-s3-role' '$T/import.desc' && grep -q 'bdc-etl-data-d0d6191' '$T/import.desc'"
+check "Stage job: removed parameters are gone from both jobs" test "$(grep -cE 'isDestigmatized|output_file_name|disable_rekey' "$IMPORT_XML" "$CFU_XML" | awk -F: '{s+=$2} END {print s}')" = 0
 check "Run Rekey - Standalone is deleted" test ! -e "$JOBS/Run Rekey - Standalone"
 check "no view or job references Run Rekey - Standalone" test "$(grep -rl --exclude-dir=tests 'Run Rekey - Standalone' "$HERE/.." | wc -l | tr -d ' ')" = 0
-check "Import job never references the legacy bucket" test "$(grep -c 'avillach-73-bdcatalyst-etl' "$IMPORT_XML" "$CFU_XML" | awk -F: '{s+=$2} END {print s}')" = 0
+check "Stage job never references the legacy bucket" test "$(grep -c 'avillach-73-bdcatalyst-etl' "$IMPORT_XML" "$CFU_XML" | awk -F: '{s+=$2} END {print s}')" = 0
 
 # ================================================================ renames
 # The old job names are assembled here so that this file does not contain them either.
@@ -1578,7 +1578,7 @@ LEGACY_BUCKET_WORD="avillach-73""-bdcatalyst-etl"
 check "the new deploy job and the stage job never mention the legacy bucket" test "$(grep -c "$LEGACY_BUCKET_WORD" "$JOBS/$NEW_DEPLOY_NAME/config.xml" "$IMPORT_XML" | awk -F: '{s+=$2} END {print s}')" = 0
 
 if command -v shellcheck > /dev/null 2>&1; then
-    check "shellcheck: Import shell step is clean" shellcheck -s bash "$T/import.sh"
+    check "shellcheck: stage shell step is clean" shellcheck -s bash "$T/import.sh"
     check "shellcheck: Check For Updates shell step is clean" shellcheck -s bash "$T/cfu.sh"
 else
     echo "skip - shellcheck not installed"

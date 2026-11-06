@@ -75,7 +75,17 @@ check "the three keys are validated (7 to 40 lowercase hex) before the deploymen
 import re, sys
 g = open(sys.argv[1]).read()
 val = g.index("/[0-9a-f]{7,40}/")
-assert 'params.DATA_S3_OBJECT_KEY' in g and 'params.DESTIGMATIZED_DATASET_S3_OBJECT_KEY' in g and 'params.GENOMIC_DATASET_S3_OBJECT_KEY' in g
+# each key comes from its own parameter, trimmed
+assert re.search(r"^def authKey = \(params\.DATA_S3_OBJECT_KEY \?: ''\)\.trim\(\)$", g, re.M)
+assert re.search(r"^def openKey = \(params\.DESTIGMATIZED_DATASET_S3_OBJECT_KEY \?: ''\)\.trim\(\)$", g, re.M)
+assert re.search(r"^def genomicKey = \(params\.GENOMIC_DATASET_S3_OBJECT_KEY \?: ''\)\.trim\(\)$", g, re.M)
+# the validated list holds exactly the three [parameter name, variable] pairs, in this order: no key reaches a deploy job unchecked
+m = re.search(r"^for \(entry in \[(.*)\]\) \{$", g, re.M)
+assert m, "no validation loop"
+pairs = re.findall(r"\['(\w+)', (\w+)\]", m.group(1))
+assert pairs == [("DATA_S3_OBJECT_KEY", "authKey"), ("DESTIGMATIZED_DATASET_S3_OBJECT_KEY", "openKey"), ("GENOMIC_DATASET_S3_OBJECT_KEY", "genomicKey")], pairs
+assert re.sub(r"\['\w+', \w+\]", "", m.group(1)).replace(",", "").strip() == "", m.group(1)
+assert m.start() < val
 assert val < g.index("build job: 'Retrieve Deployment State'")
 assert val < g.index("try {") < g.index("timeout(")
 assert re.search(r"if \(!\(entry\[1\] ==~ /\[0-9a-f\]\{7,40\}/\)\) \{\s*error\(", g)
@@ -97,7 +107,7 @@ while True:
 body = g[i:j]
 for needle in ("build job: 'Retrieve Deployment State'", "copyArtifacts", "next_prod", 'lock("stack-', "sh '''", "build job: 'PIC-SURE HPDS Auth Deploy'", "build job: 'PIC-SURE HPDS Open Deploy'", "build job: 'PIC-SURE Auth Micro App Deploy'"):
     assert needle in body, needle
-assert "Unlock Deployment State" not in body
+assert "build job: 'Unlock Deployment State'" not in body
 assert g.index("/[0-9a-f]{7,40}/") < t
 PY
 check "the lock is taken by building Retrieve Deployment State, then stacks.json is copied from that very build and parsed with JsonSlurperClassic" python3 -I - "$T/pipeline.code" << 'PY'
@@ -118,8 +128,11 @@ sets = [m.start() for m in re.finditer(r"\blockAcquired = true\b", g)]
 assert len(sets) == 1, sets
 r = g.index("build job: 'Retrieve Deployment State'")
 assert r < sets[0] < g.index("copyArtifacts")
-# nothing but the assignment between the Retrieve call and the flag
-assert g[r:sets[0]].count("\n") == 1
+# between the Retrieve call and the flag there is only the catch block of the call: it reports and rethrows, it does not unlock
+between = g[r:sets[0]]
+assert re.fullmatch(r"build job: 'Retrieve Deployment State'\n\s*\} catch \(Exception retrieveError\) \{\n\s*echo \"[^\"$]*\"\n\s*throw retrieveError\n\s*\}\n\s*", between), between
+assert "put-object-legal-hold" in between and "Unlock Deployment State by hand" in between
+assert re.search(r"retrieved = build job: 'Retrieve Deployment State'", g)
 PY
 check "the staging stack is environments.next_prod read after Retrieve Deployment State; environments.prod and the prod stack are never read" python3 -I - "$T/pipeline.code" << 'PY'
 import re, sys
@@ -195,8 +208,23 @@ assert g.count("build job: 'Unlock Deployment State'") == 1 and g.count("finally
 f = g.index("} finally {")
 assert f > g.index("timeout(") and g.index("try {") < g.index("timeout(")
 tail = g[f:]
-assert tail.index("if (lockAcquired) {") < tail.index("build job: 'Unlock Deployment State'")
-assert re.search(r"catch \(Exception unlockError\) \{\s*error\(\"Unlock Deployment State failed .*Run the job Unlock Deployment State\.\"\)", tail)
+assert tail.count("if (") == 1 and tail.count("lockAcquired") == 1
+# brace-match the guard: the Unlock call and its catch are inside the block of "if (lockAcquired) {" and nothing else is
+gi = tail.index("if (lockAcquired) {")
+i = tail.index("{", gi)
+depth, j = 0, i
+while True:
+    c = tail[j]
+    depth += (c == "{") - (c == "}")
+    if depth == 0:
+        break
+    j += 1
+guarded = tail[i:j]
+assert "build job: 'Unlock Deployment State'" in guarded and "catch (Exception unlockError)" in guarded
+assert tail[:gi].count("build job") == 0 and tail[j:].count("build job") == 0, "a build outside the guard"
+assert re.search(r"catch \(Exception unlockError\) \{\s*def earlier = failureText \? \" The deployment itself failed before: \$\{failureText\}\" : ''\s*error\(\"Unlock Deployment State failed .*Run the job Unlock Deployment State\.\$\{earlier\}\"\)", guarded)
+# failureText is filled by a catch around the timeout that rethrows
+assert re.search(r"\} catch \(Exception failure\) \{\s*failureText = failure\.message \?: failure\.toString\(\)\s*throw failure\s*\} finally \{", g)
 assert "Write Stack State" not in g  # stacks.json is not modified
 assert g.index("build job: 'Unlock Deployment State'") > g.index("build job: 'PIC-SURE Auth Micro App Deploy'")
 PY
@@ -216,7 +244,7 @@ u = E.parse(sys.argv[1] + "/Unlock Deployment State/config.xml").getroot()
 assert not u.findall(".//parameterDefinitions/*")
 PY
 check "description: what it does, the two locks and their order, the 4 hour limit, never the live stack, Deployment Pipeline rebuild, IAM, and how it is started" bash -c "
-    for s in 'STAGING stack' 'DEPLOY_TO_STAGING_STACK=true' 'by hand with the three keys' 'deployment-state lock is taken first' 'fails fast' 'stack lock' 'WAITS' '4 hours' 'environments.next_prod' 'The live stack is never targeted' 'A later Deployment Pipeline run rebuilds the staging stack' 's3:ListBucket (prefix data/*)' 's3:GetObject on data/*' 'Unlock Deployment State' 'does NOT run Unlock Deployment State' 'staging stack <name>: HPDS auth, HPDS open, PSAMA deployed'; do
+    for s in 'STAGING stack' 'DEPLOY_TO_STAGING_STACK=true' 'by hand with the three keys' 'deployment-state lock is taken first' 'fails fast' 'stack lock' 'WAITS' '4 hours' 'environments.next_prod' 'The live stack is never targeted' 'A later Deployment Pipeline run rebuilds the staging stack' 's3:ListBucket (prefix data/*)' 's3:GetObject on data/*' 'Unlock Deployment State' 'does NOT run Unlock Deployment State' 'fails at once' 'put-object-legal-hold' 'abort this job itself' 'staging stack <name>: HPDS auth, HPDS open, PSAMA deployed'; do
         grep -qF -- \"\$s\" '$T/deploy.desc' || { echo \"description lacks: \$s\"; exit 1; }
     done"
 check "description: the deployment-state lock is described before the stack lock" python3 -I - "$T/deploy.desc" << 'PY'
@@ -410,7 +438,8 @@ PY
 
     scen retrieve_fails SCEN_FAIL_JOBS="Retrieve Deployment State"
     [ "$rc" = 1 ] && ok "script: Retrieve Deployment State fails (lock held): the build fails" || bad "script: retrieve fails (rc=$rc)"
-    check "script: lock held: nothing else is built, no stack lock, and Unlock is NOT run" bash -c "test \"\$(grep -c '^T: build ' '$T/retrieve_fails.trace')\" = 1 && ! grep -q 'lock stack-' '$T/retrieve_fails.trace' && ! grep -q 'Unlock' '$T/retrieve_fails.trace'"
+    check "script: lock held: nothing else is built, no stack lock, and Unlock is NOT run" bash -c "test \"\$(grep -c '^T: build ' '$T/retrieve_fails.trace')\" = 1 && ! grep -q 'lock stack-' '$T/retrieve_fails.trace' && ! grep -q 'build Unlock' '$T/retrieve_fails.trace'"
+    check "script: Retrieve fails: the build log tells the operator to check put-object-legal-hold and unlock by hand; the failure is the original one" bash -c "grep -q 'T: echo Retrieve Deployment State did not finish.*put-object-legal-hold.*Unlock Deployment State by hand' '$T/retrieve_fails.trace' && grep -q 'RESULT: failed: job failed: Retrieve Deployment State' '$T/retrieve_fails.trace'"
 
     for job in "PIC-SURE HPDS Auth Deploy" "PIC-SURE HPDS Open Deploy" "PIC-SURE Auth Micro App Deploy"; do
         n="deploy_fails_$(printf '%s' "$job" | tr -c 'A-Za-z' '_')"
@@ -436,6 +465,10 @@ PY
     [ "$rc" = 1 ] && ok "script: Unlock Deployment State fails after a good deploy: the build fails" || bad "script: unlock fails (rc=$rc)"
     check "script: unlock fails: the message tells the operator to run Unlock Deployment State, and there is no success line" bash -c "grep -q 'RESULT: failed: error: Unlock Deployment State failed (.*); the deployment-state lock is still held. Run the job Unlock Deployment State.' '$T/unlock_fails.trace' && ! grep -q 'deployed\$' '$T/unlock_fails.trace'"
     check "script: unlock fails: the three deploys had run" test "$(count unlock_fails 'build PIC-SURE')" = 3
+    check "script: unlock fails after a good deploy: no earlier failure is mentioned" bash -c "! grep -q 'failed before' '$T/unlock_fails.trace'"
+    scen both_fail SCEN_FAIL_JOBS="PIC-SURE HPDS Open Deploy,Unlock Deployment State"
+    [ "$rc" = 1 ] && ok "script: a deploy and the unlock both fail: the build fails" || bad "script: deploy and unlock fail (rc=$rc)"
+    check "script: deploy and unlock both fail: the message names the unlock and repeats the deploy failure" bash -c "grep -q 'RESULT: failed: error: Unlock Deployment State failed (.*); the deployment-state lock is still held. Run the job Unlock Deployment State. The deployment itself failed before: job failed: PIC-SURE HPDS Open Deploy' '$T/both_fail.trace'"
 
     # stacks.json that does not name a plain staging stack: the lock was taken, so it is released; nothing is deployed
     for case_ in missing:'{"environments":{"prod":"live-stk"}}' nullvalue:'{"environments":{"prod":"live-stk","next_prod":null}}' empty:'{"environments":{"prod":"live-stk","next_prod":""}}' nullword:'{"environments":{"next_prod":"null"}}' space:'{"environments":{"next_prod":"a b"}}' slash:'{"environments":{"next_prod":"a/b"}}' number:'{"environments":{"next_prod":12}}' list:'{"environments":{"next_prod":["blue-stk"]}}' noenv:'{}' semicolon:'{"environments":{"next_prod":"a;rm"}}'; do

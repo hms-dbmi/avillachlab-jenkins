@@ -16,7 +16,8 @@ Order of work:
 4. The staging stack is environments.next_prod of the stacks.json that Retrieve Deployment State archived. It is the only stack this job
    reads; an empty, null or not plain name is refused.
 5. The stack lock stack-&lt;staging stack&gt; (Lockable Resources, the same resource the PIC-SURE ... Build and Deploy jobs hold) is taken second
-   and WAITS if a build of those jobs is running on the staging stack.
+   and WAITS if a build of those jobs is running on the staging stack. While it waits (up to the time limit) the deployment-state lock is
+   still held, so a Deployment Pipeline or Swap Stacks run started in that window fails at once; start it again afterwards.
 6. Inside the stack lock the stack bucket is checked again: the auth dataset (data/&lt;auth key&gt;/javabins_rekeyed/manifest.tsv or the
    legacy data/&lt;auth key&gt;/javabins_rekeyed.tar), the open dataset (data/&lt;open key&gt;/destigmatized_javabins_rekeyed/manifest.tsv or the
    legacy .tar) and data/&lt;auth key&gt;/fence_mapping.json. Anything missing fails the build and nothing is deployed.
@@ -25,8 +26,14 @@ Order of work:
    starts, so it is redeployed with the dataset). Each gets TARGET_STACK = the staging stack; their other parameters keep their defaults
    (the stack bucket).
 8. Whatever happens after the deployment-state lock was taken (a failed deploy, the time limit, an abort), the build runs Unlock Deployment
-   State at the end. stacks.json is not changed, so Write Stack State is not run. If the unlock itself fails the build fails and says so:
-   run Unlock Deployment State by hand.
+   State at the end. stacks.json is not changed, so Write Stack State is not run. If the unlock itself fails the build fails and says so
+   (and repeats the earlier failure, if there was one): run Unlock Deployment State by hand.
+   One gap: Retrieve Deployment State can put the hold on and then fail, or this build can be aborted while Retrieve Deployment State runs.
+   This build then does not unlock (it cannot tell whether the hold is its own). Read the log of Retrieve Deployment State: if it shows
+   put-object-legal-hold ran, run Unlock Deployment State by hand. If it failed because the hold was already on, do nothing.
+
+Aborting this build is safe (the unlock still runs). When this job was started by HPDS Data - Stage to Stack Bucket, aborting that job
+only stops its wait: abort this job itself to stop the deployment.
 
 The live stack is never targeted: the build reads environments.next_prod only. A later Deployment Pipeline run rebuilds the staging stack
 from build-spec.json; the live stack changes only by a stack swap.
@@ -78,12 +85,20 @@ for (entry in [[&apos;DATA_S3_OBJECT_KEY&apos;, authKey], [&apos;DESTIGMATIZED_D
 
 def lockAcquired = false
 def stagingStack = &apos;&apos;
+def failureText = &apos;&apos;
 
 try {
     timeout(time: 4, unit: &apos;HOURS&apos;) {
         stage(&apos;Take the deployment-state lock&apos;) {
             // Fails when another deployment holds the lock: nothing is deployed and lockAcquired stays false.
-            def retrieved = build job: &apos;Retrieve Deployment State&apos;
+            def retrieved
+            try {
+                retrieved = build job: &apos;Retrieve Deployment State&apos;
+            } catch (Exception retrieveError) {
+                // Not unlocked here: the hold may belong to another deployment. Retrieve can also fail after it put the hold on.
+                echo &quot;Retrieve Deployment State did not finish. This build does not unlock. If the log of Retrieve Deployment State shows put-object-legal-hold ran, run Unlock Deployment State by hand; if the lock was already held by another deployment, do nothing.&quot;
+                throw retrieveError
+            }
             lockAcquired = true
             node {
                 copyArtifacts filter: &apos;stacks.json&apos;, projectName: &apos;Retrieve Deployment State&apos;, selector: specific(&quot;&quot; + retrieved.number)
@@ -158,13 +173,17 @@ echo &quot;staged data re-checked in s3://${stack_s3_bucket}: auth ${AUTH_KEY}, 
             }
         }
     }
+} catch (Exception failure) {
+    failureText = failure.message ?: failure.toString()
+    throw failure
 } finally {
     // Only a lock this build took is released. stacks.json was not changed, so Write Stack State is not needed.
     if (lockAcquired) {
         try {
             build job: &apos;Unlock Deployment State&apos;
         } catch (Exception unlockError) {
-            error(&quot;Unlock Deployment State failed (${unlockError.message}); the deployment-state lock is still held. Run the job Unlock Deployment State.&quot;)
+            def earlier = failureText ? &quot; The deployment itself failed before: ${failureText}&quot; : &apos;&apos;
+            error(&quot;Unlock Deployment State failed (${unlockError.message}); the deployment-state lock is still held. Run the job Unlock Deployment State.${earlier}&quot;)
         }
     }
 }
