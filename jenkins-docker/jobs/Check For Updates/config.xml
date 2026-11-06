@@ -7,7 +7,8 @@ Shell step (first): computes the auth and open deploy keys from build-spec.json 
 source_dataset_s3_url / source_destigmatized_dataset_s3_url lines) and checks that data/&lt;key&gt;/ is staged in the stack bucket
 (per-file: &lt;stage prefix&gt;manifest.tsv, legacy: &lt;name&gt;.tar), and that data/&lt;auth key&gt;/fence_mapping.json exists (the PSAMA deploy
 copies it into its container). If a variant is not staged, or the fence mapping is missing, the build FAILS before anything is built
-or scheduled, and says what to stage.
+or scheduled, and says what to do: auth data staged per-file gets the mapping back from Import_and_Rekey_HPDS_Data with
+HPDS_VARIANT=auth (it restores it from the staged metadata.json); auth data staged as a legacy tar must be restaged under a new deploy key.
 
 This job does not stage data. Order of a data release: commit the new URLs in build-spec.json, run Import_and_Rekey_HPDS_Data
 with HPDS_VARIANT=both (by hand), then run this job (or wait for its scheduled run). Rollback: put the old tar URLs back in
@@ -167,7 +168,11 @@ fi
 
 # The PSAMA deploy copies data/&lt;auth key&gt;/fence_mapping.json into its container, so &quot;staged&quot; also requires it.
 if ! key_exists &quot;data/${auth_key}/fence_mapping.json&quot;; then
-    echo &quot;ERROR: auth dataset is staged but fence_mapping.json missing: deploy key ${auth_key} (data/${auth_key}/fence_mapping.json); run Import_and_Rekey_HPDS_Data with HPDS_VARIANT=auth&quot; &gt;&amp;2
+    if key_exists &quot;data/${auth_key}/javabins_rekeyed/manifest.tsv&quot;; then
+        echo &quot;ERROR: auth dataset is staged but fence_mapping.json missing: deploy key ${auth_key} (data/${auth_key}/fence_mapping.json); run Import_and_Rekey_HPDS_Data with HPDS_VARIANT=auth (restores it from the staged metadata.json)&quot; &gt;&amp;2
+    else
+        echo &quot;ERROR: auth dataset is staged as a legacy tar but fence_mapping.json missing: deploy key ${auth_key} (data/${auth_key}/fence_mapping.json); it cannot be restored in place: restage under a new deploy key (commit a change to the source URL lines of build-spec.json, then run Import_and_Rekey_HPDS_Data)&quot; &gt;&amp;2
+    fi
     echo &quot;Nothing was scheduled.&quot; &gt;&amp;2
     exit 1
 fi

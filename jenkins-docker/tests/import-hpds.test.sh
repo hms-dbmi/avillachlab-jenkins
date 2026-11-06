@@ -59,6 +59,7 @@ case "${pos[0]}/${pos[1]}" in
             echo "fake aws: injected copy failure for ${pos[3]}" >&2
             exit 1
         fi
+        if [ -n "${FAKE_NOOP_COPY:-}" ] && [[ "${pos[3]}" == *"$FAKE_NOOP_COPY"* ]]; then exit 0; fi
         if [ "${pos[3]}" = "-" ]; then cat "$src"; exit 0; fi
         mkdir -p "$(dirname "$dst")"
         if [ -n "${FAKE_CORRUPT_COPY:-}" ] && [[ "${pos[3]}" == *"$FAKE_CORRUPT_COPY"* ]]; then
@@ -113,15 +114,24 @@ sha() { shasum -a 256 "$1" | cut -d ' ' -f 1; }
 sha256_text() { printf '%s' "$1" | shasum -a 256 | cut -d ' ' -f 1; }
 
 # ---------------------------------------------------------------- extracted scripts
+# description_of CONFIG_XML: the text of the <description> element only (XML parsed, never the whole file), white space collapsed
+# so that a sentence wrapped over two lines is still one sentence
+description_of() {
+    python3 -I -c 'import sys, xml.etree.ElementTree as E; sys.stdout.write(" ".join((E.parse(sys.argv[1]).getroot().findtext("description") or "").split()))' "$1"
+}
+description_of "$IMPORT_XML" > "$T/import.desc" || { echo "cannot read the Import description"; exit 1; }
+description_of "$CFU_XML" > "$T/cfu.desc" || { echo "cannot read the Check For Updates description"; exit 1; }
+[ -s "$T/import.desc" ] && [ -s "$T/cfu.desc" ] || { echo "empty job description"; exit 1; }
 python3 -I "$HERE/extract-shell.py" "$IMPORT_XML" > "$T/import.sh" || { echo "cannot extract import shell"; exit 1; }
 python3 -I "$HERE/extract-shell.py" "$CFU_XML" > "$T/cfu.sh" || { echo "cannot extract check-for-updates shell"; exit 1; }
 python3 -I "$HERE/extract-shell.py" "$CFU_XML" --groovy --index 0 > "$T/cfu.groovy.first" || { echo "cannot extract first groovy"; exit 1; }
 python3 -I "$HERE/extract-shell.py" "$CFU_XML" --groovy --index 1 > "$T/cfu.groovy" || { echo "cannot extract last groovy"; exit 1; }
 
 # ---------------------------------------------------------------- fixtures
-# make_dataset [same_sha] : dataset prefix with auth + open variants. same_sha -> open columnMeta sha == full sha.
+# make_dataset [same_sha] [open_meta] : dataset prefix with auth + open variants. same_sha -> open columnMeta sha == full sha.
+# open_meta (any value) -> the open variant ships its own, different metadata.json (open/metadata.json).
 make_dataset() {
-    local d="$DATASET_DIR" same="${1:-}" open_sha
+    local d="$DATASET_DIR" same="${1:-}" open_meta="${2:-}" open_sha
     rm -rf "$d"
     mkdir -p "$d/static" "$d/open"
     printf 'AOS-DATA' > "$d/allObservationsStore.javabin"
@@ -129,6 +139,7 @@ make_dataset() {
     printf 'a,b\n' > "$d/columnMeta.csv"
     printf 'KEY0123' > "$d/encryption_key"
     printf '{"m":1}' > "$d/static/metadata.json"
+    printf '{"m":2}' > "$d/open/metadata.json"
     printf '\\phs000000\\x\n' > "$d/static/conceptsToRemove.txt"
     printf 'OPEN-COLUMNMETA' > "$d/open/columnMeta.javabin"
     open_sha="$(sha "$d/open/columnMeta.javabin")"
@@ -151,7 +162,7 @@ make_dataset() {
         entry allObservationsStore.javabin allObservationsStore.javabin nosha; printf ','
         entry open/columnMeta.javabin columnMeta.javabin; printf ','
         entry encryption_key encryption_key; printf ','
-        entry static/metadata.json metadata.json; printf ','
+        if [ -n "$open_meta" ]; then entry open/metadata.json metadata.json; else entry static/metadata.json metadata.json; fi; printf ','
         entry static/conceptsToRemove.txt conceptsToRemove.txt
         printf ']}}\n'
     } > "$d/manifest.json"
@@ -163,7 +174,7 @@ reset_world() {
     mkdir -p "$FAKE_S3" "$T/ws"
     : > "$FAKE_AWS_LOG"
     : > "$FAKE_DOCKER_LOG"
-    unset FAKE_FAIL_COPY FAKE_CORRUPT_COPY FAKE_LIST_DENIED FAKE_AWS_EAT_STDIN WS_SEED DEPLOY_TO_STAGING_STACK
+    unset FAKE_FAIL_COPY FAKE_NOOP_COPY FAKE_CORRUPT_COPY FAKE_LIST_DENIED FAKE_AWS_EAT_STDIN WS_SEED DEPLOY_TO_STAGING_STACK
 }
 
 # cfu_repo <auth url> <open url> : git repo (stands in for the release-control checkout) whose last commit adds
@@ -259,6 +270,20 @@ OM="$STAGE/destigmatized_javabins_rekeyed/manifest.tsv"
 check "open manifest.tsv variant line" test "$(sed -n 2p "$OM")" = "# variant=open"
 check "open manifest.tsv columnMeta row has src open/columnMeta.javabin" grep -q "columnMeta.javabin.*open/columnMeta.javabin\$" "$OM"
 check "open staging leaves the auth prefix alone" test ! -e "$STAGE/javabins_rekeyed"
+check "open staging writes no fence_mapping.json" test ! -e "$STAGE/fence_mapping.json"
+check "open staging makes no copy to fence_mapping.json" test "$(grep -c 'fence_mapping.json' "$FAKE_AWS_LOG")" = 0
+
+# the open variant ships a different metadata.json: with equal keys, auth then open leaves the auth fence mapping alone
+reset_world
+make_dataset "" differs
+run_import both "$DATASET_URL"
+[ "$rc" = 0 ] && ok "both with a different open metadata.json: exits 0" || { bad "both, open metadata differs (rc=$rc)"; cat "$T/err"; }
+check "both, equal keys: the open prefix holds the open metadata.json" grep -qx '{"m":2}' "$STAGE/destigmatized_javabins_rekeyed/metadata.json"
+check "both, equal keys: the auth prefix holds the auth metadata.json" grep -qx '{"m":1}' "$STAGE/javabins_rekeyed/metadata.json"
+check "both, equal keys: fence_mapping.json is the auth content" grep -qx '{"m":1}' "$STAGE/fence_mapping.json"
+check "both, equal keys: fence_mapping.json is written exactly once (by auth)" test "$(grep -c 's3://.*/fence_mapping.json' "$FAKE_AWS_LOG" | tr -d ' ')" = 1
+run_import_in_repo both
+check "both again: fence_mapping.json is still the auth content" grep -qx '{"m":1}' "$STAGE/fence_mapping.json"
 
 # ================================================================ Import: both | auth | open
 reset_world
@@ -395,6 +420,7 @@ make_dataset
 cfu_repo "$DATASET_URL" "$DATASET_URL"
 mkdir -p "$STAGE/javabins_rekeyed"
 printf 'old\n' > "$STAGE/javabins_rekeyed/manifest.tsv"
+printf 'old-fence' > "$STAGE/fence_mapping.json"
 run_import_in_repo auth
 [ "$rc" = 0 ] && grep -q 'already staged, skipping' "$T/out" && ok "auth with an existing manifest.tsv is skipped (exit 0)" || bad "existing manifest.tsv skip (rc=$rc)"
 check "skipped stage prefix is untouched" test "$(stage_files javabins_rekeyed)" = "manifest.tsv " -a "$(cat "$STAGE/javabins_rekeyed/manifest.tsv")" = old
@@ -407,9 +433,10 @@ make_dataset
 cfu_repo "$DATASET_URL" "$DATASET_URL"
 mkdir -p "$STAGE"
 printf 'old-tar' > "$STAGE/javabins_rekeyed.tar"
+printf 'old-fence' > "$STAGE/fence_mapping.json"
 run_import_in_repo auth
 [ "$rc" = 0 ] && grep -q 'already staged, skipping' "$T/out" && ok "auth with an existing legacy tar is skipped" || bad "existing tar skip (rc=$rc)"
-check "legacy tar skip leaves the tar alone and stages nothing else" test "$(find "$STAGE" -type f | wc -l | tr -d ' ')" = 1 -a "$(cat "$STAGE/javabins_rekeyed.tar")" = old-tar
+check "legacy tar skip leaves the tar and the fence mapping alone and stages nothing else" test "$(find "$STAGE" -type f | wc -l | tr -d ' ')" = 2 -a "$(cat "$STAGE/javabins_rekeyed.tar")" = old-tar -a "$(cat "$STAGE/fence_mapping.json")" = old-fence
 check "legacy tar skip makes no copy" test "$(grep -c 'aws s3 cp' "$FAKE_AWS_LOG")" = 0
 
 reset_world
@@ -419,6 +446,71 @@ mkdir -p "$STAGE/javabins_rekeyed"
 printf 'partial\n' > "$STAGE/javabins_rekeyed/columnMeta.javabin"
 run_import_in_repo auth
 [ "$rc" = 0 ] && staged javabins_rekeyed/manifest.tsv && ok "a partial stage (no manifest.tsv) is not 'staged': the variant is staged now" || bad "partial stage restage (rc=$rc)"
+
+# ---- an already staged auth variant without fence_mapping.json: restored from the staged metadata.json (per-file) or refused (tar)
+reset_world
+make_dataset
+run_import auth "$DATASET_URL"
+rm -f "${STAGE:?}/fence_mapping.json"
+: > "$FAKE_AWS_LOG"
+run_import_in_repo auth
+[ "$rc" = 0 ] && ok "repair: auth already staged per-file without fence_mapping.json exits 0" || { bad "repair (rc=$rc)"; cat "$T/err"; }
+check "repair: prints that fence_mapping.json was restored from the staged metadata.json" grep -qx 'fence_mapping.json restored from the staged metadata.json' "$T/out"
+check "repair: fence_mapping.json is the staged metadata.json" cmp "$STAGE/fence_mapping.json" "$STAGE/javabins_rekeyed/metadata.json"
+check "repair: the copy is server-side from the staged metadata.json, with --sse AES256" grep -qx "aws s3 cp s3://$STACK/data/$C1/javabins_rekeyed/metadata.json s3://$STACK/data/$C1/fence_mapping.json --sse AES256 --only-show-errors" "$FAKE_AWS_LOG"
+check "repair: that is the only copy (nothing re-staged, source bucket untouched)" test "$(grep -c 'aws s3 cp' "$FAKE_AWS_LOG")" = 1
+check "repair: no docker, no role" bash -c "test ! -s '$FAKE_DOCKER_LOG' && test \$(grep -c assume-role '$FAKE_AWS_LOG') = 0"
+check "repair: the staged auth prefix is untouched" test "$(stage_files javabins_rekeyed)" = "allObservationsStore.javabin columnMeta.javabin encryption_key manifest.tsv metadata.json "
+check "repair: existence is verified after the copy (a fence_mapping.json probe follows the copy)" bash -c "
+    c=\$(grep -n 'aws s3 cp' '$FAKE_AWS_LOG' | cut -d: -f1)
+    [ \$(tail -n +\$((c + 1)) '$FAKE_AWS_LOG' | grep -c 'data/$C1/fence_mapping.json') -ge 1 ]"
+printf 'edited' > "$STAGE/fence_mapping.json"
+: > "$FAKE_AWS_LOG"
+run_import_in_repo auth
+[ "$rc" = 0 ] && ok "no repair: auth staged with fence_mapping.json exits 0" || bad "no repair (rc=$rc)"
+check "no repair: an existing fence_mapping.json is left alone" test "$(cat "$STAGE/fence_mapping.json")" = edited
+check "no repair: no restore message and no copy" bash -c "! grep -q 'restored' '$T/out' && test \$(grep -c 'aws s3 cp' '$FAKE_AWS_LOG') = 0"
+
+# HPDS_VARIANT=open does not look at the fence mapping (flag off)
+reset_world
+make_dataset
+run_import both "$DATASET_URL"
+rm -f "${STAGE:?}/fence_mapping.json"
+: > "$FAKE_AWS_LOG"
+run_import_in_repo open
+[ "$rc" = 0 ] && ok "HPDS_VARIANT=open with a missing fence_mapping.json exits 0 (flag off)" || bad "open, fence missing (rc=$rc)"
+check "HPDS_VARIANT=open: no restore, no probe of fence_mapping.json" bash -c "test ! -e '$STAGE/fence_mapping.json' && test \$(grep -c 'fence_mapping.json' '$FAKE_AWS_LOG') = 0"
+
+# the restore copy fails, or does not leave the object behind
+reset_world
+make_dataset
+run_import auth "$DATASET_URL"
+rm -f "${STAGE:?}/fence_mapping.json"
+export FAKE_FAIL_COPY=fence_mapping.json
+run_import_in_repo auth
+unset FAKE_FAIL_COPY
+[ "$rc" != 0 ] && grep -q "cannot restore data/$C1/fence_mapping.json" "$T/err" && ok "repair: a failing copy fails the build" || bad "repair, copy fails (rc=$rc)"
+check "repair: a failing copy prints no restored message and leaves no file" bash -c "! grep -q restored '$T/out' && test ! -e '$STAGE/fence_mapping.json'"
+export FAKE_NOOP_COPY=fence_mapping.json
+run_import_in_repo auth
+unset FAKE_NOOP_COPY
+[ "$rc" != 0 ] && grep -q 'is still missing after the restore' "$T/err" && ok "repair: a copy that leaves no object is detected" || bad "repair, copy without object (rc=$rc)"
+check "repair: no restored message when the object is not there" test "$(grep -c restored "$T/out")" = 0
+rm -f "${STAGE:?}/javabins_rekeyed/metadata.json"
+run_import_in_repo auth
+[ "$rc" != 0 ] && grep -q 'cannot restore' "$T/err" && ok "repair: a staged prefix without metadata.json cannot be repaired (refused)" || bad "repair, metadata.json gone (rc=$rc)"
+
+# auth staged as a legacy tar without fence_mapping.json: refused, nothing else happens (also not for open)
+reset_world
+make_dataset
+cfu_repo "$DATASET_URL" "$DATASET_URL"
+mkdir -p "$STAGE"
+printf 'old-tar' > "$STAGE/javabins_rekeyed.tar"
+run_import_in_repo both
+[ "$rc" != 0 ] && grep -q "staged as a legacy tar and data/$C1/fence_mapping.json is missing; it cannot be restored in place: restage under a new deploy key" "$T/err" && ok "repair: auth staged as a tar without fence_mapping.json is refused with the restage hint" || { bad "tar without fence (rc=$rc)"; cat "$T/err"; }
+check "tar without fence: nothing is copied, open is not staged, no fence_mapping.json appears" bash -c "test \$(grep -c 'aws s3 cp' '$FAKE_AWS_LOG') = 0 && test ! -e '$STAGE/fence_mapping.json' && test ! -e '$STAGE/$OPEN_DIR'"
+run_import_in_repo open
+[ "$rc" = 0 ] && ok "HPDS_VARIANT=open next to an auth tar without fence_mapping.json is not affected (flag off)" || bad "open next to a tar (rc=$rc)"
 
 reset_world
 make_dataset
@@ -554,6 +646,7 @@ check "legacy open uploads destigmatized_javabins_rekeyed.tar" test -f "$STAGE/d
 check "legacy open loads the ETL image" grep -q '^docker load' "$FAKE_DOCKER_LOG"
 check "legacy open runs RemoveConceptFromMetadata" grep -q 'docker run .*LOADER_NAME=RemoveConceptFromMetadata fake-hpds-etl:1' "$FAKE_DOCKER_LOG"
 check "legacy open copies conceptsToRemove.txt next to the data" test -f "$T/ws/local/hpds/conceptsToRemove.txt"
+check "legacy open writes no fence_mapping.json" test ! -e "$STAGE/fence_mapping.json"
 
 # legacy URLs that worked before the stricter URL check (+ % : = in the key) must still be accepted
 make_legacy
@@ -562,7 +655,7 @@ cp "$FAKE_S3/legacy-src/pheno/final.tar" "$FAKE_S3/legacy-src/$odd"
 run_import auth "s3://legacy-src/$odd"
 [ "$rc" = 0 ] && ok "legacy .tar URL with + % : = passes the URL check and stages" || { bad "legacy odd URL (rc=$rc)"; cat "$T/err"; }
 check "legacy odd URL: tar is staged" test -f "$STAGE/javabins_rekeyed.tar"
-for badurl in "s3://legacy-src/pheno/a b.tar" 's3://legacy-src/pheno/a;b.tar' 's3://legacy-src/pheno/$(x).tar' "s3://legacy-src/pheno/a'b.tar"; do
+for badurl in "s3://legacy-src/pheno/a b.tar" 's3://legacy-src/pheno/a;b.tar' 's3://legacy-src/pheno/$'"(x).tar" "s3://legacy-src/pheno/a'b.tar"; do
     make_legacy
     run_import auth "$badurl"
     [ "$rc" != 0 ] && ok "URL check still refuses: $badurl" || bad "URL check accepted: $badurl"
@@ -587,6 +680,7 @@ make_legacy
 run_import both "$LEG"
 [ "$rc" = 0 ] && ok "legacy both exits 0" || { bad "legacy both (rc=$rc)"; cat "$T/err"; }
 check "legacy both: both tars are staged" bash -c "test -f '$STAGE/javabins_rekeyed.tar' && test -f '$STAGE/destigmatized_javabins_rekeyed.tar'"
+check "legacy both: fence_mapping.json is the auth tar's metadata.json and is written once" bash -c "cmp '$STAGE/fence_mapping.json' '$T/legacy-src/metadata.json' && test \$(grep -c 'fence_mapping.json' '$FAKE_AWS_LOG') = 1"
 check "legacy both: the ETL image is loaded once" test "$(grep -c '^docker load' "$FAKE_DOCKER_LOG")" = 1
 check "legacy both: the removal runs once (open only)" test "$(grep -c 'docker run' "$FAKE_DOCKER_LOG")" = 1
 check "legacy both: the role is assumed and reset once per variant" bash -c "test \$(grep -c 'sts assume-role' '$FAKE_AWS_LOG') = 2 && test \$(grep -c '^reset_role' '$FAKE_AWS_LOG') = 2"
@@ -613,6 +707,7 @@ make_legacy
 cfu_repo "$LEG" "$LEG"
 mkdir -p "$STAGE"
 : > "$STAGE/javabins_rekeyed.tar"
+printf '{"m":1}' > "$STAGE/fence_mapping.json"
 run_import_in_repo both
 [ "$rc" = 0 ] && ok "legacy both with auth already staged exits 0" || bad "legacy both, auth staged (rc=$rc)"
 check "legacy both, auth staged: open is staged with the removal" bash -c "test -s '$STAGE/destigmatized_javabins_rekeyed.tar' && grep -q 'docker run' '$FAKE_DOCKER_LOG'"
@@ -788,11 +883,13 @@ FAKE_GIT
 chmod +x "$T/fakegit/git"
 reset_world
 cfu_repo "s3://example-bucket/legacy/final.tar" "s3://example-bucket/legacy/final-destig.tar"
-(cd "$REPO" && ORIG_PATH="$PATH" PATH="$T/fakegit:$PATH" stack_s3_bucket="$STACK" bash "$T/cfu.sh" > "$T/out" 2> "$T/err")
+orig_path="$PATH"
+fake_path="$T/fakegit:$PATH"
+(cd "$REPO" && ORIG_PATH="$orig_path" PATH="$fake_path" stack_s3_bucket="$STACK" bash "$T/cfu.sh" > "$T/out" 2> "$T/err")
 rc=$?
 [ "$rc" != 0 ] && grep -q 'not a git hash' "$T/err" && ok "CFU: a non-hex blame commit is refused" || bad "CFU non-hex blame (rc=$rc)"
 rm -rf "$T/ws"; cp -R "$REPO" "$T/ws"
-(cd "$T/ws" && ORIG_PATH="$PATH" PATH="$T/fakegit:$PATH" HPDS_VARIANT=both stack_s3_bucket="$STACK" WORKSPACE="$T/ws" JENKINS_HOME="$T/jh" bash "$T/import.sh" > "$T/out" 2> "$T/err" < /dev/null)
+(cd "$T/ws" && ORIG_PATH="$orig_path" PATH="$fake_path" HPDS_VARIANT=both stack_s3_bucket="$STACK" WORKSPACE="$T/ws" JENKINS_HOME="$T/jh" bash "$T/import.sh" > "$T/out" 2> "$T/err" < /dev/null)
 rc=$?
 [ "$rc" != 0 ] && grep -q 'not a git hash' "$T/err" && ok "Import: a non-hex blame commit is refused" || bad "Import non-hex blame (rc=$rc)"
 check "Import: non-hex blame commit stages nothing" test ! -d "$FAKE_S3/$STACK/data"
@@ -950,6 +1047,35 @@ bump_genomic() {
 }
 refused_with() { [ "$rc" != 0 ] && grep -q "$1" "$T/err" && no_props; }
 
+# The aws calls a flag-off run makes for a fresh `both` staging of the dataset-prefix fixture, as the job made them before the
+# staging deploy existed (sorted, unique: the open variant's second copy to fence_mapping.json is gone by design, the call itself is
+# the auth variant's). Any new probe or copy makes the set differ.
+expected_flag_off_calls() {
+    local src="s3://$SRC_BUCKET/data/hpds/pheno/datasets/$DATASET_ID" dst="s3://$STACK/data/$C1" f
+    local sse="--sse AES256 --only-show-errors"
+    echo "aws s3 cp $src/manifest.json dataset_work/manifest.json --only-show-errors"
+    for f in $AUTH_DIR $OPEN_DIR; do
+        echo "aws s3 cp dataset_work/manifest.tsv $dst/$f/manifest.tsv $sse"
+        echo "aws s3api list-objects-v2 --bucket $STACK --prefix data/$C1/$f/manifest.tsv --output json"
+        echo "aws s3api list-objects-v2 --bucket $STACK --prefix data/$C1/$f.tar --output json"
+    done
+    for f in allObservationsStore.javabin encryption_key; do
+        echo "aws s3 cp $src/$f $dst/$AUTH_DIR/$f $sse"
+        echo "aws s3 cp $src/$f $dst/$OPEN_DIR/$f $sse"
+    done
+    echo "aws s3 cp $src/columnMeta.javabin $dst/$AUTH_DIR/columnMeta.javabin $sse"
+    echo "aws s3 cp $src/open/columnMeta.javabin $dst/$OPEN_DIR/columnMeta.javabin $sse"
+    echo "aws s3 cp $src/static/metadata.json $dst/$AUTH_DIR/metadata.json $sse"
+    echo "aws s3 cp $src/static/metadata.json $dst/$OPEN_DIR/metadata.json $sse"
+    echo "aws s3 cp $src/static/metadata.json $dst/fence_mapping.json $sse"
+    echo "aws s3 cp $src/static/conceptsToRemove.txt $dst/$OPEN_DIR/conceptsToRemove.txt $sse"
+    for f in allObservationsStore.javabin columnMeta.javabin encryption_key metadata.json; do
+        echo "aws s3api head-object --bucket $STACK --key data/$C1/$AUTH_DIR/$f"
+        echo "aws s3api head-object --bucket $STACK --key data/$C1/$OPEN_DIR/$f"
+    done
+    echo "aws s3api head-object --bucket $STACK --key data/$C1/$OPEN_DIR/conceptsToRemove.txt"
+}
+
 # ---- flag off (the default): behaves as before, reads no stacks.json, sources nothing, writes no file
 for mode in unset false; do
     reset_world
@@ -963,7 +1089,11 @@ for mode in unset false; do
     check "staging flag $mode: stacks.json is not read" test "$(grep -c 'stacks.json\|deployment_state_metadata' "$FAKE_AWS_LOG")" = 0
     check "staging flag $mode: Bash_Functions is not sourced on the dataset path" test ! -s "$SOURCED_LOG"
     check "staging flag $mode: no fence_mapping.json existence probe (list or head) is made" test "$(grep -E 'list-objects-v2|head-object' "$FAKE_AWS_LOG" | grep -c 'fence_mapping.json')" = 0
-    if [ "$mode" = unset ]; then cp "$FAKE_AWS_LOG" "$T/aws.flag-unset.log"; else check "staging flag false: the aws calls are identical to those of an unset flag" cmp "$FAKE_AWS_LOG" "$T/aws.flag-unset.log"; fi
+    expected_flag_off_calls | sort -u > "$T/aws.expected"
+    sort -u "$FAKE_AWS_LOG" > "$T/aws.actual"
+    check "staging flag $mode: the set of aws calls is exactly the staging calls (no other probe, list, head or copy)" diff "$T/aws.expected" "$T/aws.actual"
+    check "staging flag $mode: fence_mapping.json is written once (auth only)" test "$(grep -c 's3://.*/fence_mapping.json' "$FAKE_AWS_LOG")" = 1
+    if [ "$mode" = unset ]; then cp "$FAKE_AWS_LOG" "$T/aws.flag-unset.log"; else check "staging flag false: the aws calls are identical, in order, to those of an unset flag" cmp "$FAKE_AWS_LOG" "$T/aws.flag-unset.log"; fi
     check "staging flag $mode: no staging text in the output" test "$(grep -ci 'staging deploy\|staging stack' "$T/out")" = 0
     check "staging flag $mode: output still ends with the Next line" test "$(tail -1 "$T/out")" = "Next: run Check For Updates (or wait for the scheduled run) to deploy."
 done
@@ -1001,7 +1131,8 @@ check "flag on: per-file staging still never assumes a role" test "$(grep -c 'as
 check "flag on: nothing is read or written under the live stack" test "$(grep -c 'live-stk' "$FAKE_AWS_LOG")" = 0
 check "flag on: the build says the checks passed and which stack the next step deploys to" grep -q "staging deploy: checks passed; HPDS auth, HPDS open and PSAMA are deployed to the staging stack 'blue-stk'" "$T/out"
 check "flag on: no 'Next: run Check For Updates' line (the live stack is not deployed by this job)" test "$(grep -c '^Next: run Check For Updates' "$T/out")" = 0
-check "flag on: the build ends by saying the live stack is not touched" test "$(tail -1 "$T/out")" = "The live stack is not touched by this job; Check For Updates or Deployment Pipeline deploys it."
+check "flag on: the shell step ends by saying staging only, and that Deployment Pipeline rebuilds the staging stack" test "$(tail -1 "$T/out")" = "Deployed to the staging stack only. A later Deployment Pipeline run rebuilds the staging stack from build-spec.json."
+check "flag on: nothing in the output claims the live stack is deployed by Check For Updates or Deployment Pipeline" test "$(grep -ci 'live stack' "$T/out")" = 0
 check "flag on: the per-variant summary lines are still there" bash -c "grep -qx 'auth: staged (deploy key $C1)' '$T/out' && grep -qx 'open: staged (deploy key $C1)' '$T/out'"
 
 # ---- flag on, everything already staged: nothing is staged again, the file is still written
@@ -1054,21 +1185,63 @@ run_import open "$DATASET_URL"
 refused_with "needs the auth data, which is not staged for deploy key $C1; run this job with HPDS_VARIANT=auth (or both) first" \
     && ok "flag on, HPDS_VARIANT=open, auth not staged: refused with a clear message, no file" || { bad "open, auth missing (rc=$rc)"; cat "$T/err"; }
 
-# ---- flag on: stack refusals
+# ---- flag on: only the staging stack is looked up; it must resolve to a plain name
+# get_stack stub: logs its arguments, then answers $GS_ANSWER (or fails with GS_FAIL=1)
+stub_get_stack() {
+    : > "$T/get_stack.calls"
+    cat > "$BF_DIR/get_stack.sh" << 'STUB'
+get_stack() {
+    echo "$*" >> "$GET_STACK_CALLS"
+    [ -z "${GS_FAIL:-}" ] || { echo "ERROR: boom" >&2; return 1; }
+    echo "${GS_ANSWER-}"
+}
+STUB
+    export GET_STACK_CALLS="$T/get_stack.calls"
+}
+
+reset_world
+make_dataset
+staging_env live-stk blue-stk
+flag_on
+run_import both "$DATASET_URL"
+[ "$rc" = 0 ] && ok "flag on: the real get_stack resolves the staging stack" || { bad "real get_stack (rc=$rc)"; cat "$T/err"; }
+check "flag on: only stacks.json is read for the stack (once)" test "$(grep -c 'deployment_state_metadata/stacks.json' "$FAKE_AWS_LOG")" = 1
+
+reset_world
+make_dataset
+staging_env live-stk blue-stk
+stub_get_stack
+GS_ANSWER=blue-stk
+export GS_ANSWER
+flag_on
+run_import both "$DATASET_URL"
+[ "$rc" = 0 ] && props_is blue-stk "$C1" "$C1" "$C1" && ok "flag on: a stubbed get_stack answer is used as the target stack" || { bad "stubbed get_stack (rc=$rc)"; cat "$T/err"; }
+check "flag on: get_stack is asked for staging, once, and never for live" test "$(cat "$T/get_stack.calls")" = staging
+unset GS_ANSWER
+
+# the live stack is not looked up, so it cannot make the build fail or be compared
 reset_world
 make_dataset
 staging_env same-stk same-stk
 flag_on
-WS_SEED=staging_deploy.properties run_import both "$DATASET_URL"
-refused_with "are both 'same-stk'; not deploying" && ok "staging == live is refused, no file (stale file deleted)" || { bad "staging == live (rc=$rc)"; cat "$T/err"; }
+run_import both "$DATASET_URL"
+[ "$rc" = 0 ] && props_is same-stk "$C1" "$C1" "$C1" && ok "flag on: stacks.json prod equal to next_prod is not compared (staging only)" || { bad "same prod/next_prod (rc=$rc)"; cat "$T/err"; }
+reset_world
+make_dataset
+staging_env live-stk blue-stk
+printf '{"environments":{"next_prod":"blue-stk"}}\n' > "$STACKS_JSON"
+flag_on
+run_import both "$DATASET_URL"
+[ "$rc" = 0 ] && props_is blue-stk "$C1" "$C1" "$C1" && ok "flag on: a stacks.json without environments.prod still resolves the staging stack" || { bad "no prod in stacks.json (rc=$rc)"; cat "$T/err"; }
 
+# refusals: exit 1, no properties file
 reset_world
 make_dataset
 staging_env live-stk blue-stk
 rm -f "${STACKS_JSON:?}"
 flag_on
-run_import both "$DATASET_URL"
-refused_with "cannot resolve the staging stack" && ok "stacks.json missing is refused, no file" || { bad "stacks.json missing (rc=$rc)"; cat "$T/err"; }
+WS_SEED=staging_deploy.properties run_import both "$DATASET_URL"
+refused_with "cannot resolve the staging stack" && ok "stacks.json missing is refused, no file (stale file deleted)" || { bad "stacks.json missing (rc=$rc)"; cat "$T/err"; }
 
 reset_world
 make_dataset
@@ -1076,49 +1249,46 @@ staging_env live-stk blue-stk
 printf '{"environments":{"prod":"live-stk"}}\n' > "$STACKS_JSON"
 flag_on
 run_import both "$DATASET_URL"
-refused_with "cannot resolve the staging stack" && ok "staging stack null in stacks.json is refused, no file" || { bad "staging null (rc=$rc)"; cat "$T/err"; }
+refused_with "cannot resolve the staging stack" && ok "staging stack null in stacks.json is refused, no file" || { bad "staging null in stacks.json (rc=$rc)"; cat "$T/err"; }
 
 reset_world
 make_dataset
 staging_env live-stk blue-stk
-printf '{"environments":{"next_prod":"blue-stk"}}\n' > "$STACKS_JSON"
+stub_get_stack
+GS_FAIL=1
+export GS_FAIL
 flag_on
 run_import both "$DATASET_URL"
-refused_with "cannot resolve the live stack" && ok "live stack null in stacks.json is refused, no file" || { bad "live null (rc=$rc)"; cat "$T/err"; }
-
-reset_world
-make_dataset
-staging_env live-stk blue-stk
-printf 'get_stack() { echo "ERROR: boom" >&2; return 1; }\n' > "$BF_DIR/get_stack.sh"
-flag_on
-run_import both "$DATASET_URL"
+unset GS_FAIL
 refused_with "cannot resolve the staging stack" && ok "a failing get_stack is refused, no file" || { bad "get_stack fails (rc=$rc)"; cat "$T/err"; }
+check "a failing get_stack: exit status is 1" test "$rc" = 1
 
-# get_stack that succeeds with an empty answer (or null) for one of the stacks
-for empty in live staging; do
+for answer in "" null; do
     reset_world
     make_dataset
     staging_env live-stk blue-stk
-    printf 'get_stack() { if [ "$1" = %s ]; then echo ""; else echo other-stk; fi; }\n' "$empty" > "$BF_DIR/get_stack.sh"
+    stub_get_stack
+    GS_ANSWER="$answer"
+    export GS_ANSWER
     flag_on
     WS_SEED=staging_deploy.properties run_import both "$DATASET_URL"
-    refused_with "the $empty stack is empty" && ok "an empty $empty stack (get_stack succeeds, prints nothing) is refused, no file" || { bad "empty $empty stack (rc=$rc)"; cat "$T/err"; }
+    unset GS_ANSWER
+    refused_with "the staging stack is empty" && ok "get_stack succeeding with '${answer:-<empty>}' is refused, no file" || { bad "get_stack answers '$answer' (rc=$rc)"; cat "$T/err"; }
+    check "get_stack answers '${answer:-<empty>}': exit status is 1" test "$rc" = 1
 done
-reset_world
-make_dataset
-staging_env live-stk blue-stk
-printf 'get_stack() { if [ "$1" = live ]; then echo null; else echo other-stk; fi; }\n' > "$BF_DIR/get_stack.sh"
-flag_on
-run_import both "$DATASET_URL"
-refused_with "the live stack is empty" && ok "a live stack printed as null by get_stack is refused, no file" || { bad "null live stack (rc=$rc)"; cat "$T/err"; }
 
-reset_world
-make_dataset
-staging_env live-stk blue-stk
-printf 'get_stack() { echo "bad name;rm"; }\n' > "$BF_DIR/get_stack.sh"
-flag_on
-run_import both "$DATASET_URL"
-refused_with "is not a plain name" && ok "a staging stack name that is not a plain name is refused, no file" || { bad "bad stack name (rc=$rc)"; cat "$T/err"; }
+for answer in "bad name;rm" 'a/b' '../x' 'x y' "\$(id)"; do
+    reset_world
+    make_dataset
+    staging_env live-stk blue-stk
+    stub_get_stack
+    GS_ANSWER="$answer"
+    export GS_ANSWER
+    flag_on
+    run_import both "$DATASET_URL"
+    unset GS_ANSWER
+    refused_with "is not a plain name" && ok "staging stack name '$answer' is not a plain name: refused, no file" || { bad "bad stack name '$answer' (rc=$rc)"; cat "$T/err"; }
+done
 
 reset_world
 make_dataset
@@ -1136,15 +1306,33 @@ refused_with "Bash_Functions workspace .* is missing" && ok "missing Bash_Functi
 check "missing Bash_Functions workspace: stacks.json is not asked for" test "$(grep -c 'stacks.json' "$FAKE_AWS_LOG")" = 0
 
 # ---- flag on: fence mapping and genomic key
-reset_world
-make_dataset
-staging_env live-stk blue-stk
-flag_off
-run_import both "$DATASET_URL"
-rm -f "${STAGE:?}/fence_mapping.json"
+# per-file auth data without fence_mapping.json: restored, then the deploy file is written (whichever variant was requested)
+for variant in both auth open; do
+    reset_world
+    make_dataset
+    staging_env live-stk blue-stk
+    flag_off
+    run_import both "$DATASET_URL"
+    rm -f "${STAGE:?}/fence_mapping.json"
+    flag_on
+    run_import_in_repo "$variant"
+    [ "$rc" = 0 ] && ok "flag on, $variant: fence_mapping.json missing is restored and the build goes on" || { bad "flag on, $variant, fence missing (rc=$rc)"; cat "$T/err"; }
+    check "flag on, $variant: restored from the staged metadata.json" cmp "$STAGE/fence_mapping.json" "$STAGE/javabins_rekeyed/metadata.json"
+    check "flag on, $variant: the restore is announced once" test "$(grep -c '^fence_mapping.json restored from the staged metadata.json$' "$T/out")" = 1
+    check "flag on, $variant: the properties file is written" props_is blue-stk "$C1" "$C1" "$C1"
+done
+
+# auth staged as a legacy tar without fence_mapping.json cannot be repaired: refused
+make_legacy
+staging_env live-stk stg
+cfu_repo "s3://legacy-src/pheno/final.tar" "s3://legacy-src/pheno/final-destig.tar"
+mkdir -p "$STAGE"
+: > "$STAGE/javabins_rekeyed.tar"
+: > "$STAGE/destigmatized_javabins_rekeyed.tar"
 flag_on
-run_import_in_repo both
-refused_with "data/$C1/fence_mapping.json is missing" && ok "fence_mapping.json missing is refused, no file" || { bad "fence mapping missing (rc=$rc)"; cat "$T/err"; }
+WS_SEED=staging_deploy.properties run_import_in_repo open
+refused_with "restage under a new deploy key" && ok "flag on: a legacy tar without fence_mapping.json is refused with the restage hint, no file" || { bad "tar, fence missing (rc=$rc)"; cat "$T/err"; }
+check "flag on, tar without fence: fence_mapping.json is not created" test ! -e "$STAGE/fence_mapping.json"
 
 reset_world
 make_dataset
@@ -1213,14 +1401,6 @@ run_import_in_repo both
 [ "$rc" = 0 ] && props_is stg "$C2" "$C1" "$G" && ok "flag on, legacy, already staged: file is written again" || bad "flag on legacy already staged (rc=$rc)"
 
 make_legacy
-staging_env same-stk same-stk
-mkdir -p "$FAKE_S3/$STACK/same-stk/containers"
-printf 'image' > "$FAKE_S3/$STACK/same-stk/containers/pic-sure-hpds-etl.tar.gz"
-flag_on
-run_import both "s3://legacy-src/pheno/final.tar"
-refused_with "are both 'same-stk'" && ok "flag on, legacy: staging == live is refused, no file" || { bad "legacy staging == live (rc=$rc)"; cat "$T/err"; }
-
-make_legacy
 staging_env live-stk stg
 flag_on
 run_import auth "s3://legacy-src/pheno/final.tar"
@@ -1287,19 +1467,46 @@ assert len(re.findall(r"TARGET_STACK\s*:\s*stack\b", g)) == 3
 assert 'String stack = need("target_stack"' in g
 assert len(re.findall(r"\bstack\s*=", g)) == 1
 PY
+check "shell step: only the staging stack is looked up (no get_stack live, no live variable)" bash -c "grep -q 'get_stack staging' '$T/import.sh' && ! grep -qE 'get_stack.*live|live_stack' '$T/import.sh'"
 check "deploy step: no live-stack, production or stack lookup in the source" test "$(grep -ciE 'prod|live|\bget_stack|stacks\.json|next_prod|Bash_Functions|assume_role' "$T/import.groovy")" = 0
 check "deploy step: reads only staging_deploy.properties of this build's workspace (no hardcoded path, no other file)" bash -c "grep -q 'build.workspace' '$T/import.groovy' && ! grep -qE 'new File|/var/jenkins_home|JENKINS_HOME|readFileFromWorkspace' '$T/import.groovy' && test \$(grep -c '\.child(' '$T/import.groovy') = 1 && test \$(grep -c 'child(.staging_deploy.properties.)' '$T/import.groovy') = 1"
-check "deploy step: no \${ in the source (no template or GString expansion)" test "$(grep -c '\${' "$T/import.groovy")" = 0
-check "deploy step: stack and key values from the file are validated" bash -c "grep -q 'target_stack\", /\[A-Za-z0-9._-\]+/' '$T/import.groovy' && grep -q 'auth_key\", /\[0-9a-f\]{7,40}/' '$T/import.groovy' && grep -q 'genomic_key\", /\[0-9a-f\]{7,40}/' '$T/import.groovy'"
+check "deploy step: no dollar-brace in the source (no template or GString expansion)" test "$(grep -cF "$(printf '%s{' '$')" "$T/import.groovy")" = 0
+check "deploy step: the stack and all three keys (auth, open, genomic) are validated, each with its own pattern" python3 -I - "$T/import.groovy" << 'PY'
+import re, sys
+g = open(sys.argv[1]).read()
+# the validator: a full match (==~) of the trimmed value, else AbortException
+m = re.search(r"def need = \{ String name, String pattern ->(.*?)\n\}\n", g, re.S)
+assert m, "no need closure"
+body = m.group(1)
+assert "==~ pattern" in body and "throw new AbortException(" in body and ".trim()" in body, body
+wanted = {
+    "target_stack": (r"[A-Za-z0-9._-]+", ["blue-stk", "stack_1.2", "A"], ["", "a b", "a;b", "a/b", "../x", "$(id)", "x\ny"]),
+    "auth_key": (r"[0-9a-f]{7,40}", ["abcdef0", "0" * 40], ["", "abcdef", "ABCDEF0", "g" * 7, "0" * 41, "abc def0", "../abcdef0"]),
+    "open_key": (r"[0-9a-f]{7,40}", ["abcdef0", "0" * 40], ["", "abcdef", "ABCDEF0", "g" * 7, "0" * 41, "abc def0", "../abcdef0"]),
+    "genomic_key": (r"[0-9a-f]{7,40}", ["abcdef0", "0" * 40], ["", "abcdef", "ABCDEF0", "g" * 7, "0" * 41, "abc def0", "../abcdef0"]),
+}
+calls = re.findall(r'^(?:String|def)\s+\w+\s*=\s*need\("(\w+)",\s*/(.*?)/\)\s*$', g, re.M)
+assert [c[0] for c in calls] == list(wanted), calls
+for name, pattern in calls:
+    expect, good, bad = wanted[name]
+    assert pattern == expect, (name, pattern)
+    for v in good:
+        assert re.fullmatch(pattern, v), (name, v)
+    for v in bad:
+        assert not re.fullmatch(pattern, v), (name, v)
+PY
 check "deploy step: parameters not given keep their defaults; no bucket is passed (the defaults are the stack bucket)" bash -c "grep -q 'getDefaultParameterValue' '$T/import.groovy' && ! grep -qE 'S3_BUCKET_NAME|S3_STACK_BUCKET' '$T/import.groovy'"
 check "deploy step: every parameter passed is defined by the target job" python3 -I - "$T/import.groovy" "$JOBS" << 'PY'
 import re, sys, xml.etree.ElementTree as E
 g = open(sys.argv[1]).read()
+seen = []
 for job, body in re.findall(r'^deploy\("([^"]+)", \[(.*?)\]\)', g, re.S | re.M):
     r = E.parse(sys.argv[2] + "/" + job + "/config.xml").getroot()
     defined = {p.findtext("name") for p in r.findall(".//parameterDefinitions/*")}
     passed = set(re.findall(r"(\w+)\s*:\s*\w+", body))
-    assert passed and passed <= defined, (job, passed - defined)
+    assert defined and passed and passed <= defined, (job, sorted(passed - defined))
+    seen.append(job)
+assert seen == ["PIC-SURE HPDS Auth Deploy", "PIC-SURE HPDS Open Deploy", "PIC-SURE Auth Micro App Deploy"], seen
 PY
 check "deploy jobs: the bucket parameters default to the stack bucket (so they are not passed)" python3 -I - "$JOBS" << 'PY'
 import sys, xml.etree.ElementTree as E
@@ -1308,12 +1515,35 @@ for job, name in (("PIC-SURE HPDS Auth Deploy", "S3_BUCKET_NAME"), ("PIC-SURE HP
     d = [p for p in r.findall(".//parameterDefinitions/*") if p.findtext("name") == name]
     assert len(d) == 1 and d[0].findtext("defaultValue") == "${stack_s3_bucket}", (job, name)
 PY
-check "deploy step: prints the end-of-build lines" bash -c "grep -q 'staging deploy: not requested' '$T/import.groovy' && grep -q 'HPDS auth, HPDS open, PSAMA deployed' '$T/import.groovy'"
+check "deploy step: the last statement prints exactly 'staging stack <name>: HPDS auth, HPDS open, PSAMA deployed'" python3 -I - "$T/import.groovy" "$T/import.desc" << 'PY'
+import re, sys
+g = open(sys.argv[1]).read().rstrip("\n").split("\n")
+last = g[-1]
+m = re.fullmatch(r'println "(staging stack )" \+ stack \+ "(: HPDS auth, HPDS open, PSAMA deployed)"', last)
+assert m, last
+line = m.group(1) + "blue-stk" + m.group(2)
+assert line == "staging stack blue-stk: HPDS auth, HPDS open, PSAMA deployed", line
+# the description announces the same format
+assert "staging stack <name>: HPDS auth, HPDS open, PSAMA deployed" in open(sys.argv[2]).read()
+PY
+check "deploy step: without a request it prints exactly 'staging deploy: not requested' and returns" python3 -I - "$T/import.groovy" << 'PY'
+import re, sys
+g = open(sys.argv[1]).read()
+assert len(re.findall(r'^    println "staging deploy: not requested"\n    return$', g, re.M)) == 1
+assert g.count("not requested") == 1
+PY
 check "deploy step: downstream builds carry the upstream cause" bash -c "grep -q 'new CauseAction(new Cause.UpstreamCause(build))' '$T/import.groovy'"
 check "deploy step: DEPLOY_TO_STAGING_STACK=true without the file aborts" bash -c "grep -q 'throw new AbortException(\"DEPLOY_TO_STAGING_STACK is true' '$T/import.groovy'"
-check "Import description: names the option, the three jobs, PSAMA/fence_mapping.json, the live stack and the Deployment Pipeline overwrite" bash -c "for w in DEPLOY_TO_STAGING_STACK 'PIC-SURE HPDS Auth Deploy' 'PIC-SURE HPDS Open Deploy' 'PIC-SURE Auth Micro App Deploy' 'fence_mapping.json into its container' 'cannot be targeted' 'later Deployment Pipeline run' next_prod; do grep -q \"\$w\" '$IMPORT_XML' || exit 1; done"
-check "Import description: says no stack swap or Deployment Pipeline run may overlap the deploy" bash -c "grep -q 'holds no deployment-state lock' '$IMPORT_XML' && grep -q 'stack swap is in progress' '$IMPORT_XML'"
-check "Import and CFU carry no task ids or workspace references" test "$(grep -ciE 'umbrella|forgejo|\bT[0-9]{2}[a-z]?\b' "$IMPORT_XML" "$CFU_XML" | awk -F: '{s+=$2} END {print s}')" = 0
+desc_has() { grep -qF -- "$1" "$T/import.desc"; }
+check "Import description: names the option, the three jobs, PSAMA/fence_mapping.json, the live stack and next_prod" bash -c "for w in DEPLOY_TO_STAGING_STACK 'PIC-SURE HPDS Auth Deploy' 'PIC-SURE HPDS Open Deploy' 'PIC-SURE Auth Micro App Deploy' 'fence_mapping.json into its container' 'cannot be targeted' next_prod; do grep -qF -- \"\$w\" '$T/import.desc' || { echo missing: \$w; exit 1; }; done"
+check "Import description: says no stack swap or Deployment Pipeline run may overlap the deploy" bash -c "grep -q 'holds no deployment-state lock' '$T/import.desc' && grep -q 'stack swap is in progress' '$T/import.desc'"
+check "Import description: staging only, nothing about the live stack being looked up, compared or deployed by this job" bash -c "grep -qF 'Only the staging stack is looked up (get_stack staging)' '$T/import.desc' && ! grep -qiE 'both are the same stack|live stack cannot be resolved|staging or the live stack|is not touched by this job|Check For Updates or Deployment Pipeline deploys' '$T/import.desc'"
+check "Import description: Deployment Pipeline rebuilds the staging stack from build-spec.json; the live stack changes only by a stack swap" bash -c "grep -qF 'Deployed to the staging stack only. A later Deployment Pipeline run rebuilds the staging stack from build-spec.json.' '$T/import.desc' && grep -qF 'the live stack changes only by a stack swap' '$T/import.desc'"
+check "Import description: fence_mapping.json is written by the auth variant only, the open variant never writes it" bash -c "grep -qF 'written by the auth variant only' '$T/import.desc' && grep -qF 'The open variant never writes it' '$T/import.desc' && ! grep -qF 'rewritten by every variant' '$T/import.desc'"
+check "Import description: the repair of a missing fence mapping and the refusal for a legacy tar are described" bash -c "grep -qF 'fence_mapping.json restored from the staged metadata.json' '$T/import.desc' && grep -qF 'data/<auth key>/javabins_rekeyed/metadata.json' '$T/import.desc' && grep -qF 'legacy tar without' '$T/import.desc' && grep -qF 'restage it under a new deploy key' '$T/import.desc'"
+check "Import description: the deploy step runs on every build, so the script is approved before the first build whatever the flag" bash -c "grep -qF 'runs on EVERY build' '$T/import.desc' && grep -qF 'before the first build, whatever the flag is' '$T/import.desc' && ! grep -qF 'before the first build with DEPLOY_TO_STAGING_STACK=true' '$T/import.desc'"
+check "CFU description: the fence hint covers per-file data (restored by Import) and legacy tars (restage under a new deploy key)" bash -c "grep -qF 'restores it from the staged metadata.json' '$T/cfu.desc' && grep -qF 'legacy tar must be restaged under a new deploy key' '$T/cfu.desc'"
+check "the description test looks at the <description> element only (the markup of the file is not in it)" bash -c "! grep -qE '<hudson|<builders|&lt;|&gt;' '$T/import.desc' && grep -qF 'data/<deploy key>/' '$T/import.desc'"
 
 # ================================================================ Check For Updates: fence_mapping.json is part of "staged"
 reset_world
@@ -1323,13 +1553,41 @@ stage_manifest "$C1" destigmatized_javabins_rekeyed
 rm -f "${STAGE:?}/fence_mapping.json"
 run_cfu
 [ "$rc" = 1 ] && ok "CFU: both staged but fence_mapping.json missing exits 1" || { bad "CFU fence missing (rc=$rc)"; cat "$T/err"; }
-check "CFU: fence ERROR names the variant, the deploy key, the file and the Import hint" grep -qx "ERROR: auth dataset is staged but fence_mapping.json missing: deploy key $C1 (data/$C1/fence_mapping.json); run Import_and_Rekey_HPDS_Data with HPDS_VARIANT=auth" "$T/err"
+check "CFU: fence ERROR (per-file) names the variant, the deploy key, the file and the Import hint" grep -qx "ERROR: auth dataset is staged but fence_mapping.json missing: deploy key $C1 (data/$C1/fence_mapping.json); run Import_and_Rekey_HPDS_Data with HPDS_VARIANT=auth (restores it from the staged metadata.json)" "$T/err"
+check "CFU: fence ERROR (per-file) does not tell to restage under a new deploy key" test "$(grep -c 'new deploy key' "$T/err")" = 0
 check "CFU: fence missing says nothing was scheduled" grep -qx 'Nothing was scheduled.' "$T/err"
 check "CFU: fence missing writes no key files" cfu_no_keys
 stage_manifest "$C1" javabins_rekeyed
 run_cfu
 [ "$rc" = 0 ] && ok "CFU: fence_mapping.json present passes" || { bad "CFU fence present (rc=$rc)"; cat "$T/err"; }
 check "CFU: fence present writes the key files" bash -c "cd '$REPO' && test -s datasetKey.txt && test -s destigmatizedDatasetKey.txt && test -s genomicDatasetKey.txt"
+
+# auth staged as a legacy tar: no in-place repair, the hint says to restage under a new deploy key
+reset_world
+cfu_repo "s3://example-bucket/legacy/final.tar" "s3://example-bucket/legacy/final-destig.tar"
+stage_tar "$C1" javabins_rekeyed
+stage_tar "$C1" destigmatized_javabins_rekeyed
+rm -f "${STAGE:?}/fence_mapping.json"
+run_cfu
+[ "$rc" = 1 ] && ok "CFU: legacy tar auth without fence_mapping.json exits 1" || { bad "CFU tar fence missing (rc=$rc)"; cat "$T/err"; }
+check "CFU: fence ERROR (tar) says it cannot be restored and to restage under a new deploy key" grep -qx "ERROR: auth dataset is staged as a legacy tar but fence_mapping.json missing: deploy key $C1 (data/$C1/fence_mapping.json); it cannot be restored in place: restage under a new deploy key (commit a change to the source URL lines of build-spec.json, then run Import_and_Rekey_HPDS_Data)" "$T/err"
+check "CFU: fence ERROR (tar) does not point at HPDS_VARIANT=auth" test "$(grep -c 'HPDS_VARIANT' "$T/err")" = 0
+check "CFU: fence missing (tar) writes no key files" cfu_no_keys
+
+# per-file auth: Import restores the mapping, then CFU passes
+reset_world
+make_dataset
+cfu_repo "$DATASET_URL" "$DATASET_URL"
+run_import_in_repo both
+[ "$rc" = 0 ] || { bad "repair fixture: Import both (rc=$rc)"; cat "$T/err"; }
+rm -f "${STAGE:?}/fence_mapping.json"
+run_cfu
+[ "$rc" = 1 ] && grep -q 'restores it from the staged metadata.json' "$T/err" && ok "CFU: per-file staged data without fence_mapping.json is refused with the Import hint" || bad "CFU before repair (rc=$rc)"
+run_import_in_repo auth
+[ "$rc" = 0 ] && ok "Import HPDS_VARIANT=auth (the CFU hint) exits 0" || { bad "repair by the hinted Import (rc=$rc)"; cat "$T/err"; }
+run_cfu
+[ "$rc" = 0 ] && ok "CFU passes after the repair" || { bad "CFU after repair (rc=$rc)"; cat "$T/err"; }
+check "CFU after the repair writes the key files" bash -c "cd '$REPO' && test -s datasetKey.txt && test -s destigmatizedDatasetKey.txt && test -s genomicDatasetKey.txt"
 
 # stale key files from an earlier build do not survive a fence failure
 printf 'old\n' > "$REPO/datasetKey.txt"
@@ -1373,7 +1631,7 @@ assert b.findtext("defaultValue") == "false"
 PY
 check "Import job: source_s3_url and destination_bucket_hash are gone from the job" test "$(grep -cE 'source_s3_url|destination_bucket_hash' "$IMPORT_XML")" = 0
 check "Import job: release-control checkout is still configured" bash -c "grep -q '<url>\${release_control_git_repo}</url>' '$IMPORT_XML' && grep -q '<name>\${release_control_git_hash}</name>' '$IMPORT_XML'"
-check "Import job: description names standalone use, the order and the rollback" bash -c "grep -q 'Run by hand' '$IMPORT_XML' && grep -q 'commit the new source URLs' '$IMPORT_XML' && grep -q 'Rollback' '$IMPORT_XML' && grep -q 'curated-datasets-s3-role' '$IMPORT_XML' && grep -q 'bdc-etl-data-d0d6191' '$IMPORT_XML'"
+check "Import job: description names standalone use, the order and the rollback" bash -c "grep -q 'Run by hand' '$T/import.desc' && grep -q 'commit the new source URLs' '$T/import.desc' && grep -q 'Rollback' '$T/import.desc' && grep -q 'curated-datasets-s3-role' '$T/import.desc' && grep -q 'bdc-etl-data-d0d6191' '$T/import.desc'"
 check "Import job: removed parameters are gone from both jobs" test "$(grep -cE 'isDestigmatized|output_file_name|disable_rekey' "$IMPORT_XML" "$CFU_XML" | awk -F: '{s+=$2} END {print s}')" = 0
 check "Run Rekey - Standalone is deleted" test ! -e "$JOBS/Run Rekey - Standalone"
 check "no view or job references Run Rekey - Standalone" test "$(grep -rl --exclude-dir=tests 'Run Rekey - Standalone' "$HERE/.." | wc -l | tr -d ' ')" = 0

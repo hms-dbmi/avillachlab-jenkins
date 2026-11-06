@@ -13,14 +13,19 @@ HPDS_VARIANT: both (default) = auth, then open, in one build; a failed auth stop
 javabins_rekeyed.tar), open -&gt; destigmatized_javabins_rekeyed/ (legacy tar destigmatized_javabins_rekeyed.tar, concepts removed).
 Per variant the source URL and the deploy key (blame commit of the source_dataset_s3_url / source_destigmatized_dataset_s3_url line)
 are derived from build-spec.json by the same rules as Check For Updates. A variant that is already staged is skipped
-("already staged, skipping"); a staged prefix (manifest.tsv) or tar is never overwritten. data/&lt;key&gt;/fence_mapping.json sits outside
-the stage prefixes and is rewritten by every variant this job stages (same metadata.json, as before).
+("already staged, skipping"); a staged prefix (manifest.tsv) or tar is never overwritten. data/&lt;auth key&gt;/fence_mapping.json sits
+outside the stage prefixes and is written by the auth variant only (its metadata.json; for a legacy tar, the metadata.json inside the
+tar). The open variant never writes it: PSAMA reads the auth key&apos;s. When the auth variant is already staged per-file but
+fence_mapping.json is missing, this job copies data/&lt;auth key&gt;/javabins_rekeyed/metadata.json to it (server-side, SSE-S3), prints
+&quot;fence_mapping.json restored from the staged metadata.json&quot; and checks that it exists afterwards. An auth variant staged as a legacy
+tar without fence_mapping.json is refused: restage it under a new deploy key (commit a change to the source URL lines of
+build-spec.json, then run this job).
 
 Source URL:
 - ends with .tar: legacy path (assume curated-datasets-s3-role, download, open: RemoveConceptFromMetadata in docker, re-tar, upload).
 - dataset prefix (ends with /, has manifest.json schema bdc-hpds-pheno-release/1): per-file staging. Server-side copies of the
-  variant&apos;s files with the instance role (no assume_role, no docker), byte check of every copy, metadata.json also copied to
-  fence_mapping.json, manifest.tsv written last. Refuses: unknown variant, bad manifest, open variant with the full
+  variant&apos;s files with the instance role (no assume_role, no docker), byte check of every copy, the auth variant&apos;s metadata.json also
+  copied to fence_mapping.json, manifest.tsv written last. Refuses: unknown variant, bad manifest, open variant with the full
   columnMeta (stored sha or, when present, the gunzipped content sha of full and open is equal), auth files from open/. A run that died before manifest.tsv can be retried.
 
 IAM the instance role of this Jenkins needs for the dataset-prefix path:
@@ -39,15 +44,19 @@ deploys to the STAGING stack only, in this order, each job started with TARGET_S
 Why PSAMA: it copies data/&lt;auth deploy key&gt;/fence_mapping.json into its container when it starts, so it is redeployed with the dataset.
 The genomic deploy key is computed as in Check For Updates (blame commit of the source_genomic_dataset_s3_url line).
 The deploy needs the data of BOTH variants: with HPDS_VARIANT=auth or open the other variant must already be staged for its current
-deploy key. The build is refused, and nothing is deployed, when: the other variant is not staged, the staging or the live stack cannot
-be resolved or is empty, both are the same stack, fence_mapping.json is missing, or the genomic deploy key is empty or not a git hash.
+deploy key. Only the staging stack is looked up (get_stack staging). The build is refused, and nothing is deployed, when: the other
+variant is not staged, the staging stack cannot be resolved (the Bash_Functions workspace or get_stack is missing, get_stack fails, or it
+answers empty, null or something that is not a plain stack name), fence_mapping.json is missing and cannot be restored (auth staged as
+a legacy tar), or the genomic deploy key is empty or not a git hash.
 The live stack cannot be targeted: the job has no stack parameter and the deploy step reads the stack only from the file the checks
 write (staging_deploy.properties in the workspace, deleted at the start of every build).
-A later Deployment Pipeline run rebuilds the staging stack and overwrites what this deployed.
+The shell step ends with &quot;Deployed to the staging stack only. A later Deployment Pipeline run rebuilds the staging stack from
+build-spec.json.&quot; (Deployment Pipeline targets the staging stack too; the live stack changes only by a stack swap.)
 The stack is resolved once, before the three deploys start, and the build holds no deployment-state lock: do not run it while a
 Deployment Pipeline run or a stack swap is in progress, or the stack that was staging at the start may be live by the end.
-The deploy step is a non-sandboxed system Groovy script; after the job definition is upserted, approve it under Manage Jenkins,
-In-process Script Approval, if the Jenkins asks for that, before the first build with DEPLOY_TO_STAGING_STACK=true.
+The deploy step is a non-sandboxed system Groovy script that runs on EVERY build (with the flag off it only prints
+&quot;staging deploy: not requested&quot;). After the job definition is upserted, approve the script under Manage Jenkins, In-process Script
+Approval, before the first build, whatever the flag is.
 The jobs are started with their default bucket parameters (the stack bucket); other parameters keep their defaults.
 The last line of the build says either &quot;staging stack &lt;name&gt;: HPDS auth, HPDS open, PSAMA deployed&quot; or &quot;staging deploy: not requested&quot;.</description>
   <keepDependencies>false</keepDependencies>
@@ -326,7 +335,8 @@ stage_dataset() {
         got_bytes=&quot;$(printf &apos;%s&apos; &quot;${head_json}&quot; | jq -r &apos;.ContentLength&apos;)&quot;
         [ &quot;${got_bytes}&quot; = &quot;${e_bytes}&quot; ] || refuse &quot;${e_dest}: staged ${got_bytes} bytes, manifest says ${e_bytes}&quot;
         printf &apos;%s\t%s\t%s\t%s\t%s\n&apos; &quot;${e_dest}&quot; &quot;${e_bytes}&quot; &quot;${e_sha}&quot; &quot;${e_etag}&quot; &quot;${e_src}&quot; &gt;&gt; &quot;${work}/manifest.tsv&quot;
-        if [ &quot;${e_dest}&quot; = &quot;metadata.json&quot; ]; then
+        # fence_mapping.json belongs to the auth variant (PSAMA reads the auth key&apos;s); the open variant must not replace it.
+        if [ &quot;${e_dest}&quot; = &quot;metadata.json&quot; ] &amp;&amp; [ &quot;${variant}&quot; = auth ]; then
             aws s3 cp &quot;${source_url}${e_src}&quot; &quot;s3://${stack_s3_bucket}/data/${deploy_key_value}/fence_mapping.json&quot; --sse AES256 --only-show-errors &lt; /dev/null
         fi
     done &lt; &quot;${work}/entries.tsv&quot;
@@ -423,10 +433,30 @@ stage_legacy() {
         cd &quot;${WORKSPACE}&quot;/local/hpds/
         # Leave the data set artifact as non-compressed for the rest of it&apos;s lifecycle
         tar -cvf &quot;${legacy_name}.tar&quot; -- *.javabin encryption_key metadata.json
-        # fence_mapping.json first: the tar is the &quot;staged&quot; marker, so it must be the last upload.
-        aws s3 --sse=AES256 cp metadata.json &quot;s3://${stack_s3_bucket}/data/${deploy_key_value}/fence_mapping.json&quot;
+        # fence_mapping.json is the auth variant&apos;s only (see stage_dataset). It goes first: the tar is the &quot;staged&quot; marker, so it
+        # must be the last upload.
+        if [ &quot;${variant}&quot; = auth ]; then
+            aws s3 --sse=AES256 cp metadata.json &quot;s3://${stack_s3_bucket}/data/${deploy_key_value}/fence_mapping.json&quot;
+        fi
         aws s3 --sse=AES256 cp &quot;${legacy_name}.tar&quot; &quot;s3://${stack_s3_bucket}/data/${deploy_key_value}/${legacy_name}.tar&quot; --quiet
     )
+}
+
+# data/&lt;auth key&gt;/fence_mapping.json is what the PSAMA deploy reads. Called with the auth variant set up and already staged.
+# Staged per-file: a missing mapping is restored from the staged metadata.json. Staged as a legacy tar: its metadata.json is inside
+# the tar and cannot be reached from here, so that is refused.
+ensure_fence_mapping() {
+    local fence_key=&quot;data/${deploy_key_value}/fence_mapping.json&quot;
+    if key_exists &quot;${fence_key}&quot;; then
+        return 0
+    fi
+    if ! key_exists &quot;${stage_key_prefix}manifest.tsv&quot;; then
+        refuse &quot;auth data for deploy key ${deploy_key_value} is staged as a legacy tar and ${fence_key} is missing; it cannot be restored in place: restage under a new deploy key (commit a change to the source URL lines of build-spec.json, then run this job)&quot;
+    fi
+    aws s3 cp &quot;s3://${stack_s3_bucket}/${stage_key_prefix}metadata.json&quot; &quot;s3://${stack_s3_bucket}/${fence_key}&quot; --sse AES256 --only-show-errors \
+        || refuse &quot;cannot restore ${fence_key} from ${stage_key_prefix}metadata.json&quot;
+    key_exists &quot;${fence_key}&quot; || refuse &quot;${fence_key} is still missing after the restore&quot;
+    echo &quot;fence_mapping.json restored from the staged metadata.json&quot;
 }
 
 # Plan first: work out the keys and validate the source of every variant that still has to be staged,
@@ -443,6 +473,9 @@ for variant in ${variants}; do
     variant_setup &quot;${variant}&quot;
     if is_staged &quot;${deploy_key_value}&quot; &quot;${stage_prefix}&quot; &quot;${legacy_name}&quot;; then
         echo &quot;${variant}: already staged, skipping (deploy key ${deploy_key_value})&quot;
+        if [ &quot;${variant}&quot; = auth ]; then
+            ensure_fence_mapping
+        fi
         summary=&quot;${summary}${variant}: already staged (deploy key ${deploy_key_value})&quot;$&apos;\n&apos;
         continue
     fi
@@ -457,11 +490,11 @@ for variant in ${variants}; do
 done
 
 ### Optional deploy to the staging stack (DEPLOY_TO_STAGING_STACK=true).
-# The deploy needs the data of BOTH variants and the fence mapping, whichever variant was requested here. Everything is
-# checked first; staging_deploy.properties is written only when every check passed. The SystemGroovy step after this
+# The deploy needs the data of BOTH variants and the fence mapping, whichever variant was requested here. Only the staging stack
+# is looked up. Everything is checked first; staging_deploy.properties is written only when every check passed. The SystemGroovy step after this
 # shell step deploys from that file alone: it has no stack parameter and never targets the live stack.
 prepare_staging_deploy() {
-    local v auth_key=&quot;&quot; open_key=&quot;&quot; genomic_key staging_stack live_stack props_tmp=&quot;staging_deploy.properties.tmp&quot;
+    local v auth_key=&quot;&quot; open_key=&quot;&quot; genomic_key staging_stack props_tmp=&quot;staging_deploy.properties.tmp&quot;
 
     for v in auth open; do
         variant_setup &quot;${v}&quot;
@@ -470,25 +503,21 @@ prepare_staging_deploy() {
         if [ &quot;${v}&quot; = auth ]; then auth_key=&quot;${deploy_key_value}&quot;; else open_key=&quot;${deploy_key_value}&quot;; fi
     done
 
-    # Stack names come from stacks.json (live = environments.prod, staging = environments.next_prod) via get_stack.
+    # The staging stack name comes from stacks.json (environments.next_prod) via get_stack.
     if [ &quot;${bash_functions_loaded}&quot; = false ] &amp;&amp; [ ! -d &quot;${JENKINS_HOME}/workspace/Bash_Functions&quot; ]; then
         refuse &quot;staging deploy: the Bash_Functions workspace ${JENKINS_HOME}/workspace/Bash_Functions is missing; build Bash_Functions once&quot;
     fi
     load_bash_functions
     command -v get_stack &gt; /dev/null 2&gt;&amp;1 || refuse &quot;staging deploy: get_stack is not defined by the Bash_Functions workspace&quot;
     staging_stack=$(get_stack staging) || refuse &quot;staging deploy: cannot resolve the staging stack&quot;
-    live_stack=$(get_stack live) || refuse &quot;staging deploy: cannot resolve the live stack&quot;
     if [ -z &quot;${staging_stack}&quot; ] || [ &quot;${staging_stack}&quot; = null ]; then
         refuse &quot;staging deploy: the staging stack is empty&quot;
     fi
-    if [ -z &quot;${live_stack}&quot; ] || [ &quot;${live_stack}&quot; = null ]; then
-        refuse &quot;staging deploy: the live stack is empty&quot;
-    fi
     [[ &quot;${staging_stack}&quot; =~ ^[A-Za-z0-9._-]+$ ]] || refuse &quot;staging deploy: staging stack name &apos;${staging_stack}&apos; is not a plain name&quot;
-    [ &quot;${staging_stack}&quot; != &quot;${live_stack}&quot; ] || refuse &quot;staging deploy: the staging stack and the live stack are both &apos;${staging_stack}&apos;; not deploying&quot;
 
-    key_exists &quot;data/${auth_key}/fence_mapping.json&quot; \
-        || refuse &quot;staging deploy: data/${auth_key}/fence_mapping.json is missing in s3://${stack_s3_bucket}; the PSAMA deploy needs it&quot;
+    # PSAMA copies data/&lt;auth key&gt;/fence_mapping.json into its container: restore it when the auth data is staged per-file.
+    variant_setup auth
+    ensure_fence_mapping
 
     genomic_key=$(blame_commit source_genomic_dataset_s3_url)
     [ -n &quot;${genomic_key}&quot; ] || refuse &quot;staging deploy: no source_genomic_dataset_s3_url line in build-spec.json&quot;
@@ -501,13 +530,13 @@ prepare_staging_deploy() {
         echo &quot;genomic_key=${genomic_key}&quot;
     } &gt; &quot;${props_tmp}&quot;
     mv &quot;${props_tmp}&quot; staging_deploy.properties
-    echo &quot;staging deploy: checks passed; HPDS auth, HPDS open and PSAMA are deployed to the staging stack &apos;${staging_stack}&apos; by the next build step (live stack &apos;${live_stack}&apos; is not touched)&quot;
+    echo &quot;staging deploy: checks passed; HPDS auth, HPDS open and PSAMA are deployed to the staging stack &apos;${staging_stack}&apos; by the next build step&quot;
 }
 
 printf &apos;%s&apos; &quot;${summary}&quot;
 if [ &quot;${deploy_to_staging}&quot; = true ]; then
     prepare_staging_deploy
-    echo &quot;The live stack is not touched by this job; Check For Updates or Deployment Pipeline deploys it.&quot;
+    echo &quot;Deployed to the staging stack only. A later Deployment Pipeline run rebuilds the staging stack from build-spec.json.&quot;
 else
     echo &quot;Next: run Check For Updates (or wait for the scheduled run) to deploy.&quot;
 fi
