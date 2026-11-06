@@ -4,7 +4,7 @@
   <description>Restores the PIC-SURE dictionary (schema dict) into the picsure database with pg_restore --clean from a pg_dump --format=d tar.
 
 Source: source_dictionary_db_s3_url in build-spec.json of the release-control checkout. It must be s3://&lt;bucket&gt;/&lt;key&gt; with a key ending in .tar (surrounding whitespace is ignored). Anything else is refused ("REFUSED: ...", exit 1) before any AWS call.
-- In-boundary dump: s3://bdc-etl-data-d0d6191/data/dictionary/db-dumps/dictionary_db_&lt;ts&gt;.tar, written by the pheno job PIC-SURE Dictionary ETL Pipeline/dict-ingest (export-db step). Read with the Jenkins instance role (no assume_role), the same way Import_and_Rekey_HPDS_Data reads a dataset prefix.
+- In-boundary dump: s3://bdc-etl-data-d0d6191/data/dictionary/db-dumps/dictionary_db_&lt;ts&gt;.tar, written by the pheno job PIC-SURE Dictionary ETL Pipeline/dict-ingest (export-db step). Read with the Jenkins instance role (no assume_role), the same way HPDS Data - Stage to Stack Bucket reads a dataset prefix.
 - Legacy dump (any other bucket): read with curated_datasets_s3_role (assume_role before the download, reset_role after it, role skipped when the variable is not set). This is the rollback: put the old legacy URL back in build-spec.json.
 The log says which source and identity were used.
 

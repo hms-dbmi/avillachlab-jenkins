@@ -1,6 +1,6 @@
 #!/bin/bash
 # shellcheck disable=SC2015  # "[ test ] && ok || bad" is the intended reporting idiom here
-# Tests for the job "Database PSQL - Dictionary Import dump and pg_restore": the dump URL comes from build-spec.json
+# Tests for the job "Database PSQL - Dictionary Restore Dump": the dump URL comes from build-spec.json
 # (jq, whitespace stripped, refused before any AWS call unless s3://<bucket>/<key>.tar), the in-boundary bucket is read
 # with the instance role while any other bucket takes the legacy curated_datasets_s3_role path, and the dump is checked
 # (non-empty, extracts, toc.dat) before the secret fetch, the connection test or pg_restore.
@@ -12,8 +12,8 @@
 set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-JOB_REL="jenkins-docker/jobs/Database PSQL - Dictionary Import dump and pg_restore/config.xml"
-JOB_XML="$HERE/../jobs/Database PSQL - Dictionary Import dump and pg_restore/config.xml"
+JOB_REL="jenkins-docker/jobs/Database PSQL - Dictionary Restore Dump/config.xml"
+JOB_XML="$HERE/../jobs/Database PSQL - Dictionary Restore Dump/config.xml"
 
 T="$(mktemp -d "${TMPDIR:-/tmp}/dictionary-restore-test.XXXXXX")"
 trap 'rm -rf "$T"' EXIT
@@ -301,14 +301,20 @@ check "stale toc.dat: fails on the toc.dat check (the old dump_files/ was cleare
 
 # ================================================================ static checks
 extract_restore_flags() { awk '/^pg_restore \\$/,/"dump_files\/"$/' "$1"; }
-if git -C "$HERE" show "main:$JOB_REL" > "$T/main.xml" 2> /dev/null && python3 -I "$HERE/extract-shell.py" "$T/main.xml" > "$T/main.sh" 2> /dev/null; then
+# The job was renamed after main: find main's path of this file through git's rename detection when main has no such path.
+MAIN_REL="$JOB_REL"
+if ! git -C "$HERE" cat-file -e "main:$JOB_REL" 2> /dev/null; then
+    renamed_from=$(git -C "$HERE" diff -M --name-status main -- :/jenkins-docker/jobs 2> /dev/null | awk -F'\t' -v new="$JOB_REL" '$1 ~ /^R/ && $3 == new {print $2}')
+    [ -z "$renamed_from" ] || MAIN_REL="$renamed_from"
+fi
+if git -C "$HERE" show "main:$MAIN_REL" > "$T/main.xml" 2> /dev/null && python3 -I "$HERE/extract-shell.py" "$T/main.xml" > "$T/main.sh" 2> /dev/null; then
     extract_restore_flags "$T/main.sh" > "$T/flags.main"
     extract_restore_flags "$T/job.sh" > "$T/flags.job"
     check "pg_restore flag list is not empty" test -s "$T/flags.main" -a "$(wc -l < "$T/flags.main" | tr -d ' ')" -ge 18
     check "pg_restore flag list is unchanged from main" cmp "$T/flags.main" "$T/flags.job"
     check "secret fetch lines are unchanged from main" bash -c "diff <(grep -E 'fetch_secret|extract_field' '$T/main.sh') <(grep -E 'fetch_secret|extract_field' '$T/job.sh')"
 else
-    echo "skip - main:$JOB_REL not readable here (no git history), flag comparison skipped"
+    echo "skip - main:$MAIN_REL not readable here (no git history), flag comparison skipped"
 fi
 check "Groovy Bash_Functions step is the first builder" python3 -I - "$JOB_XML" << 'PY'
 import sys, xml.etree.ElementTree as E

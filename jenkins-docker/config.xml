@@ -49,7 +49,8 @@
       <properties class="hudson.model.View$PropertyList"/>
       <jobNames>
         <comparator class="hudson.util.CaseInsensitiveComparator"/>
-        <string>Import_and_Rekey_HPDS_Data</string>
+        <string>HPDS Data - Stage to Stack Bucket</string>
+        <string>HPDS Data - Deploy to Staging Stack</string>
         <string>Import HPDS VCF Data</string>
         <string>PIC-SURE Pipeline</string>
         <string>PIC-SURE Maven Build</string>

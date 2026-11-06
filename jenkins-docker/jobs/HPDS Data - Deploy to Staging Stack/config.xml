@@ -1,0 +1,197 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<flow-definition plugin="workflow-job@1540.v295eccc9778f">
+  <actions/>
+  <description>Deploys HPDS auth, HPDS open and PSAMA (PIC-SURE Auth Micro App) with an already staged dataset to the STAGING stack, in one build.
+Normally started by HPDS Data - Stage to Stack Bucket when it runs with DEPLOY_TO_STAGING_STACK=true, which passes the three deploy keys.
+It can also be run by hand with the three keys (the keys printed by HPDS Data - Stage to Stack Bucket, or the blame commits of the
+source_dataset_s3_url, source_destigmatized_dataset_s3_url and source_genomic_dataset_s3_url lines of build-spec.json). There is no stack
+parameter and no default for any key.
+
+Order of work:
+1. The three keys are validated first (7 to 40 lowercase hex characters); a bad key fails the build before anything else happens.
+2. Everything after that runs inside a time limit of 4 hours (timeout step).
+3. The deployment-state lock is taken first, by building Retrieve Deployment State (S3 legal hold on deployment_state_metadata/stacks.json,
+   the same lock Deployment Pipeline and Swap Stacks take). It fails fast: when the lock is held by another deployment this build fails at
+   once, deploys nothing and does NOT run Unlock Deployment State (a lock this build did not take is never released).
+4. The staging stack is environments.next_prod of the stacks.json that Retrieve Deployment State archived. It is the only stack this job
+   reads; an empty, null or not plain name is refused.
+5. The stack lock stack-&lt;staging stack&gt; (Lockable Resources, the same resource the PIC-SURE ... Build and Deploy jobs hold) is taken second
+   and WAITS if a build of those jobs is running on the staging stack. While it waits (up to the time limit) the deployment-state lock is
+   still held, so a Deployment Pipeline or Swap Stacks run started in that window fails at once; start it again afterwards.
+6. Inside the stack lock the stack bucket is checked again: the auth dataset (data/&lt;auth key&gt;/javabins_rekeyed/manifest.tsv or the
+   legacy data/&lt;auth key&gt;/javabins_rekeyed.tar), the open dataset (data/&lt;open key&gt;/destigmatized_javabins_rekeyed/manifest.tsv or the
+   legacy .tar) and data/&lt;auth key&gt;/fence_mapping.json. Anything missing fails the build and nothing is deployed.
+7. Then, each started only after the one before ended SUCCESS: PIC-SURE HPDS Auth Deploy (auth key, genomic key), PIC-SURE HPDS Open Deploy
+   (open key), PIC-SURE Auth Micro App Deploy (auth key; PSAMA copies data/&lt;auth key&gt;/fence_mapping.json into its container when it
+   starts, so it is redeployed with the dataset). Each gets TARGET_STACK = the staging stack; their other parameters keep their defaults
+   (the stack bucket).
+8. Whatever happens after the deployment-state lock was taken (a failed deploy, the time limit, an abort), the build runs Unlock Deployment
+   State at the end. stacks.json is not changed, so Write Stack State is not run. If the unlock itself fails the build fails and says so
+   (and repeats the earlier failure, if there was one): run Unlock Deployment State by hand.
+   One gap: Retrieve Deployment State can put the hold on and then fail, or this build can be aborted while Retrieve Deployment State runs.
+   This build then does not unlock (it cannot tell whether the hold is its own). Read the log of Retrieve Deployment State: if it shows
+   put-object-legal-hold ran, run Unlock Deployment State by hand. If it failed because the hold was already on, do nothing.
+
+Aborting this build is safe (the unlock still runs). When this job was started by HPDS Data - Stage to Stack Bucket, aborting that job
+only stops its wait: abort this job itself to stop the deployment.
+
+The live stack is never targeted: the build reads environments.next_prod only. A later Deployment Pipeline run rebuilds the staging stack
+from build-spec.json; the live stack changes only by a stack swap.
+
+IAM: the instance role of this Jenkins needs s3:ListBucket (prefix data/*) and s3:GetObject on data/* in the stack bucket for the check in
+step 6, besides what Retrieve Deployment State, Unlock Deployment State and the three deploy jobs already use.
+
+The last line of a successful build is &quot;staging stack &lt;name&gt;: HPDS auth, HPDS open, PSAMA deployed&quot;.</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.StringParameterDefinition>
+          <name>DATA_S3_OBJECT_KEY</name>
+          <description>Deploy key of the auth dataset: 7 to 40 lowercase hex characters (data/&lt;key&gt;/javabins_rekeyed/ in the stack bucket). Required.</description>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>DESTIGMATIZED_DATASET_S3_OBJECT_KEY</name>
+          <description>Deploy key of the open (destigmatized) dataset: 7 to 40 lowercase hex characters (data/&lt;key&gt;/destigmatized_javabins_rekeyed/ in the stack bucket). Required.</description>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>GENOMIC_DATASET_S3_OBJECT_KEY</name>
+          <description>Deploy key of the genomic dataset: 7 to 40 lowercase hex characters. Required.</description>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <definition class="org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition" plugin="workflow-cps@3975.v567e2a_1ffa_22">
+    <script>import groovy.json.JsonSlurperClassic
+
+// Deploys an already staged HPDS dataset (HPDS auth, HPDS open, PSAMA) to the staging stack, the one named by
+// environments.next_prod of the stacks.json archived by Retrieve Deployment State. No stack is a parameter.
+// Order: validate the keys, take the deployment-state lock (fails fast), read the staging stack, take the stack lock (waits),
+// re-check the staged data, deploy. The deployment-state lock is released in the finally block, and only if this build took it.
+
+def authKey = (params.DATA_S3_OBJECT_KEY ?: &apos;&apos;).trim()
+def openKey = (params.DESTIGMATIZED_DATASET_S3_OBJECT_KEY ?: &apos;&apos;).trim()
+def genomicKey = (params.GENOMIC_DATASET_S3_OBJECT_KEY ?: &apos;&apos;).trim()
+
+// 1. The keys become S3 key segments and parameters of other jobs: only 7 to 40 lowercase hex characters pass.
+for (entry in [[&apos;DATA_S3_OBJECT_KEY&apos;, authKey], [&apos;DESTIGMATIZED_DATASET_S3_OBJECT_KEY&apos;, openKey], [&apos;GENOMIC_DATASET_S3_OBJECT_KEY&apos;, genomicKey]]) {
+    if (!(entry[1] ==~ /[0-9a-f]{7,40}/)) {
+        error(&quot;${entry[0]} must be a deploy key of 7 to 40 lowercase hex characters, got &apos;${entry[1]}&apos;. Nothing was deployed.&quot;)
+    }
+}
+
+def lockAcquired = false
+def stagingStack = &apos;&apos;
+def failureText = &apos;&apos;
+
+try {
+    timeout(time: 4, unit: &apos;HOURS&apos;) {
+        stage(&apos;Take the deployment-state lock&apos;) {
+            // Fails when another deployment holds the lock: nothing is deployed and lockAcquired stays false.
+            def retrieved
+            try {
+                retrieved = build job: &apos;Retrieve Deployment State&apos;
+            } catch (Exception retrieveError) {
+                // Not unlocked here: the hold may belong to another deployment. Retrieve can also fail after it put the hold on.
+                echo &quot;Retrieve Deployment State did not finish. This build does not unlock. If the log of Retrieve Deployment State shows put-object-legal-hold ran, run Unlock Deployment State by hand; if the lock was already held by another deployment, do nothing.&quot;
+                throw retrieveError
+            }
+            lockAcquired = true
+            node {
+                copyArtifacts filter: &apos;stacks.json&apos;, projectName: &apos;Retrieve Deployment State&apos;, selector: specific(&quot;&quot; + retrieved.number)
+                def stacks = new JsonSlurperClassic().parseText(readFile(&apos;stacks.json&apos;))
+                def candidate = stacks?.environments?.next_prod
+                if (!(candidate instanceof String) || candidate == &apos;null&apos; || !(candidate ==~ /[A-Za-z0-9._-]+/)) {
+                    error(&apos;environments.next_prod in stacks.json is empty, null or not a plain stack name. Nothing was deployed.&apos;)
+                }
+                stagingStack = candidate
+            }
+            echo &quot;staging stack: ${stagingStack}&quot;
+        }
+        stage(&apos;Deploy to the staging stack&apos;) {
+            lock(&quot;stack-${stagingStack}&quot;) {
+                node {
+                    withEnv([&quot;AUTH_KEY=${authKey}&quot;, &quot;OPEN_KEY=${openKey}&quot;]) {
+                        sh &apos;&apos;&apos;#!/bin/bash
+# shellcheck disable=SC2154  # stack_s3_bucket is a global environment variable of this Jenkins
+set -eu
+
+# ListBucket on data/* is granted while HeadObject on a missing key may answer 403, so list first.
+key_exists() {
+    local key=&quot;$1&quot; out
+    if out=$(aws s3api list-objects-v2 --bucket &quot;${stack_s3_bucket}&quot; --prefix &quot;${key}&quot; --output json 2&gt; /dev/null); then
+        # jq 1.6 -e exits 0 on empty input: an empty listing must mean &quot;not there&quot;
+        [ -n &quot;${out}&quot; ] || return 1
+        printf &apos;%s&apos; &quot;${out}&quot; | jq -e --arg k &quot;${key}&quot; &apos;any(.Contents[]?; .Key == $k)&apos; &gt; /dev/null
+    else
+        aws s3api head-object --bucket &quot;${stack_s3_bucket}&quot; --key &quot;${key}&quot; &gt; /dev/null 2&gt;&amp;1
+    fi
+}
+
+# is_staged &lt;deploy key&gt; &lt;stage prefix&gt; &lt;legacy tar name&gt;: per-file staging writes manifest.tsv last; a legacy tar is one object.
+is_staged() {
+    key_exists &quot;data/$1/$2manifest.tsv&quot; || key_exists &quot;data/$1/$3.tar&quot;
+}
+
+missing=0
+if ! is_staged &quot;${AUTH_KEY}&quot; javabins_rekeyed/ javabins_rekeyed; then
+    echo &quot;ERROR: auth dataset is not staged: deploy key ${AUTH_KEY}; run HPDS Data - Stage to Stack Bucket&quot; &gt;&amp;2
+    missing=1
+fi
+if ! is_staged &quot;${OPEN_KEY}&quot; destigmatized_javabins_rekeyed/ destigmatized_javabins_rekeyed; then
+    echo &quot;ERROR: open dataset is not staged: deploy key ${OPEN_KEY}; run HPDS Data - Stage to Stack Bucket&quot; &gt;&amp;2
+    missing=1
+fi
+if ! key_exists &quot;data/${AUTH_KEY}/fence_mapping.json&quot;; then
+    echo &quot;ERROR: data/${AUTH_KEY}/fence_mapping.json is missing; run HPDS Data - Stage to Stack Bucket with HPDS_VARIANT=auth&quot; &gt;&amp;2
+    missing=1
+fi
+if [ &quot;${missing}&quot; != 0 ]; then
+    echo &quot;Nothing was deployed.&quot; &gt;&amp;2
+    exit 1
+fi
+echo &quot;staged data re-checked in s3://${stack_s3_bucket}: auth ${AUTH_KEY}, open ${OPEN_KEY}, fence_mapping.json&quot;
+&apos;&apos;&apos;
+                    }
+                }
+                build job: &apos;PIC-SURE HPDS Auth Deploy&apos;, parameters: [
+                    [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: stagingStack],
+                    [$class: &apos;StringParameterValue&apos;, name: &apos;DATA_S3_OBJECT_KEY&apos;, value: authKey],
+                    [$class: &apos;StringParameterValue&apos;, name: &apos;GENOMIC_DATASET_S3_OBJECT_KEY&apos;, value: genomicKey]
+                ]
+                build job: &apos;PIC-SURE HPDS Open Deploy&apos;, parameters: [
+                    [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: stagingStack],
+                    [$class: &apos;StringParameterValue&apos;, name: &apos;DESTIGMATIZED_DATASET_S3_OBJECT_KEY&apos;, value: openKey]
+                ]
+                build job: &apos;PIC-SURE Auth Micro App Deploy&apos;, parameters: [
+                    [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: stagingStack],
+                    [$class: &apos;StringParameterValue&apos;, name: &apos;DATASET_S3_OBJECT_KEY&apos;, value: authKey]
+                ]
+            }
+        }
+    }
+} catch (Exception failure) {
+    failureText = failure.message ?: failure.toString()
+    throw failure
+} finally {
+    // Only a lock this build took is released. stacks.json was not changed, so Write Stack State is not needed.
+    if (lockAcquired) {
+        try {
+            build job: &apos;Unlock Deployment State&apos;
+        } catch (Exception unlockError) {
+            def earlier = failureText ? &quot; The deployment itself failed before: ${failureText}&quot; : &apos;&apos;
+            error(&quot;Unlock Deployment State failed (${unlockError.message}); the deployment-state lock is still held. Run the job Unlock Deployment State.${earlier}&quot;)
+        }
+    }
+}
+
+echo &quot;staging stack ${stagingStack}: HPDS auth, HPDS open, PSAMA deployed&quot;
+</script>
+    <sandbox>true</sandbox>
+  </definition>
+  <triggers/>
+  <disabled>false</disabled>
+</flow-definition>
