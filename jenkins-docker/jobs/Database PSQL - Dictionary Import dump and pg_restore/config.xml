@@ -10,7 +10,7 @@ The log says which source and identity were used.
 
 Before the database is touched the dump is checked: the download is non-empty, it extracts, dump_files/toc.dat exists after the files are flattened into dump_files/, pg_restore --list reads the table of contents, and every TABLE DATA entry has its data file. If a check fails the build fails before the secret fetch, the connection test and pg_restore. Then the secret is fetched through the Bash_Functions job scripts, the connection is tested and pg_restore runs (flags unchanged).
 
-IAM Thomas must add for the in-boundary path (not granted by this job): the instance role of this Jenkins needs s3:GetObject on bdc-etl-data-d0d6191/data/dictionary/db-dumps/* and s3:ListBucket on that bucket for the prefix data/dictionary/db-dumps/*, plus the bucket policy on bdc-etl-data-d0d6191 if the bucket is in another account.
+IAM needed for the in-boundary path: the instance role of this Jenkins needs s3:GetObject on bdc-etl-data-d0d6191/data/dictionary/db-dumps/* and s3:ListBucket on that bucket for the prefix data/dictionary/db-dumps/*, plus the bucket policy on bdc-etl-data-d0d6191 if the bucket is in another account.
 
 Followed by the job PIC-SURE Dictionary Weights Build and Run.</description>
   <keepDependencies>false</keepDependencies>

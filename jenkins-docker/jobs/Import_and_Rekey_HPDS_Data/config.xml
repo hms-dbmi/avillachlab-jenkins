@@ -22,7 +22,7 @@ Source URL:
   fence_mapping.json, manifest.tsv written last. Refuses: unknown variant, bad manifest, open variant with the full
   columnMeta (stored sha or, when present, the gunzipped content sha of full and open is equal), auth files from open/. A run that died before manifest.tsv can be retried.
 
-IAM the instance role of this Jenkins needs for the dataset-prefix path (granted by Thomas, not by this job):
+IAM the instance role of this Jenkins needs for the dataset-prefix path:
 - source bucket (bdc-etl-data-d0d6191): s3:ListBucket (prefix data/hpds/pheno/datasets/*) and s3:GetObject on data/hpds/pheno/datasets/*
 - stack bucket (stack_s3_bucket): s3:ListBucket (prefix data/*), s3:GetObject and s3:PutObject on data/* (SSE-S3, no KMS)
 The legacy .tar path keeps using curated-datasets-s3-role and sources the scripts in the Bash_Functions job workspace
@@ -221,7 +221,7 @@ validate_source() {
 }
 
 ### Per-file staging from a dataset prefix. One identity (the instance role); no docker.
-# Needs (granted by Thomas, see the job description):
+# IAM needed (see the job description):
 #   source bucket: s3:ListBucket + s3:GetObject on data/hpds/pheno/datasets/*
 #   stack bucket:  s3:ListBucket + s3:GetObject + s3:PutObject on data/*
 stage_dataset() {
