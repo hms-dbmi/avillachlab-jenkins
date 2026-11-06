@@ -962,6 +962,8 @@ for mode in unset false; do
     check "staging flag $mode: no staging_deploy.properties (a stale one is deleted)" no_props
     check "staging flag $mode: stacks.json is not read" test "$(grep -c 'stacks.json\|deployment_state_metadata' "$FAKE_AWS_LOG")" = 0
     check "staging flag $mode: Bash_Functions is not sourced on the dataset path" test ! -s "$SOURCED_LOG"
+    check "staging flag $mode: no fence_mapping.json existence probe (list or head) is made" test "$(grep -E 'list-objects-v2|head-object' "$FAKE_AWS_LOG" | grep -c 'fence_mapping.json')" = 0
+    if [ "$mode" = unset ]; then cp "$FAKE_AWS_LOG" "$T/aws.flag-unset.log"; else check "staging flag false: the aws calls are identical to those of an unset flag" cmp "$FAKE_AWS_LOG" "$T/aws.flag-unset.log"; fi
     check "staging flag $mode: no staging text in the output" test "$(grep -ci 'staging deploy\|staging stack' "$T/out")" = 0
     check "staging flag $mode: output still ends with the Next line" test "$(tail -1 "$T/out")" = "Next: run Check For Updates (or wait for the scheduled run) to deploy."
 done
@@ -998,6 +1000,8 @@ check "flag on: Bash_Functions is sourced once" test "$(wc -l < "$SOURCED_LOG" |
 check "flag on: per-file staging still never assumes a role" test "$(grep -c 'assume-role' "$FAKE_AWS_LOG")" = 0
 check "flag on: nothing is read or written under the live stack" test "$(grep -c 'live-stk' "$FAKE_AWS_LOG")" = 0
 check "flag on: the build says the checks passed and which stack the next step deploys to" grep -q "staging deploy: checks passed; HPDS auth, HPDS open and PSAMA are deployed to the staging stack 'blue-stk'" "$T/out"
+check "flag on: no 'Next: run Check For Updates' line (the live stack is not deployed by this job)" test "$(grep -c '^Next: run Check For Updates' "$T/out")" = 0
+check "flag on: the build ends by saying the live stack is not touched" test "$(tail -1 "$T/out")" = "The live stack is not touched by this job; Check For Updates or Deployment Pipeline deploys it."
 check "flag on: the per-variant summary lines are still there" bash -c "grep -qx 'auth: staged (deploy key $C1)' '$T/out' && grep -qx 'open: staged (deploy key $C1)' '$T/out'"
 
 # ---- flag on, everything already staged: nothing is staged again, the file is still written
@@ -1006,6 +1010,12 @@ run_import_in_repo both
 [ "$rc" = 0 ] && ok "flag on, both already staged: exits 0" || { bad "flag on already staged (rc=$rc)"; cat "$T/err"; }
 check "flag on, already staged: file is written" props_is blue-stk "$C1" "$C1" "$G"
 check "flag on, already staged: both variants reported already staged" test "$(grep -c 'already staged, skipping' "$T/out")" = 2
+
+# the genomic key in the file is the key Check For Updates computes for the same checkout
+run_cfu
+[ "$rc" = 0 ] && ok "flag on: Check For Updates accepts what the staging deploy staged (fence mapping included)" || { bad "CFU after flag on (rc=$rc)"; cat "$T/err"; }
+check "flag on: genomic key in the file = genomicDatasetKey.txt of Check For Updates" test "$(cat "$REPO/genomicDatasetKey.txt")" = "$(sed -n 's/^genomic_key=//p' "$PROPS")"
+check "flag on: auth and open keys in the file = Check For Updates' keys" bash -c "test \"\$(cat '$REPO/datasetKey.txt')\" = \"\$(sed -n 's/^auth_key=//p' '$PROPS')\" && test \"\$(cat '$REPO/destigmatizedDatasetKey.txt')\" = \"\$(sed -n 's/^open_key=//p' '$PROPS')\""
 
 # ---- flag on with HPDS_VARIANT=auth / open: the other variant must already be staged
 reset_world
@@ -1083,6 +1093,24 @@ printf 'get_stack() { echo "ERROR: boom" >&2; return 1; }\n' > "$BF_DIR/get_stac
 flag_on
 run_import both "$DATASET_URL"
 refused_with "cannot resolve the staging stack" && ok "a failing get_stack is refused, no file" || { bad "get_stack fails (rc=$rc)"; cat "$T/err"; }
+
+# get_stack that succeeds with an empty answer (or null) for one of the stacks
+for empty in live staging; do
+    reset_world
+    make_dataset
+    staging_env live-stk blue-stk
+    printf 'get_stack() { if [ "$1" = %s ]; then echo ""; else echo other-stk; fi; }\n' "$empty" > "$BF_DIR/get_stack.sh"
+    flag_on
+    WS_SEED=staging_deploy.properties run_import both "$DATASET_URL"
+    refused_with "the $empty stack is empty" && ok "an empty $empty stack (get_stack succeeds, prints nothing) is refused, no file" || { bad "empty $empty stack (rc=$rc)"; cat "$T/err"; }
+done
+reset_world
+make_dataset
+staging_env live-stk blue-stk
+printf 'get_stack() { if [ "$1" = live ]; then echo null; else echo other-stk; fi; }\n' > "$BF_DIR/get_stack.sh"
+flag_on
+run_import both "$DATASET_URL"
+refused_with "the live stack is empty" && ok "a live stack printed as null by get_stack is refused, no file" || { bad "null live stack (rc=$rc)"; cat "$T/err"; }
 
 reset_world
 make_dataset
@@ -1234,11 +1262,23 @@ assert closure.count("scheduleBuild2(") == 1 and closure.count(".get()") == 1
 assert re.search(r"getResult\(\) != Result\.SUCCESS\)\s*\{\s*throw new AbortException\(jobName \+", closure), closure
 assert g.count("scheduleBuild2(") == 1
 PY
-check "deploy step: nothing is scheduled before the properties file is read" python3 -I - "$T/import.groovy" << 'PY'
-import sys
+check "deploy step: without the file the script returns before it reads or schedules anything; with the file it needs the flag" python3 -I - "$T/import.groovy" << 'PY'
+import re, sys
 g = open(sys.argv[1]).read()
-assert g.index("staging_deploy.properties") < g.index("scheduleBuild2(") < g.index('deploy("PIC-SURE HPDS Auth Deploy"')
-assert g.index("return") < g.index("scheduleBuild2(")
+# indices come from code tokens, not from the file name (which also appears in the header comment)
+read = g.index('build.workspace?.child("staging_deploy.properties")')
+early = re.search(r'if \(propsFile == null \|\| !propsFile\.exists\(\)\) \{(.*?)\n\}\n', g, re.S)
+assert early, "no early exit for a missing file"
+body = early.group(1)
+assert body.rstrip().endswith('println "staging deploy: not requested"\n    return'), body
+assert body.count("return") == 1 and "scheduleBuild2" not in body and "readToString" not in body
+assert 'throw new AbortException("DEPLOY_TO_STAGING_STACK is true' in body
+# the early exit sits right after the file lookup and before anything reads or schedules
+assert read < early.start() < g.index("props.load(") < g.index("String stack = need(") < g.index("def deploy = {") < g.index("scheduleBuild2(")
+assert g.index("readToString()") > early.end() and g.count("readToString()") == 1
+# a file without the flag is not trusted
+gate = re.search(r'if \(!"true"\.equals\(build\.buildVariables\?\.get\("DEPLOY_TO_STAGING_STACK"\)\)\) \{\s*throw new AbortException\(', g)
+assert gate and early.end() <= gate.start() < g.index("props.load("), "no flag gate before the file is loaded"
 PY
 check "deploy step: the stack is only ever the one read from the file" python3 -I - "$T/import.groovy" << 'PY'
 import re, sys
@@ -1252,6 +1292,15 @@ check "deploy step: reads only staging_deploy.properties of this build's workspa
 check "deploy step: no \${ in the source (no template or GString expansion)" test "$(grep -c '\${' "$T/import.groovy")" = 0
 check "deploy step: stack and key values from the file are validated" bash -c "grep -q 'target_stack\", /\[A-Za-z0-9._-\]+/' '$T/import.groovy' && grep -q 'auth_key\", /\[0-9a-f\]{7,40}/' '$T/import.groovy' && grep -q 'genomic_key\", /\[0-9a-f\]{7,40}/' '$T/import.groovy'"
 check "deploy step: parameters not given keep their defaults; no bucket is passed (the defaults are the stack bucket)" bash -c "grep -q 'getDefaultParameterValue' '$T/import.groovy' && ! grep -qE 'S3_BUCKET_NAME|S3_STACK_BUCKET' '$T/import.groovy'"
+check "deploy step: every parameter passed is defined by the target job" python3 -I - "$T/import.groovy" "$JOBS" << 'PY'
+import re, sys, xml.etree.ElementTree as E
+g = open(sys.argv[1]).read()
+for job, body in re.findall(r'^deploy\("([^"]+)", \[(.*?)\]\)', g, re.S | re.M):
+    r = E.parse(sys.argv[2] + "/" + job + "/config.xml").getroot()
+    defined = {p.findtext("name") for p in r.findall(".//parameterDefinitions/*")}
+    passed = set(re.findall(r"(\w+)\s*:\s*\w+", body))
+    assert passed and passed <= defined, (job, passed - defined)
+PY
 check "deploy jobs: the bucket parameters default to the stack bucket (so they are not passed)" python3 -I - "$JOBS" << 'PY'
 import sys, xml.etree.ElementTree as E
 for job, name in (("PIC-SURE HPDS Auth Deploy", "S3_BUCKET_NAME"), ("PIC-SURE HPDS Open Deploy", "S3_BUCKET_NAME"), ("PIC-SURE Auth Micro App Deploy", "S3_STACK_BUCKET")):
@@ -1260,8 +1309,10 @@ for job, name in (("PIC-SURE HPDS Auth Deploy", "S3_BUCKET_NAME"), ("PIC-SURE HP
     assert len(d) == 1 and d[0].findtext("defaultValue") == "${stack_s3_bucket}", (job, name)
 PY
 check "deploy step: prints the end-of-build lines" bash -c "grep -q 'staging deploy: not requested' '$T/import.groovy' && grep -q 'HPDS auth, HPDS open, PSAMA deployed' '$T/import.groovy'"
+check "deploy step: downstream builds carry the upstream cause" bash -c "grep -q 'new CauseAction(new Cause.UpstreamCause(build))' '$T/import.groovy'"
 check "deploy step: DEPLOY_TO_STAGING_STACK=true without the file aborts" bash -c "grep -q 'throw new AbortException(\"DEPLOY_TO_STAGING_STACK is true' '$T/import.groovy'"
 check "Import description: names the option, the three jobs, PSAMA/fence_mapping.json, the live stack and the Deployment Pipeline overwrite" bash -c "for w in DEPLOY_TO_STAGING_STACK 'PIC-SURE HPDS Auth Deploy' 'PIC-SURE HPDS Open Deploy' 'PIC-SURE Auth Micro App Deploy' 'fence_mapping.json into its container' 'cannot be targeted' 'later Deployment Pipeline run' next_prod; do grep -q \"\$w\" '$IMPORT_XML' || exit 1; done"
+check "Import description: says no stack swap or Deployment Pipeline run may overlap the deploy" bash -c "grep -q 'holds no deployment-state lock' '$IMPORT_XML' && grep -q 'stack swap is in progress' '$IMPORT_XML'"
 check "Import and CFU carry no task ids or workspace references" test "$(grep -ciE 'umbrella|forgejo|\bT[0-9]{2}[a-z]?\b' "$IMPORT_XML" "$CFU_XML" | awk -F: '{s+=$2} END {print s}')" = 0
 
 # ================================================================ Check For Updates: fence_mapping.json is part of "staged"

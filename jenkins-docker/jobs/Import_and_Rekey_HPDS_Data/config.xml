@@ -44,6 +44,10 @@ be resolved or is empty, both are the same stack, fence_mapping.json is missing,
 The live stack cannot be targeted: the job has no stack parameter and the deploy step reads the stack only from the file the checks
 write (staging_deploy.properties in the workspace, deleted at the start of every build).
 A later Deployment Pipeline run rebuilds the staging stack and overwrites what this deployed.
+The stack is resolved once, before the three deploys start, and the build holds no deployment-state lock: do not run it while a
+Deployment Pipeline run or a stack swap is in progress, or the stack that was staging at the start may be live by the end.
+The deploy step is a non-sandboxed system Groovy script; after the job definition is upserted, approve it under Manage Jenkins,
+In-process Script Approval, if the Jenkins asks for that, before the first build with DEPLOY_TO_STAGING_STACK=true.
 The jobs are started with their default bucket parameters (the stack bucket); other parameters keep their defaults.
 The last line of the build says either &quot;staging stack &lt;name&gt;: HPDS auth, HPDS open, PSAMA deployed&quot; or &quot;staging deploy: not requested&quot;.</description>
   <keepDependencies>false</keepDependencies>
@@ -474,8 +478,12 @@ prepare_staging_deploy() {
     command -v get_stack &gt; /dev/null 2&gt;&amp;1 || refuse &quot;staging deploy: get_stack is not defined by the Bash_Functions workspace&quot;
     staging_stack=$(get_stack staging) || refuse &quot;staging deploy: cannot resolve the staging stack&quot;
     live_stack=$(get_stack live) || refuse &quot;staging deploy: cannot resolve the live stack&quot;
-    [ -n &quot;${staging_stack}&quot; ] &amp;&amp; [ &quot;${staging_stack}&quot; != null ] || refuse &quot;staging deploy: the staging stack is empty&quot;
-    [ -n &quot;${live_stack}&quot; ] &amp;&amp; [ &quot;${live_stack}&quot; != null ] || refuse &quot;staging deploy: the live stack is empty&quot;
+    if [ -z &quot;${staging_stack}&quot; ] || [ &quot;${staging_stack}&quot; = null ]; then
+        refuse &quot;staging deploy: the staging stack is empty&quot;
+    fi
+    if [ -z &quot;${live_stack}&quot; ] || [ &quot;${live_stack}&quot; = null ]; then
+        refuse &quot;staging deploy: the live stack is empty&quot;
+    fi
     [[ &quot;${staging_stack}&quot; =~ ^[A-Za-z0-9._-]+$ ]] || refuse &quot;staging deploy: staging stack name &apos;${staging_stack}&apos; is not a plain name&quot;
     [ &quot;${staging_stack}&quot; != &quot;${live_stack}&quot; ] || refuse &quot;staging deploy: the staging stack and the live stack are both &apos;${staging_stack}&apos;; not deploying&quot;
 
@@ -499,8 +507,10 @@ prepare_staging_deploy() {
 printf &apos;%s&apos; &quot;${summary}&quot;
 if [ &quot;${deploy_to_staging}&quot; = true ]; then
     prepare_staging_deploy
+    echo &quot;The live stack is not touched by this job; Check For Updates or Deployment Pipeline deploys it.&quot;
+else
+    echo &quot;Next: run Check For Updates (or wait for the scheduled run) to deploy.&quot;
 fi
-echo &quot;Next: run Check For Updates (or wait for the scheduled run) to deploy.&quot;
 </command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
@@ -523,6 +533,10 @@ if (propsFile == null || !propsFile.exists()) {
     }
     println &quot;staging deploy: not requested&quot;
     return
+}
+// The file is only ever written for a build that asked for the deploy; anything else is not trusted.
+if (!&quot;true&quot;.equals(build.buildVariables?.get(&quot;DEPLOY_TO_STAGING_STACK&quot;))) {
+    throw new AbortException(&quot;staging_deploy.properties exists but DEPLOY_TO_STAGING_STACK is not true; nothing was deployed&quot;)
 }
 
 def props = new Properties()
@@ -557,7 +571,7 @@ def deploy = { String jobName, Map&lt;String, String&gt; given -&gt;
     }
     given.each { k, v -&gt; values &lt;&lt; new StringParameterValue(k, v) }
     println &quot;staging deploy: starting &quot; + jobName + &quot; on stack &quot; + stack
-    def future = job.scheduleBuild2(0, new ParametersAction(values))
+    def future = job.scheduleBuild2(0, new CauseAction(new Cause.UpstreamCause(build)), new ParametersAction(values))
     if (future == null) {
         throw new AbortException(jobName + &quot; could not be scheduled; later deploys were not started&quot;)
     }
