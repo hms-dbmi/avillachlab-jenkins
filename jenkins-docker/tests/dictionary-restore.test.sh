@@ -53,6 +53,22 @@ FAKE_PSQL
 
 cat > "$BIN/pg_restore" << 'FAKE_PG_RESTORE'
 #!/bin/bash
+if [ "$1" = "--list" ]; then
+    # offline TOC read: logged separately (it touches no database). One TABLE DATA line per <id>.dat* file,
+    # plus $FAKE_TOC_EXTRA (an id with no file); $FAKE_TOC_FAIL makes it fail like a corrupt toc.dat.
+    echo "pg_restore $*" >> "$CALLS.list"
+    [ -z "${FAKE_TOC_FAIL:-}" ] || { echo "pg_restore: error: corrupt toc" >&2; exit 1; }
+    echo ";"
+    echo "; Archive created at 2026-11-05"
+    for f in "$2"/*.dat*; do
+        [ -e "$f" ] || continue
+        id="$(basename "$f")"; id="${id%%.*}"
+        echo "${id}; 1259 16400 TABLE DATA dict t${id} owner"
+    done
+    [ -z "${FAKE_TOC_EXTRA:-}" ] || echo "${FAKE_TOC_EXTRA}; 1259 16401 TABLE DATA dict t${FAKE_TOC_EXTRA} owner"
+    echo "4100; 2606 16500 CONSTRAINT dict t3001 pk owner"
+    exit 0
+fi
 echo "pg_restore $*" >> "$CALLS"
 # what pg_restore would see in the directory
 echo "pg_restore sees: $(find "${@: -1}" -type f | sed 's|.*/||' | sort | tr '\n' ' ')" >> "$CALLS"
@@ -112,6 +128,7 @@ run_job() {
     rm -rf "$T/ws"
     mkdir -p "$T/ws"
     : > "$CALLS"
+    : > "$CALLS.list"
     if [ "$1" != "-NONE-" ]; then printf '%s\n' "$1" > "$T/ws/build-spec.json"; fi
     (
         cd "$T/ws" || exit 99
@@ -146,6 +163,24 @@ check "in-boundary: psql connection test ran against picsure" grep -q '^psql --h
 check "in-boundary: fetch_secret before psql before pg_restore" test "$(line_of '^fetch_secret')" -lt "$(line_of '^psql')" -a "$(line_of '^psql')" -lt "$(line_of '^pg_restore ')"
 check "in-boundary: log names the source and the instance role" grep -q "in-boundary bucket, $INB_URL (identity: Jenkins instance role" "$T/out"
 check "in-boundary: no secret in the output" bash -c "! grep -q fakepass '$T/out' '$T/err'"
+check "in-boundary: the dump TOC was read offline (pg_restore --list dump_files/)" grep -qx 'pg_restore --list dump_files/' "$CALLS.list"
+
+# in-boundary download failure: no role, no database
+rm -rf "$FAKE_S3"
+run_job "$(spec "$INB_URL")"
+[ "$rc" != 0 ] && ok "in-boundary, missing object: fails" || bad "in-boundary, missing object: fails"
+check "in-boundary, missing object: no assume_role or reset_role at all" bash -c "! grep -qE '^(assume_role|reset_role)' '$CALLS'"
+check "in-boundary, missing object: no fetch_secret, psql or pg_restore" no_db_calls
+
+# bucket names that only look like the in-boundary bucket take the legacy path
+for spoof in "$INB_BUCKET.evil" "${INB_BUCKET}x"; do
+    rm -rf "$FAKE_S3"
+    make_dump "$spoof" k/dictionary_db.tar valid
+    run_job "$(spec "s3://$spoof/k/dictionary_db.tar")"
+    [ "$rc" = 0 ] && ok "lookalike bucket $spoof: exits 0" || bad "lookalike bucket $spoof: exits 0 (rc=$rc)"
+    check "lookalike bucket $spoof: legacy identity (assume curated role, then reset_role)" bash -c "
+        [ \"\$(sed -n 1p '$CALLS')\" = 'assume_role $ROLE' ] && [ \"\$(sed -n 3p '$CALLS')\" = 'reset_role' ]"
+done
 
 # ================================================================ legacy URL
 rm -rf "$FAKE_S3"
@@ -169,7 +204,7 @@ check "legacy, role not set: no curated assume_role and no reset_role" bash -c "
 rm -rf "$FAKE_S3"
 run_job "$(spec "$LEGACY_URL")"
 [ "$rc" != 0 ] && ok "legacy, missing object: fails" || bad "legacy, missing object: fails"
-check "legacy, missing object: reset_role still runs, database untouched" bash -c "grep -q '^reset_role' '$CALLS'"
+check "legacy, missing object: reset_role still runs, after the aws call" test "$(line_of '^aws ')" -lt "$(line_of '^reset_role')"
 check "legacy, missing object: no fetch_secret, psql or pg_restore" no_db_calls
 
 # ================================================================ whitespace in the JSON value
@@ -228,13 +263,33 @@ bad_dump "tar that will not extract" garbage "could not be extracted"
 bad_dump "tar without toc.dat" notoc "no toc.dat"
 check "bad dump (legacy): reset_role ran before the check failed" bash -c "grep -q '^reset_role' '$CALLS'"
 
+# TOC checks (pg_restore --list): unreadable TOC, or a TABLE DATA entry without its data file
+for which in in-boundary legacy; do
+    if [ "$which" = in-boundary ]; then bucket=$INB_BUCKET; key=data/dictionary/db-dumps/d.tar; else bucket=$LEGACY_BUCKET; key=general/d.tar; fi
+    rm -rf "$FAKE_S3"
+    make_dump "$bucket" "$key" valid
+    export FAKE_TOC_FAIL=1
+    run_job "$(spec "s3://$bucket/$key")"
+    unset FAKE_TOC_FAIL
+    [ "$rc" != 0 ] && ok "unreadable TOC ($which): fails" || bad "unreadable TOC ($which): fails"
+    check "unreadable TOC ($which): clear message" grep -q 'cannot read the dump table of contents' "$T/err"
+    check "unreadable TOC ($which): no fetch_secret, psql or pg_restore" no_db_calls
+    export FAKE_TOC_EXTRA=3999
+    run_job "$(spec "s3://$bucket/$key")"
+    unset FAKE_TOC_EXTRA
+    [ "$rc" != 0 ] && ok "TOC lists a missing data file ($which): fails" || bad "TOC lists a missing data file ($which): fails"
+    check "TOC lists a missing data file ($which): names it" grep -q 'missing data file 3999.dat' "$T/err"
+    check "TOC lists a missing data file ($which): no fetch_secret, psql or pg_restore" no_db_calls
+done
+
 # a stale dump_files/ from an earlier build in the same workspace must not satisfy the toc.dat check
 rm -rf "$FAKE_S3"
 make_dump "$INB_BUCKET" data/dictionary/db-dumps/d.tar notoc
 rm -rf "$T/ws"
-mkdir -p "$T/ws/dump_files" "$T/ws/temp_extract"
+mkdir -p "$T/ws/dump_files"
 touch "$T/ws/dump_files/toc.dat"
 : > "$CALLS"
+: > "$CALLS.list"
 spec "s3://$INB_BUCKET/data/dictionary/db-dumps/d.tar" > "$T/ws/build-spec.json"
 if (cd "$T/ws" && database_psql_root_user_secret_name=s database_psql_host_address=h bash "$T/job.sh" > "$T/out" 2> "$T/err" < /dev/null); then
     bad "stale toc.dat from an earlier build does not pass the check"
@@ -242,6 +297,7 @@ else
     ok "stale toc.dat from an earlier build does not pass the check"
 fi
 check "stale toc.dat: no database call" no_db_calls
+check "stale toc.dat: fails on the toc.dat check (the old dump_files/ was cleared), not on mkdir" bash -c "grep -q 'no toc.dat' '$T/err' && ! grep -q 'File exists' '$T/err'"
 
 # ================================================================ static checks
 extract_restore_flags() { awk '/^pg_restore \\$/,/"dump_files\/"$/' "$1"; }
