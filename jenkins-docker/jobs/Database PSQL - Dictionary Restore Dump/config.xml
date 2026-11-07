@@ -4,15 +4,15 @@
   <description>Restores the PIC-SURE dictionary (schema dict) into the picsure database with pg_restore --clean from a pg_dump --format=d tar.
 
 Source: source_dictionary_db_s3_url in build-spec.json of the release-control checkout. It must be s3://&lt;bucket&gt;/&lt;key&gt; with a key ending in .tar (surrounding whitespace is ignored). Anything else is refused ("REFUSED: ...", exit 1) before any AWS call.
-- In-boundary dump: s3://bdc-etl-data-d0d6191/data/dictionary/db-dumps/dictionary_db_&lt;ts&gt;.tar, written by the pheno job PIC-SURE Dictionary ETL Pipeline/dict-ingest (export-db step). Read with the Jenkins instance role (no assume_role), the same way HPDS Data - Stage to Stack Bucket reads a dataset prefix.
+- In-boundary dump: s3://bdc-etl-data-d0d6191/data/dictionary/db-dumps/dictionary_db_&lt;ts&gt;.tar, written by the pheno job PIC-SURE Dictionary ETL Pipeline/dict-ingest (export-db step). Read as arn:aws:iam::515157839325:role/curated-datasets-s3-role through a temporary AWS CLI profile (credential_source = Ec2InstanceMetadata, selected with --profile), the same way HPDS Data - Stage to Stack Bucket reads a dataset prefix. This role is fixed: it does not follow the global curated_datasets_s3_role.
 - Legacy dump (any other bucket): read with curated_datasets_s3_role (assume_role before the download, reset_role after it, role skipped when the variable is not set). This is the rollback: put the old legacy URL back in build-spec.json.
 The log says which source and identity were used.
 
 Before the database is touched the dump is checked: the download is non-empty, it extracts, dump_files/toc.dat exists after the files are flattened into dump_files/, pg_restore --list reads the table of contents, and every TABLE DATA entry has its data file. If a check fails the build fails before the secret fetch, the connection test and pg_restore. Then the secret is fetched through the Bash_Functions job scripts, the connection is tested and pg_restore runs (flags unchanged).
 
-IAM needed for the in-boundary path: the instance role of this Jenkins needs s3:GetObject on bdc-etl-data-d0d6191/data/dictionary/db-dumps/* and s3:ListBucket on that bucket for the prefix data/dictionary/db-dumps/*, plus the bucket policy on bdc-etl-data-d0d6191 if the bucket is in another account.
+IAM needed for the in-boundary path: curated-datasets-s3-role (515157839325) needs s3:GetObject on bdc-etl-data-d0d6191/data/dictionary/db-dumps/* and s3:ListBucket on that bucket for the prefix data/dictionary/db-dumps/*; its trust policy allows this Jenkins' instance role, which needs sts:AssumeRole on it.
 
-Followed by the job PIC-SURE Dictionary Weights Build and Run.</description>
+No weights job is needed afterwards: the search weights (concept_node.searchable_fields) are in the dictionary database the dump was taken from, built by the dictionary ETL's reset-weights step (rebuild_searchable_fields.sql, the same tiers as the weights job's defaults), so the restore brings them along.</description>
   <keepDependencies>false</keepDependencies>
   <properties/>
   <scm class="hudson.plugins.git.GitSCM" plugin="git@5.10.0">
@@ -57,9 +57,11 @@ def bashFunctionsJob = Jenkins.instance.getItemByFullName(&quot;Bash_Functions&q
       <command>#!/bin/bash
 # shellcheck disable=SC2154  # database_psql_*, curated_datasets_s3_role, JENKINS_HOME are provided by Jenkins
 set -e
-# Bucket the in-boundary dictionary pipeline writes its dumps to. A dump URL in this bucket is read with the Jenkins
-# instance role; any other bucket is the legacy location and is read through ${curated_datasets_s3_role}.
+# Bucket the in-boundary dictionary pipeline writes its dumps to. A dump URL in this bucket is read as INBOUNDARY_SOURCE_ROLE
+# (fixed: the global curated_datasets_s3_role may name another account's role); any other bucket is the legacy location and is
+# read through ${curated_datasets_s3_role}.
 INBOUNDARY_DUMP_BUCKET=&quot;bdc-etl-data-d0d6191&quot;
+INBOUNDARY_SOURCE_ROLE=&quot;arn:aws:iam::515157839325:role/curated-datasets-s3-role&quot;
 
 # Source folder containing the scripts
 source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
@@ -93,10 +95,21 @@ SOURCE_KEY=&quot;${BASH_REMATCH[2]}&quot;
 
 rm -rf dictionary_db.tar temp_extract dump_files dump_toc.list
 
-### Download the dump. The in-boundary bucket is read with the instance role; any other bucket is the legacy path.
+### Download the dump. The in-boundary bucket is read as INBOUNDARY_SOURCE_ROLE through a temporary AWS CLI profile: the CLI
+### assumes the role itself (credentials from the instance metadata), so no credential passes through this shell, and --profile
+### makes the CLI ignore any AWS_* keys in the environment. Any other bucket is the legacy path.
 if [ &quot;$SOURCE_BUCKET&quot; = &quot;$INBOUNDARY_DUMP_BUCKET&quot; ]; then
-    echo &quot;Dictionary dump source: in-boundary bucket, $S3_SOURCE_LOCATION (identity: Jenkins instance role, no assume_role)&quot;
-    aws s3 cp &quot;$S3_SOURCE_LOCATION&quot; dictionary_db.tar
+    echo &quot;Dictionary dump source: in-boundary bucket, $S3_SOURCE_LOCATION (identity: $INBOUNDARY_SOURCE_ROLE through an AWS CLI profile)&quot;
+    session=&quot;$(printf &apos;%s-%s&apos; &quot;${JOB_NAME:-dictionary-restore}&quot; &quot;${BUILD_NUMBER:-0}&quot; | tr -c &apos;A-Za-z0-9+=,.@_-&apos; &apos;-&apos;)&quot;
+    [ &quot;${#session}&quot; -le 64 ] || session=&quot;${session: -64}&quot;
+    src_cfg=&quot;$(mktemp &quot;${TMPDIR:-/tmp}/dict-source-profile.XXXXXX&quot;)&quot; || refuse &quot;cannot create the AWS profile file&quot;
+    trap &apos;rm -f &quot;${src_cfg}&quot;&apos; EXIT
+    chmod 600 &quot;$src_cfg&quot;
+    printf &apos;[profile dict-source]\nrole_arn = %s\ncredential_source = Ec2InstanceMetadata\nrole_session_name = %s\n&apos; &quot;$INBOUNDARY_SOURCE_ROLE&quot; &quot;$session&quot; &gt; &quot;$src_cfg&quot;
+    download_rc=0
+    AWS_CONFIG_FILE=&quot;$src_cfg&quot; aws --profile dict-source s3 cp &quot;$S3_SOURCE_LOCATION&quot; dictionary_db.tar || download_rc=$?
+    rm -f &quot;$src_cfg&quot;
+    [ &quot;$download_rc&quot; -eq 0 ] || { echo &quot;Download of $S3_SOURCE_LOCATION as $INBOUNDARY_SOURCE_ROLE failed (exit $download_rc)&quot; &gt;&amp;2; exit &quot;$download_rc&quot;; }
 else
     role_assumed=&quot;&quot;
     if [ -n &quot;${curated_datasets_s3_role:-}&quot; ]; then
