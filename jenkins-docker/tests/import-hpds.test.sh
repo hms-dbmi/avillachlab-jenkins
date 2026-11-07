@@ -761,22 +761,14 @@ check "source role: bash -x really traced (the trace is in stderr)" test "$(grep
 check "source role: bash -x output holds no secret" test "$(cat "$T/out" "$T/err" | grep -cE "$SECRET_WORDS")" = 0
 check "source role: bash -x run keeps the identities apart" test "$(count_without "$SRC_READ" "$SRC_ID")" = 0 -a "$(count_without "$DEST_WRITE" "$INST_ID")" = 0 -a "$(grep -c '^ident=leak' "$FAKE_AWS_IDENTITY_LOG")" = 0
 
-# the role is one definition shared by the legacy and the dataset path, and can be overridden by the job environment
+# the role is fixed: a global curated_datasets_s3_role (on the deploy Jenkins it can name another account's role) is ignored
 reset_world
 make_dataset
-export curated_datasets_s3_role=arn:aws:iam::123456789012:role/other-source-role
+export curated_datasets_s3_role=arn:aws:iam::736265540791:role/curated-datasets-s3-role
 run_import auth "$DATASET_URL"
 unset curated_datasets_s3_role
-[ "$rc" = 0 ] && ok "source role: curated_datasets_s3_role from the environment is used (rc 0)" || bad "role override (rc=$rc)"
-check "source role: the profile names the overridden role for every source call, none the default" test "$(idlog "^$SRC_ID " | grep -cF 'role=arn:aws:iam::123456789012:role/other-source-role ')" = 7 -a "$(grep -c "$CURATED_ROLE" "$FAKE_AWS_IDENTITY_LOG")" = 0
-reset_world
-make_dataset
-export curated_datasets_s3_role='arn:aws:iam::123456789012:role/x
-credential_source = Environment'
-run_import auth "$DATASET_URL"
-unset curated_datasets_s3_role
-[ "$rc" != 0 ] && grep -q 'is not a role ARN' "$T/err" && ok "a role value that is not a role ARN (here with an extra config line) is refused" || bad "bad role value (rc=$rc)"
-check "bad role value: no source call, no copy and no temporary file" test "$(grep -c '^ident=source' "$FAKE_AWS_IDENTITY_LOG")" = 0 -a "$(grep -c 'aws s3 cp' "$FAKE_AWS_LOG")" = 0 -a -z "$(ls -A "$T/tmp")"
+[ "$rc" = 0 ] && ok "source role: a curated_datasets_s3_role in the environment does not break the run (rc 0)" || bad "role in env (rc=$rc)"
+check "source role: every source call still uses the 515157839325 role, never the environment's" test "$(idlog "^$SRC_ID " | grep -cF "role=$CURATED_ROLE ")" = 7 -a "$(grep -c '736265540791' "$FAKE_AWS_IDENTITY_LOG")" = 0
 
 # the source role cannot be assumed: refused with the role (no secrets) before anything is written
 reset_world
@@ -929,13 +921,13 @@ make_legacy
 run_import auth "s3://legacy-src/pheno/final.zip"
 [ "$rc" != 0 ] && grep -q 'must end with' "$T/err" && ok "URL that is neither .tar nor a prefix is refused" || bad "bad url refusal"
 
-# the legacy path assumes the same, single definition of the role (also when the job environment overrides it)
+# the legacy path assumes the same fixed role, whatever the environment holds
 make_legacy
-export curated_datasets_s3_role=arn:aws:iam::123456789012:role/other-source-role
+export curated_datasets_s3_role=arn:aws:iam::736265540791:role/curated-datasets-s3-role
 run_import auth "s3://legacy-src/pheno/final.tar"
 unset curated_datasets_s3_role
-[ "$rc" = 0 ] && ok "legacy: staging with an overridden source role exits 0" || { bad "legacy role override (rc=$rc)"; cat "$T/err"; }
-check "legacy: assume_role gets the overridden role (one definition for both paths)" grep -q 'sts assume-role --role-arn arn:aws:iam::123456789012:role/other-source-role$' "$FAKE_AWS_LOG"
+[ "$rc" = 0 ] && ok "legacy: staging with a curated_datasets_s3_role in the environment exits 0" || { bad "legacy role env (rc=$rc)"; cat "$T/err"; }
+check "legacy: assume_role gets the fixed 515157839325 role, not the environment's" bash -c "grep -q 'sts assume-role --role-arn arn:aws:iam::515157839325:role/curated-datasets-s3-role\$' '$FAKE_AWS_LOG' && ! grep -q '736265540791' '$FAKE_AWS_LOG'"
 check "legacy: the dataset-path helpers are not used (no profile, no identity check, no stream, no temporary file)" test "$(grep -cE 'get-caller-identity|aws s3 cp [^ ]+ - |aws s3 cp - ' "$FAKE_AWS_LOG")" = 0 -a "$(grep -c 'ident=source' "$FAKE_AWS_IDENTITY_LOG")" = 0 -a -z "$(ls -A "$T/tmp")"
 
 # ================================================================ Import: legacy, both | derived keys | docker only when needed
