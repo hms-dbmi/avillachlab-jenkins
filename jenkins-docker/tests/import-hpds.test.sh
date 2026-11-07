@@ -35,9 +35,22 @@ cat > "$BIN/aws" << 'FAKE_AWS'
 #!/bin/bash
 # fake aws: bucket/key lives at $FAKE_S3/<bucket>/<key>; every call is logged.
 # Streams: `s3 cp <s3 URL> -` writes the object to stdout, `s3 cp - <s3 URL>` stores stdin.
-# $FAKE_AWS_IDENTITY_LOG gets one line per call with the credentials the call ran with (the environment of the fake).
+# $FAKE_AWS_IDENTITY_LOG gets one line per call with the identity it ran as: AWS_PROFILE=hpds-source (with an AWS_CONFIG_FILE that
+# holds role_arn and credential_source) is the source role, no AWS_PROFILE and no AWS_CONFIG_FILE is the instance role.
 echo "aws $*" >> "$FAKE_AWS_LOG"
-echo "key=${AWS_ACCESS_KEY_ID:-none} secret=${AWS_SECRET_ACCESS_KEY:-none} token=${AWS_SESSION_TOKEN:-none} aws $*" >> "$FAKE_AWS_IDENTITY_LOG"
+if [ "${AWS_PROFILE:-}" = hpds-source ]; then
+    if [ -f "${AWS_CONFIG_FILE:-}" ] && grep -q '^role_arn = ' "$AWS_CONFIG_FILE" && grep -q '^credential_source = Ec2InstanceMetadata$' "$AWS_CONFIG_FILE"; then
+        echo "ident=source cfg=ok mode=$(ls -ld "$AWS_CONFIG_FILE" | cut -c1-10) role=$(sed -n 's/^role_arn = //p' "$AWS_CONFIG_FILE") session=$(sed -n 's/^role_session_name = //p' "$AWS_CONFIG_FILE") duration=$(sed -n 's/^duration_seconds = //p' "$AWS_CONFIG_FILE") aws $*" >> "$FAKE_AWS_IDENTITY_LOG"
+    else
+        echo "ident=source cfg=bad aws $*" >> "$FAKE_AWS_IDENTITY_LOG"
+        echo "The config profile (hpds-source) could not be found" >&2
+        exit 255
+    fi
+elif [ -n "${AWS_PROFILE:-}${AWS_CONFIG_FILE:-}" ]; then
+    echo "ident=leak profile=${AWS_PROFILE:-none} cfg=${AWS_CONFIG_FILE:-none} aws $*" >> "$FAKE_AWS_IDENTITY_LOG"
+else
+    echo "ident=instance aws $*" >> "$FAKE_AWS_IDENTITY_LOG"
+fi
 bucket="" key="" prefix="" expected=""
 pos=()
 while [ $# -gt 0 ]; do
@@ -102,14 +115,16 @@ case "${pos[0]}/${pos[1]}" in
             case "$k" in "$prefix"*) printf '%s\n' "$k" ;; esac
         done | jq -R -s -c 'split("\n") | map(select(length > 0)) | if length == 0 then empty else {Contents: map({Key: .})} end'
         ;;
-    sts/assume-role)
-        n=$(($(cat "$FAKE_AWS_LOG.assumes" 2> /dev/null || echo 0) + 1))
-        echo "$n" > "$FAKE_AWS_LOG.assumes"
-        if [ -n "${FAKE_FAIL_ASSUME:-}" ] && [ "$n" -ge "$FAKE_FAIL_ASSUME" ]; then
+    sts/get-caller-identity)
+        if [ -n "${FAKE_FAIL_SOURCE_IDENTITY:-}" ] && [ "${AWS_PROFILE:-}" = hpds-source ]; then
             echo "An error occurred (AccessDenied) when calling the AssumeRole operation: not authorized" >&2
             exit 255
         fi
-        echo "AKIAFAKESRC FAKESECRETSRC FAKETOKENSRC"
+        echo "arn:aws:sts::515157839325:assumed-role/curated-datasets-s3-role/session"
+        ;;
+    sts/assume-role)
+        # the legacy path (Bash_Functions assume_role) only
+        echo "AKIAFAKE FAKESECRET FAKETOKEN"
         ;;
     *)
         echo "fake aws: unsupported: ${pos[*]}" >&2
@@ -126,11 +141,20 @@ case "$1" in
     run) : ;;
 esac
 FAKE_DOCKER
-chmod +x "$BIN/aws" "$BIN/docker"
+# fake env: the job must never pass an AWS_ variable (a secret or the profile) through env, whose arguments are visible in ps
+cat > "$BIN/env" << 'FAKE_ENV'
+#!/bin/bash
+for a in "$@"; do
+    case "$a" in AWS_*) echo "env $*" >> "$FAKE_ENV_LOG"; echo "fake env: refusing $a" >&2; exit 99 ;; esac
+done
+exec /usr/bin/env "$@"
+FAKE_ENV
+chmod +x "$BIN/aws" "$BIN/docker" "$BIN/env"
 
 export FAKE_S3="$T/s3"
 export FAKE_AWS_LOG="$T/aws.log"
 export FAKE_AWS_IDENTITY_LOG="$T/aws.identity.log"
+export FAKE_ENV_LOG="$T/env.calls"
 export FAKE_DOCKER_LOG="$T/docker.log"
 export PATH="$BIN:$PATH"
 
@@ -201,12 +225,12 @@ make_dataset() {
 }
 
 reset_world() {
-    rm -rf "$FAKE_S3" "$FAKE_AWS_LOG" "$FAKE_AWS_LOG".* "$FAKE_AWS_IDENTITY_LOG" "$FAKE_DOCKER_LOG" "$T/ws" "$T/jh"
-    mkdir -p "$FAKE_S3" "$T/ws"
+    rm -rf "$FAKE_S3" "$FAKE_AWS_LOG" "$FAKE_AWS_LOG".* "$FAKE_AWS_IDENTITY_LOG" "$FAKE_ENV_LOG" "$FAKE_DOCKER_LOG" "$T/ws" "$T/jh" "$T/tmp"
+    mkdir -p "$FAKE_S3" "$T/ws" "$T/tmp"
     : > "$FAKE_AWS_LOG"
     : > "$FAKE_AWS_IDENTITY_LOG"
     : > "$FAKE_DOCKER_LOG"
-    unset FAKE_FAIL_COPY FAKE_FAIL_READ FAKE_FAIL_ASSUME FAKE_NOOP_COPY FAKE_CORRUPT_COPY FAKE_LIST_DENIED FAKE_AWS_EAT_STDIN WS_SEED DEPLOY_TO_STAGING_STACK curated_datasets_s3_role IMPORT_BASH_OPTS
+    unset AWS_PROFILE AWS_CONFIG_FILE FAKE_FAIL_COPY FAKE_FAIL_READ FAKE_FAIL_SOURCE_IDENTITY FAKE_NOOP_COPY FAKE_CORRUPT_COPY FAKE_LIST_DENIED FAKE_AWS_EAT_STDIN WS_SEED DEPLOY_TO_STAGING_STACK curated_datasets_s3_role IMPORT_BASH_OPTS
     # The Jenkins instance role: what every call that is not a source read must run as.
     export AWS_ACCESS_KEY_ID=AKIAINSTANCE AWS_SECRET_ACCESS_KEY=INSTANCESECRET AWS_SESSION_TOKEN=INSTANCETOKEN
 }
@@ -250,7 +274,7 @@ run_import_in_repo() {
     (
         cd "$T/ws" || exit 99
         HPDS_VARIANT="$1" stack_s3_bucket="$STACK" WORKSPACE="$T/ws" JENKINS_HOME="$T/jh" \
-            JOB_NAME="${TEST_JOB_NAME:-HPDS Data - Stage to Stack Bucket}" BUILD_NUMBER="${TEST_BUILD_NUMBER:-42}" \
+            TMPDIR="$T/tmp" JOB_NAME="${TEST_JOB_NAME:-HPDS Data - Stage to Stack Bucket}" BUILD_NUMBER="${TEST_BUILD_NUMBER:-42}" \
             bash ${IMPORT_BASH_OPTS:+"$IMPORT_BASH_OPTS"} "$IMPORT_SCRIPT" > "$T/out" 2> "$T/err" < /dev/null
     )
     rc=$?
@@ -291,7 +315,7 @@ check "manifest.tsv is the last object written" bash -c "echo '$last_cp' | grep 
 check "copies into the stack bucket exist" test "$(grep -cE 'aws s3 cp [^ ]+ s3://' "$FAKE_AWS_LOG")" -ge 5
 check "every copy into the stack bucket uses --sse AES256" test "$(grep -E 'aws s3 cp [^ ]+ s3://' "$FAKE_AWS_LOG" | grep -vc -- '--sse AES256')" = 0
 check "per-file path never calls docker" test ! -s "$FAKE_DOCKER_LOG"
-check "per-file path assumes the source role (once for manifest.json, once per file, once for fence_mapping.json)" test "$(grep -c 'sts assume-role' "$FAKE_AWS_LOG")" = 6
+check "per-file path checks that the source role can be assumed once (sts get-caller-identity), and calls no sts assume-role" test "$(grep -c 'sts get-caller-identity' "$FAKE_AWS_LOG")" = 1 -a "$(grep -c 'sts assume-role' "$FAKE_AWS_LOG")" = 0
 
 # ================================================================ Import: dataset prefix, open
 reset_world
@@ -338,7 +362,7 @@ check "both: summary line for auth" grep -qx "auth: staged (deploy key $C1)" "$T
 check "both: summary line for open" grep -qx "open: staged (deploy key $C1)" "$T/out"
 check "both: the Next line is the last line" test "$(tail -1 "$T/out")" = "Next: run Check For Updates (or wait for the scheduled run) to deploy."
 check "both: per-file path never calls docker" test ! -s "$FAKE_DOCKER_LOG"
-check "both: per-file path assumes the source role (manifest + files + fence mapping, per variant)" test "$(grep -c 'sts assume-role' "$FAKE_AWS_LOG")" = 12
+check "both: the source role is checked once per staged variant (sts get-caller-identity), no sts assume-role" test "$(grep -c 'sts get-caller-identity' "$FAKE_AWS_LOG")" = 2 -a "$(grep -c 'sts assume-role' "$FAKE_AWS_LOG")" = 0
 
 # source URL and deploy key come from build-spec.json: the copies read the URL of the spec, write under the blame commit
 check "both: copies read from the build-spec dataset prefix" grep -q "aws s3 cp ${DATASET_URL}manifest.json " "$FAKE_AWS_LOG"
@@ -640,19 +664,29 @@ run_import auth "$DATASET_URL"
 check "byte mismatch: no manifest.tsv" test ! -e "$STAGE/javabins_rekeyed/manifest.tsv"
 unset FAKE_CORRUPT_COPY
 
-# ================================================================ Import: dataset prefix, source read through the assumed role
-# The source bucket is in another account: its objects are read as curated-datasets-s3-role (credentials from sts assume-role, passed to
-# the source-side aws calls only) and streamed into the stack bucket, which is written as the instance role. The fake aws logs the
-# credentials every call ran with in $FAKE_AWS_IDENTITY_LOG.
-SRC_ID="key=AKIAFAKESRC secret=FAKESECRETSRC token=FAKETOKENSRC"
-INST_ID="key=AKIAINSTANCE secret=INSTANCESECRET token=INSTANCETOKEN"
-CRED_WORDS='AKIAFAKESRC|FAKESECRETSRC|FAKETOKENSRC'
+# ================================================================ Import: dataset prefix, source read through the source role profile
+# The source bucket is in another account: its objects are read as curated-datasets-s3-role through an AWS CLI profile (hpds-source,
+# in a private temporary config file, the CLI assumes the role itself) and streamed into the stack bucket, which is written as the
+# instance role. The fake aws logs the identity of every call in $FAKE_AWS_IDENTITY_LOG: AWS_PROFILE=hpds-source with a config file
+# holding role_arn and credential_source is "source", no AWS_PROFILE and no AWS_CONFIG_FILE is "instance", anything else is a leak.
+SRC_ID="ident=source"
+INST_ID="ident=instance"
 idlog() { grep -E "$1" "$FAKE_AWS_IDENTITY_LOG"; }
-# count_ident <pattern> <identity prefix> <want: match|differ>: lines matching the pattern that do / do not start with the identity
+# count_with / count_without <pattern> <identity>: lines of the identity log matching the pattern that do / do not start with the identity
 count_with() { idlog "$1" | grep -c "^$2 " || true; }
 count_without() { idlog "$1" | grep -vc "^$2 " || true; }
 SRC_READ=' aws s3 cp s3://'
 DEST_WRITE=' aws s3 cp (-|dataset_work/manifest.tsv) s3://'
+SECRET_WORDS='INSTANCESECRET|INSTANCETOKEN'
+# every "stream" line of the identity log: the bytes received equal --expected-size, and --expected-size is there
+streams_consistent() {
+    awk '/^stream / {
+        n++
+        if ($4 !~ /^expected=[0-9]+$/) bad++
+        else { split($3, a, "="); split($4, b, "="); if (a[2] != b[2]) bad++ }
+    } END { exit (n == 0 || bad > 0) }' "$FAKE_AWS_IDENTITY_LOG"
+}
+tmp_is_empty() { [ -z "$(ls -A "$T/tmp")" ]; }
 
 reset_world
 make_dataset
@@ -660,12 +694,18 @@ run_import both "$DATASET_URL"
 [ "$rc" = 0 ] && ok "source role: both variants stage (rc 0)" || { bad "source role, both (rc=$rc)"; cat "$T/err"; }
 n_src_reads="$(idlog "$SRC_READ" | wc -l | tr -d ' ')"
 check "source role: the source reads exist (2 manifest.json + 10 files)" test "$n_src_reads" = 12
-check "source role: every read of the source bucket ran with the assumed credentials" test "$(count_with "$SRC_READ" "$SRC_ID")" = "$n_src_reads"
+check "source role: every read of the source bucket ran as the source profile" test "$(count_with "$SRC_READ" "$SRC_ID")" = "$n_src_reads"
 check "source role: no source read ran as the instance role" test "$(count_without "$SRC_READ" "$SRC_ID")" = 0
-check "source role: the assumed credentials were used for source reads only" test "$(grep -c "^$SRC_ID " "$FAKE_AWS_IDENTITY_LOG")" = "$n_src_reads"
+check "source role: the source profile was used for source reads and the access check only (12 reads + 2 checks)" test "$(grep -c "^$SRC_ID " "$FAKE_AWS_IDENTITY_LOG")" = 14
+check "source role: the access check is sts get-caller-identity as the source profile, once per variant, and it is the first source call" bash -c "test \$(grep -c '^$SRC_ID .* aws sts get-caller-identity' '$FAKE_AWS_IDENTITY_LOG') = 2 && grep '^$SRC_ID ' '$FAKE_AWS_IDENTITY_LOG' | head -1 | grep -q ' aws sts get-caller-identity'"
 check "source role: every write to the stack bucket ran as the instance role" test "$(count_with "$DEST_WRITE" "$INST_ID")" = 12 -a "$(count_without "$DEST_WRITE" "$INST_ID")" = 0
-check "source role: every stack bucket list, head and the assume-role call ran as the instance role" test "$(idlog ' aws (s3api|sts) ' | wc -l | tr -d ' ')" -gt 12 -a "$(count_without ' aws (s3api|sts) ' "$INST_ID")" = 0
+check "source role: every stack bucket list and head ran as the instance role" test "$(idlog ' aws s3api ' | wc -l | tr -d ' ')" -gt 12 -a "$(count_without ' aws s3api ' "$INST_ID")" = 0
+check "source role: no call leaked AWS_PROFILE or AWS_CONFIG_FILE into a command that is not a source read (no 'leak' identity)" test "$(grep -c '^ident=leak' "$FAKE_AWS_IDENTITY_LOG")" = 0
 check "source role: no stream was written anywhere but the stack bucket" test "$(idlog ' aws s3 cp - ' | grep -vc " aws s3 cp - s3://$STACK/data/$C1/")" = 0
+check "source role: the profile file was seen by the CLI with role_arn + credential_source, mode 600, the curated-datasets role, 3600 s and a session named after job and build" test "$(idlog "^$SRC_ID " | grep -vcF "cfg=ok mode=-rw------- role=$CURATED_ROLE session=HPDS-Data---Stage-to-Stack-Bucket-42 duration=3600 ")" = 0
+check "source role: the session name is a valid role session name" bash -c "grep -o 'session=[^ ]*' '$FAKE_AWS_IDENTITY_LOG' | sort -u | cut -d = -f 2 | grep -qE '^[A-Za-z0-9+=,.@_-]{2,64}\$'"
+check "source role: no role is assumed by the job itself (no sts assume-role call)" test "$(grep -c 'sts assume-role' "$FAKE_AWS_LOG")" = 0
+check "source role: the temporary profile file is gone after a successful run" tmp_is_empty
 
 # bytes: every staged file is the source file, the stream got the manifest bytes as --expected-size
 bytes_ok=true
@@ -678,24 +718,28 @@ for v in auth open; do
     done < <(jq -r --arg v "$v" '.variants[$v][] | [.src, .dest, (.bytes | tostring)] | @tsv' "$DATASET_DIR/manifest.json")
 done
 check "source role: every staged file of both variants is byte-identical to its source, was streamed with --expected-size = manifest bytes, and has its manifest.tsv row" $bytes_ok
-check "source role: fence_mapping.json was streamed with the metadata.json bytes as --expected-size" grep -qxF "stream to=s3://$STACK/data/$C1/fence_mapping.json bytes=7 expected=7" "$FAKE_AWS_IDENTITY_LOG"
-check "source role: no stream has a different size than --expected-size, none lacks it" bash -c "! grep '^stream ' '$FAKE_AWS_IDENTITY_LOG' | grep -v 'expected=' ; test \$(grep '^stream ' '$FAKE_AWS_IDENTITY_LOG' | awk '{split(\$3,a,\"=\"); split(\$4,b,\"=\"); if (a[2] != b[2]) n++} END {print n+0}') = 0"
+check "source role: fence_mapping.json was streamed (a second read of the auth metadata.json) with the metadata.json bytes as --expected-size" grep -qxF "stream to=s3://$STACK/data/$C1/fence_mapping.json bytes=7 expected=7" "$FAKE_AWS_IDENTITY_LOG"
+check "source role: every stream got exactly --expected-size bytes and none lacks it" streams_consistent
 check "source role: the byte check (head-object on the destination) still runs for every file" test "$(grep -c 's3api head-object' "$FAKE_AWS_LOG")" = 9
 check "source role: manifest.tsv is still the last object written" bash -c "grep -E 'aws s3 cp (-|dataset_work/manifest.tsv) s3://' '$FAKE_AWS_LOG' | tail -1 | grep -q '/$OPEN_DIR/manifest.tsv'"
-check "source role: the role is the curated-datasets-s3-role of the legacy path, 3600 s, session named after job and build" bash -c "grep 'sts assume-role' '$FAKE_AWS_LOG' | sort -u | wc -l | tr -d ' ' | grep -qx 1 && grep -q 'sts assume-role --role-arn $CURATED_ROLE --role-session-name HPDS-Data---Stage-to-Stack-Bucket-42 --duration-seconds 3600 ' '$FAKE_AWS_LOG'"
-check "source role: the session name is a valid role session name" bash -c "grep -o 'role-session-name [^ ]*' '$FAKE_AWS_LOG' | cut -d ' ' -f 2 | grep -qE '^[A-Za-z0-9+=,.@_-]{2,64}\$'"
-check "source role: the credentials never appear in stdout or stderr" test "$(cat "$T/out" "$T/err" | grep -cE "$CRED_WORDS|INSTANCESECRET|INSTANCETOKEN")" = 0
-check "source role: nothing exports credentials (no export of AWS_ variables in the shell step)" test "$(grep -cE 'export +AWS_|declare -x +AWS_' "$T/import.sh")" = 0
+check "source role: no secret in stdout or stderr" test "$(cat "$T/out" "$T/err" | grep -cE "$SECRET_WORDS")" = 0
+
+# no credential and no profile name ever travels through env (its arguments are visible in ps)
+check "source role: the job never calls env with an AWS_ argument (static)" test "$(grep -cE '(^|[^A-Za-z_])env +([^ ]+ +)*AWS_' "$T/import.sh")" = 0
+check "source role: a fake env on PATH was never given an AWS_ argument" test ! -e "$FAKE_ENV_LOG"
+check "source role: nothing exports credentials or the profile (no export / declare -x of AWS_ variables)" test "$(grep -cE 'export +AWS_|declare -x +AWS_' "$T/import.sh")" = 0
+check "source role: AWS_PROFILE and AWS_CONFIG_FILE are a prefix assignment of the one aws command in src_aws, nowhere else" bash -c "test \$(grep -cE 'AWS_(PROFILE|CONFIG_FILE)' '$T/import.sh') = 1 && grep -qF 'AWS_CONFIG_FILE=\"\${src_cfg}\" AWS_PROFILE=hpds-source aws \"\$@\"' '$T/import.sh'"
+check "source role: the job holds no credential variables (no AccessKeyId, SecretAccessKey or SessionToken in the shell step)" test "$(grep -cE 'AccessKeyId|SecretAccessKey|SessionToken' "$T/import.sh")" = 0
 check "source role: the dataset path does not source Bash_Functions" test "$(grep -c 'sourcing' "$T/out")" = 0 -a ! -d "$T/jh"
 
-# a long session name from a long job name is cut to 64 characters, keeping the build number
+# a long job name gives a 64-character session name that keeps the build number
 reset_world
 make_dataset
 cfu_repo "$DATASET_URL" "$DATASET_URL"
 TEST_JOB_NAME="$(printf 'J%.0s' $(seq 1 90))" TEST_BUILD_NUMBER=7 run_import_in_repo auth
-check "source role: a 90-character job name still gives a valid 64-character session name ending with the build number" bash -c "n=\$(grep -o 'role-session-name [^ ]*' '$FAKE_AWS_LOG' | head -1 | cut -d ' ' -f 2); [ \${#n} -eq 64 ] && [ \"\${n: -2}\" = -7 ] && printf '%s' \"\$n\" | grep -qE '^[A-Za-z0-9+=,.@_-]{2,64}\$'"
+check "source role: a 90-character job name still gives a valid 64-character session name ending with the build number" bash -c "n=\$(grep -o 'session=[^ ]*' '$FAKE_AWS_IDENTITY_LOG' | head -1 | cut -d = -f 2); [ \${#n} -eq 64 ] && [ \"\${n: -2}\" = -7 ] && printf '%s' \"\$n\" | grep -qE '^[A-Za-z0-9+=,.@_-]{2,64}\$'"
 
-# with tracing on, the credentials are still not printed
+# with tracing on, nothing secret is printed and the identities stay apart
 reset_world
 make_dataset
 export IMPORT_BASH_OPTS=-x
@@ -703,8 +747,8 @@ run_import auth "$DATASET_URL"
 unset IMPORT_BASH_OPTS
 [ "$rc" = 0 ] && ok "source role: bash -x run stages (rc 0)" || { bad "source role bash -x (rc=$rc)"; tail -5 "$T/err"; }
 check "source role: bash -x really traced (the trace is in stderr)" test "$(grep -c '^+' "$T/err")" -gt 20
-check "source role: bash -x never prints the credentials, not even in the trace" test "$(cat "$T/out" "$T/err" | grep -cE "$CRED_WORDS|INSTANCESECRET|INSTANCETOKEN")" = 0
-check "source role: bash -x run keeps the identities apart" test "$(count_without "$SRC_READ" "$SRC_ID")" = 0 -a "$(count_without "$DEST_WRITE" "$INST_ID")" = 0
+check "source role: bash -x output holds no secret" test "$(cat "$T/out" "$T/err" | grep -cE "$SECRET_WORDS")" = 0
+check "source role: bash -x run keeps the identities apart" test "$(count_without "$SRC_READ" "$SRC_ID")" = 0 -a "$(count_without "$DEST_WRITE" "$INST_ID")" = 0 -a "$(grep -c '^ident=leak' "$FAKE_AWS_IDENTITY_LOG")" = 0
 
 # the role is one definition shared by the legacy and the dataset path, and can be overridden by the job environment
 reset_world
@@ -713,30 +757,29 @@ export curated_datasets_s3_role=arn:aws:iam::123456789012:role/other-source-role
 run_import auth "$DATASET_URL"
 unset curated_datasets_s3_role
 [ "$rc" = 0 ] && ok "source role: curated_datasets_s3_role from the environment is used (rc 0)" || bad "role override (rc=$rc)"
-check "source role: every assume-role call used the overridden role, none the default" test "$(grep -c 'sts assume-role --role-arn arn:aws:iam::123456789012:role/other-source-role ' "$FAKE_AWS_LOG")" = 6 -a "$(grep -c "$CURATED_ROLE" "$FAKE_AWS_LOG")" = 0
-
-# assume-role fails: refused with the role (no credentials) before anything is written
+check "source role: the profile names the overridden role for every source call, none the default" test "$(idlog "^$SRC_ID " | grep -cF 'role=arn:aws:iam::123456789012:role/other-source-role ')" = 7 -a "$(grep -c "$CURATED_ROLE" "$FAKE_AWS_IDENTITY_LOG")" = 0
 reset_world
 make_dataset
-export FAKE_FAIL_ASSUME=1
-run_import both "$DATASET_URL"
-unset FAKE_FAIL_ASSUME
-[ "$rc" != 0 ] && ok "assume-role failure ends the build non-zero" || bad "assume-role failure rc"
-check "assume-role failure: REFUSED names the role" grep -q "REFUSED: cannot assume $CURATED_ROLE" "$T/err"
-check "assume-role failure: nothing was written (no stream, no manifest.tsv, nothing in the stack bucket)" bash -c "test \$(grep -c 'aws s3 cp' '$FAKE_AWS_LOG') = 0 && test -z \"\$(find '$FAKE_S3/$STACK' -type f 2> /dev/null)\""
-check "assume-role failure: no source read was attempted, no head-object either" test "$(grep -cE 'aws s3 cp|head-object' "$FAKE_AWS_LOG")" = 0
-check "assume-role failure: no credentials in stdout or stderr" test "$(cat "$T/out" "$T/err" | grep -cE "$CRED_WORDS|INSTANCESECRET|INSTANCETOKEN")" = 0
-check "assume-role failure: auth failed, so open was not started" test "$(grep -c 'open: staging' "$T/out")" = 0
-
-# the session of a later file cannot be had: the build fails, manifest.tsv is not written (assume-role call 1 = manifest.json, 2 = first file)
-reset_world
-make_dataset
-export FAKE_FAIL_ASSUME=3
+export curated_datasets_s3_role='arn:aws:iam::123456789012:role/x
+credential_source = Environment'
 run_import auth "$DATASET_URL"
-unset FAKE_FAIL_ASSUME
-[ "$rc" != 0 ] && grep -q "REFUSED: cannot assume $CURATED_ROLE" "$T/err" && ok "assume-role failing before a later file fails the build" || bad "assume-role failure on the second file (rc=$rc)"
-check "assume-role failure on file 2: exactly one file was written, no manifest.tsv" test "$(stage_files javabins_rekeyed)" = "allObservationsStore.javabin "
-check "assume-role is called again for every file (manifest.json, file 1, file 2 = three calls)" test "$(grep -c 'sts assume-role' "$FAKE_AWS_LOG")" = 3
+unset curated_datasets_s3_role
+[ "$rc" != 0 ] && grep -q 'is not a role ARN' "$T/err" && ok "a role value that is not a role ARN (here with an extra config line) is refused" || bad "bad role value (rc=$rc)"
+check "bad role value: no source call, no copy and no temporary file" test "$(grep -c '^ident=source' "$FAKE_AWS_IDENTITY_LOG")" = 0 -a "$(grep -c 'aws s3 cp' "$FAKE_AWS_LOG")" = 0 -a -z "$(ls -A "$T/tmp")"
+
+# the source role cannot be assumed: refused with the role (no secrets) before anything is written
+reset_world
+make_dataset
+export FAKE_FAIL_SOURCE_IDENTITY=1
+run_import both "$DATASET_URL"
+unset FAKE_FAIL_SOURCE_IDENTITY
+[ "$rc" != 0 ] && ok "a source role that cannot be assumed ends the build non-zero" || bad "source identity failure rc"
+check "source role refusal: REFUSED names the role and the source" grep -q "REFUSED: cannot assume $CURATED_ROLE to read $DATASET_URL" "$T/err"
+check "source role refusal: nothing was written (no copy, no manifest.tsv, nothing in the stack bucket)" bash -c "test \$(grep -c 'aws s3 cp' '$FAKE_AWS_LOG') = 0 && test -z \"\$(find '$FAKE_S3/$STACK' -type f 2> /dev/null)\""
+check "source role refusal: no source read was attempted, no head-object either" test "$(grep -cE 'aws s3 cp|head-object' "$FAKE_AWS_LOG")" = 0
+check "source role refusal: the access check ran once, then the build stopped (auth failed, open not started)" test "$(grep -c 'sts get-caller-identity' "$FAKE_AWS_LOG")" = 1 -a "$(grep -c 'open: staging' "$T/out")" = 0
+check "source role refusal: the temporary profile file is gone" tmp_is_empty
+check "source role refusal: no secret in stdout or stderr" test "$(cat "$T/out" "$T/err" | grep -cE "$SECRET_WORDS")" = 0
 
 # a source read that dies in the middle of the stream: the destination side of the pipe still ends cleanly, the build must fail anyway
 reset_world
@@ -749,6 +792,7 @@ check "mid-stream read failure: the copy is reported as failed (pipefail, not on
 check "mid-stream read failure: no manifest.tsv, and later files are not copied" bash -c "test ! -e '$STAGE/$AUTH_DIR/manifest.tsv' && test ! -e '$STAGE/$AUTH_DIR/encryption_key' && test ! -e '$STAGE/fence_mapping.json'"
 check "mid-stream read failure: open is not started" test ! -e "$STAGE/$OPEN_DIR"
 check "mid-stream read failure: the source error text is shown" grep -q 'injected read failure' "$T/err"
+check "mid-stream read failure: the temporary profile file is gone" tmp_is_empty
 
 # the fence_mapping.json read fails
 reset_world
@@ -768,6 +812,7 @@ unset FAKE_FAIL_COPY
 [ "$rc" != 0 ] && ok "a destination write failing ends the build non-zero" || bad "destination write failure rc"
 check "destination write failure: reported as a failed copy" grep -q "REFUSED: copy of .*columnMeta.javabin to s3://$STACK/data/$C1/$AUTH_DIR/columnMeta.javabin failed" "$T/err"
 check "destination write failure: no manifest.tsv, open not started" bash -c "test ! -e '$STAGE/$AUTH_DIR/manifest.tsv' && test ! -e '$STAGE/$OPEN_DIR'"
+check "destination write failure: the temporary profile file is gone" tmp_is_empty
 reset_world
 make_dataset
 export FAKE_FAIL_COPY=fence_mapping.json
@@ -776,7 +821,7 @@ unset FAKE_FAIL_COPY
 [ "$rc" != 0 ] && ok "a failing write of fence_mapping.json ends the build non-zero" || bad "fence write failure rc"
 check "fence write failure: no manifest.tsv" test ! -e "$STAGE/$AUTH_DIR/manifest.tsv"
 
-# a source that is not readable with the assumed role (the object is missing): refused, nothing past it
+# a source that is not readable (the object is missing): refused, nothing past it
 reset_world
 make_dataset
 rm "$DATASET_DIR/encryption_key"
@@ -794,7 +839,8 @@ rm -f "${STAGE:?}/fence_mapping.json"
 run_import_in_repo auth
 [ "$rc" = 0 ] && ok "repair: still works (rc 0)" || { bad "repair (rc=$rc)"; cat "$T/err"; }
 check "repair: fence_mapping.json is restored" cmp "$STAGE/fence_mapping.json" "$STAGE/$AUTH_DIR/metadata.json"
-check "repair: every call ran as the instance role, no role was assumed" test "$(count_without ' aws ' "$INST_ID")" = 0 -a "$(grep -c 'assume-role' "$FAKE_AWS_LOG")" = 0
+check "repair: every call ran as the instance role, no profile, no role assumed" test "$(count_without ' aws ' "$INST_ID")" = 0 -a "$(grep -c 'assume-role\|get-caller-identity' "$FAKE_AWS_LOG")" = 0
+check "repair: no temporary profile file was made" tmp_is_empty
 reset_world
 make_dataset
 run_import auth "$DATASET_URL"
@@ -804,10 +850,10 @@ rm -f "${STAGE:?}/fence_mapping.json"
 export DEPLOY_TO_STAGING_STACK=true
 run_import_in_repo open
 unset DEPLOY_TO_STAGING_STACK
-[ "$rc" = 0 ] && ok "repair after the open variant was staged in the same build (assumed role used earlier in the build): rc 0" || { bad "repair after source reads (rc=$rc)"; cat "$T/err"; }
+[ "$rc" = 0 ] && ok "repair after the open variant was staged in the same build (source profile used earlier in the build): rc 0" || { bad "repair after source reads (rc=$rc)"; cat "$T/err"; }
 check "repair after source reads: the open variant was read as the source role" test "$(count_with "$SRC_READ" "$SRC_ID")" -gt 0
-check "repair after source reads: the repair copy ran as the instance role, with no assumed credentials" bash -c "grep -F ' aws s3 cp s3://$STACK/data/$C1/$AUTH_DIR/metadata.json s3://$STACK/data/$C1/fence_mapping.json ' '$FAKE_AWS_IDENTITY_LOG' | grep -q '^$INST_ID '"
-check "repair after source reads: nothing but source reads ran with the assumed credentials" test "$(grep -c "^$SRC_ID " "$FAKE_AWS_IDENTITY_LOG")" = "$(idlog "$SRC_READ" | grep -c "^$SRC_ID ")"
+check "repair after source reads: the repair copy ran as the instance role, with no profile" bash -c "grep -F ' aws s3 cp s3://$STACK/data/$C1/$AUTH_DIR/metadata.json s3://$STACK/data/$C1/fence_mapping.json ' '$FAKE_AWS_IDENTITY_LOG' | grep -q '^$INST_ID '"
+check "repair after source reads: nothing but source reads and the access check ran as the source role, nothing leaked" test "$(grep -c "^$SRC_ID " "$FAKE_AWS_IDENTITY_LOG")" = "$(($(idlog "$SRC_READ" | grep -c "^$SRC_ID ") + 1))" -a "$(grep -c '^ident=leak' "$FAKE_AWS_IDENTITY_LOG")" = 0
 
 # ================================================================ Import: legacy .tar path
 make_legacy() {
@@ -879,7 +925,7 @@ run_import auth "s3://legacy-src/pheno/final.tar"
 unset curated_datasets_s3_role
 [ "$rc" = 0 ] && ok "legacy: staging with an overridden source role exits 0" || { bad "legacy role override (rc=$rc)"; cat "$T/err"; }
 check "legacy: assume_role gets the overridden role (one definition for both paths)" grep -q 'sts assume-role --role-arn arn:aws:iam::123456789012:role/other-source-role$' "$FAKE_AWS_LOG"
-check "legacy: the dataset-path helpers are not used (no session name, no stream)" test "$(grep -cE 'role-session-name|aws s3 cp [^ ]+ - |aws s3 cp - ' "$FAKE_AWS_LOG")" = 0
+check "legacy: the dataset-path helpers are not used (no profile, no identity check, no stream, no temporary file)" test "$(grep -cE 'get-caller-identity|aws s3 cp [^ ]+ - |aws s3 cp - ' "$FAKE_AWS_LOG")" = 0 -a "$(grep -c 'ident=source' "$FAKE_AWS_IDENTITY_LOG")" = 0 -a -z "$(ls -A "$T/tmp")"
 
 # ================================================================ Import: legacy, both | derived keys | docker only when needed
 # legacy tars for two variants (and a second auth tar) under a source bucket
@@ -1260,7 +1306,7 @@ expected_flag_off_calls() {
     local src="s3://$SRC_BUCKET/data/hpds/pheno/datasets/$DATASET_ID" dst="s3://$STACK/data/$C1" f
     local sse="--sse AES256" so="--only-show-errors"
     sz() { wc -c < "$DATASET_DIR/$1" | tr -d ' '; }
-    echo "aws sts assume-role --role-arn $CURATED_ROLE --role-session-name HPDS-Data---Stage-to-Stack-Bucket-42 --duration-seconds 3600 --query Credentials.[AccessKeyId,SecretAccessKey,SessionToken] --output text"
+    echo "aws sts get-caller-identity --output text"
     echo "aws s3 cp $src/manifest.json dataset_work/manifest.json $so"
     for f in $AUTH_DIR $OPEN_DIR; do
         echo "aws s3 cp dataset_work/manifest.tsv $dst/$f/manifest.tsv $sse $so"
@@ -1337,7 +1383,7 @@ check "flag on: the file has exactly three lines and no stack" bash -c "test \"\
 check "flag on: no temporary file is left" test ! -e "$PROPS.tmp"
 check "flag on: both variants and the fence mapping are staged" bash -c "test -f '$STAGE/$AUTH_DIR/manifest.tsv' && test -f '$STAGE/$OPEN_DIR/manifest.tsv' && test -f '$STAGE/fence_mapping.json'"
 check "flag on: no stack lookup (stacks.json, Bash_Functions, get_stack)" no_lookup
-check "flag on: per-file staging assumes only the source role (the same 12 assume-role calls as with the flag off)" test "$(grep -c 'sts assume-role' "$FAKE_AWS_LOG")" = 12 -a "$(grep 'sts assume-role' "$FAKE_AWS_LOG" | grep -vc "$CURATED_ROLE")" = 0
+check "flag on: per-file staging only checks the source role (the same 2 get-caller-identity calls as with the flag off), no assume-role" test "$(grep -c 'sts get-caller-identity' "$FAKE_AWS_LOG")" = 2 -a "$(grep -c 'sts assume-role' "$FAKE_AWS_LOG")" = 0
 check "flag on: nothing is read or written under any stack name" test "$(grep -c 'live-stk\|blue-stk' "$FAKE_AWS_LOG")" = 0
 check "flag on: the build says the checks passed and that the next step starts the deploy job" grep -q "staging deploy: checks passed; the next build step starts HPDS Data - Deploy to Staging Stack with the deploy keys" "$T/out"
 check "flag on: no 'Next: run Check For Updates' line" test "$(grep -c '^Next: run Check For Updates' "$T/out")" = 0
@@ -1801,6 +1847,8 @@ check "stage description: dataset prefixes are read through curated_datasets_s3_
 check "stage description: the instance role writes and lists the stack bucket, the source role never touches it" bash -c "grep -qF 'the instance role writes and lists the stack bucket' '$T/import.desc' && grep -qF 'The source role is never used for the stack bucket' '$T/import.desc' && grep -qF 'sts:AssumeRole' '$T/import.desc'"
 check "stage description: data streams through the Jenkins host, allow time and bandwidth" bash -c "grep -qF 'streams through the Jenkins host' '$T/import.desc' && grep -qF 'time and bandwidth' '$T/import.desc'"
 check "stage description: the old server-side-copy and instance-role-reads text is gone" bash -c "! grep -qiE 'server-side copies of the|no assume_role|instance role of this Jenkins needs for the dataset-prefix path|source bucket \(bdc-etl-data-d0d6191\): s3:ListBucket' '$T/import.desc'"
+check "stage description: the trust policy of the source role must allow the deploy-account instance role" bash -c "grep -qF 'trust policy of curated-datasets-s3-role in account 515157839325 must allow the deploy-account instance role' '$T/import.desc'"
+check "stage description: the CLI gets the source credentials from the instance metadata (credential_source=Ec2InstanceMetadata), so IMDS must be reachable" bash -c "grep -qF 'credential_source=Ec2InstanceMetadata' '$T/import.desc' && grep -qF 'instance metadata service must be reachable from the Jenkins container' '$T/import.desc'"
 check "stage job: no names, task ids or workspace notes in the description or the shell step" bash -c "! grep -qiE 'thomas|umbrella|forgejo|local forge|claude|\bT[0-9]{2}[a-z]?\b' '$T/import.desc' '$T/import.sh'"
 
 if command -v shellcheck > /dev/null 2>&1; then

@@ -24,16 +24,20 @@ build-spec.json, then run this job).
 Source URL:
 - ends with .tar: legacy path (assume curated-datasets-s3-role, download, open: RemoveConceptFromMetadata in docker, re-tar, upload).
 - dataset prefix (ends with /, has manifest.json schema bdc-hpds-pheno-release/1): per-file staging. Each file of the variant is read
-  from the source with curated-datasets-s3-role (assumed per file with aws sts assume-role; the credentials are passed to the source
-  reads only, never exported) and streamed through this Jenkins host into the stack bucket with the instance role (SSE-S3, no docker,
-  no Bash_Functions). A failure on either side of a copy fails the build. Byte check of every copy against the manifest, the auth
+  from the source with curated-datasets-s3-role (an AWS CLI profile in a private temporary config file assumes it; the CLI renews the
+  session, no credential passes through the shell and the profile is used for the source reads only) and streamed through this
+  Jenkins host into the stack bucket with the instance role (SSE-S3, no docker, no Bash_Functions). Before anything is written the
+  job checks that the role can be assumed (sts get-caller-identity) and refuses otherwise. A failure on either side of a copy fails the build. Byte check of every copy against the manifest, the auth
   variant&apos;s metadata.json also copied to fence_mapping.json, manifest.tsv written last. Refuses: unknown variant, bad manifest, open variant with the full
   columnMeta (stored sha or, when present, the gunzipped content sha of full and open is equal), auth files from open/. A run that died before manifest.tsv can be retried.
 
 IAM for the dataset-prefix path:
 - the source bucket (bdc-etl-data-d0d6191) is in another account than this Jenkins: the instance role cannot read it. Dataset prefixes
   are read through curated_datasets_s3_role (arn:aws:iam::515157839325:role/curated-datasets-s3-role by default, the same role as the
-  legacy .tar path): s3:GetObject on data/hpds/pheno/datasets/* of the source bucket. The instance role needs sts:AssumeRole on it.
+  legacy .tar path): s3:GetObject on data/hpds/pheno/datasets/* of the source bucket. The instance role needs sts:AssumeRole on it,
+  and the trust policy of curated-datasets-s3-role in account 515157839325 must allow the deploy-account instance role.
+- the source credentials are obtained by the CLI from the instance metadata (credential_source=Ec2InstanceMetadata), so the instance
+  metadata service must be reachable from the Jenkins container, as it already is for every aws call.
 - the instance role writes and lists the stack bucket (stack_s3_bucket): s3:ListBucket (prefix data/*), s3:GetObject and s3:PutObject
   on data/* (SSE-S3, no KMS). The source role is never used for the stack bucket.
 - the data streams through the Jenkins host (download from the source, upload to the stack bucket, one file at a time): allow time
@@ -278,61 +282,48 @@ validate_source() {
 }
 
 ### Source role: one definition for both paths. The legacy path assumes it with Bash_Functions (assume_role / reset_role); the
-### dataset path asks STS itself and hands the credentials to the source-side aws calls only.
+### dataset path reads the source through an AWS CLI profile that assumes it (see setup_source_profile).
 curated_datasets_s3_role=&quot;${curated_datasets_s3_role:-arn:aws:iam::515157839325:role/curated-datasets-s3-role}&quot;
-src_access_key=&quot;&quot;
-src_secret_key=&quot;&quot;
-src_session_token=&quot;&quot;
+src_cfg=&quot;&quot;
 
-# Is shell tracing on? The helpers below switch it off while credentials are in a command or an assignment.
-xtrace_was_on() {
-    case &quot;$-&quot; in *x*) return 0 ;; esac
-    return 1
-}
-
-# Get credentials of the source role into shell variables (never exported, never printed). Session name: job and build number.
-assume_source_role() {
-    local out session traced=false
-    xtrace_was_on &amp;&amp; traced=true
-    set +x
+# Profile hpds-source in a private config file: the CLI itself assumes the role (credentials from the instance metadata) and renews
+# the session, so no credential passes through this shell, an environment variable or a command line.
+setup_source_profile() {
+    local session
+    [ -z &quot;${src_cfg}&quot; ] || return 0
+    [[ &quot;${curated_datasets_s3_role}&quot; =~ ^arn:aws:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_/-]+$ ]] || refuse &quot;curated_datasets_s3_role &apos;${curated_datasets_s3_role}&apos; is not a role ARN&quot;
+    # Role session name: job and build number, at most 64 characters of [A-Za-z0-9+=,.@_-]; the end (build number) is kept.
     session=&quot;$(printf &apos;%s-%s&apos; &quot;${JOB_NAME:-hpds-stage}&quot; &quot;${BUILD_NUMBER:-0}&quot; | tr -c &apos;A-Za-z0-9+=,.@_-&apos; &apos;-&apos;)&quot;
-    # a role session name is at most 64 characters: keep the end, it holds the build number
     [ &quot;${#session}&quot; -le 64 ] || session=&quot;${session: -64}&quot;
-    src_access_key=&quot;&quot; src_secret_key=&quot;&quot; src_session_token=&quot;&quot;
-    if out=&quot;$(aws sts assume-role --role-arn &quot;${curated_datasets_s3_role}&quot; --role-session-name &quot;${session}&quot; --duration-seconds 3600 \
-        --query &apos;Credentials.[AccessKeyId,SecretAccessKey,SessionToken]&apos; --output text &lt; /dev/null)&quot;; then
-        read -r src_access_key src_secret_key src_session_token &lt;&lt;&lt; &quot;${out}&quot;
-    fi
-    out=&quot;&quot;
-    if [ -z &quot;${src_access_key}&quot; ] || [ -z &quot;${src_secret_key}&quot; ] || [ -z &quot;${src_session_token}&quot; ]; then
-        src_access_key=&quot;&quot; src_secret_key=&quot;&quot; src_session_token=&quot;&quot;
-        ! ${traced} || set -x
-        return 1
-    fi
-    ! ${traced} || set -x
-    return 0
+    src_cfg=&quot;$(mktemp &quot;${TMPDIR:-/tmp}/hpds-source-profile.XXXXXX&quot;)&quot; || refuse &quot;cannot create the AWS profile file for ${curated_datasets_s3_role}&quot;
+    trap &apos;rm -f &quot;${src_cfg}&quot;&apos; EXIT
+    chmod 600 &quot;${src_cfg}&quot;
+    {
+        echo &quot;[profile hpds-source]&quot;
+        echo &quot;role_arn = ${curated_datasets_s3_role}&quot;
+        echo &quot;credential_source = Ec2InstanceMetadata&quot;
+        echo &quot;role_session_name = ${session}&quot;
+        echo &quot;duration_seconds = 3600&quot;
+    } &gt; &quot;${src_cfg}&quot;
 }
 
-clear_source_credentials() {
-    src_access_key=&quot;&quot; src_secret_key=&quot;&quot; src_session_token=&quot;&quot;
-}
-
-# aws with the source role&apos;s credentials: for reads of the source bucket only. Everything else runs as the instance role.
+# aws as the source role: for reads of the source bucket only. The prefix assignments last for this one command and are never
+# exported, so everything else (stack bucket, lists, heads) keeps the default instance identity.
 src_aws() {
-    local rc traced=false
-    xtrace_was_on &amp;&amp; traced=true
-    set +x
-    env AWS_ACCESS_KEY_ID=&quot;${src_access_key}&quot; AWS_SECRET_ACCESS_KEY=&quot;${src_secret_key}&quot; AWS_SESSION_TOKEN=&quot;${src_session_token}&quot; aws &quot;$@&quot;
-    rc=$?
-    ! ${traced} || set -x
-    return ${rc}
+    AWS_CONFIG_FILE=&quot;${src_cfg}&quot; AWS_PROFILE=hpds-source aws &quot;$@&quot;
 }
 
-# stream_copy &lt;source s3 URL&gt; &lt;destination s3 URL&gt; &lt;bytes&gt;: fresh source credentials, then read as the source role and write as the
-# instance role. Either side of the pipe failing fails the copy. --expected-size is needed by the CLI for streams over 50 GB.
+# Before anything is written: can the source role be assumed?
+check_source_access() {
+    setup_source_profile
+    src_aws sts get-caller-identity --output text &gt; /dev/null &lt; /dev/null \
+        || refuse &quot;cannot assume ${curated_datasets_s3_role} to read ${source_url}&quot;
+}
+
+# stream_copy &lt;source s3 URL&gt; &lt;destination s3 URL&gt; &lt;bytes&gt;: read as the source role, write as the instance role. Either side of
+# the pipe failing fails the copy. --expected-size is needed by the CLI for streams over 50 GB.
 stream_copy() {
     local src=&quot;$1&quot; dest=&quot;$2&quot; bytes=&quot;$3&quot;
-    assume_source_role || refuse &quot;cannot assume ${curated_datasets_s3_role} to read ${src}&quot;
     (
         set -o pipefail
         src_aws s3 cp &quot;${src}&quot; - --only-show-errors &lt; /dev/null \
@@ -342,14 +333,14 @@ stream_copy() {
 
 ### Per-file staging from a dataset prefix. No docker. Reads of the source bucket use curated-datasets-s3-role (src_aws), writes to
 ### the stack bucket the instance role. IAM needed (see the job description):
-#   curated-datasets-s3-role, source bucket: s3:GetObject on data/hpds/pheno/datasets/*
+#   curated-datasets-s3-role, source bucket: s3:GetObject on data/hpds/pheno/datasets/*; its trust policy allows the instance role
 #   instance role, stack bucket:             s3:ListBucket + s3:GetObject + s3:PutObject on data/*, and sts:AssumeRole on the source role
 stage_dataset() {
     local work=dataset_work dataset_id manifest_sha e_src e_dest e_bytes e_sha e_etag head_json got_bytes expected_rows written_rows
     rm -rf &quot;${work}&quot;
     mkdir -p &quot;${work}&quot;
 
-    assume_source_role || refuse &quot;cannot assume ${curated_datasets_s3_role} to read ${source_url}manifest.json&quot;
+    check_source_access
     src_aws s3 cp &quot;${source_url}manifest.json&quot; &quot;${work}/manifest.json&quot; --only-show-errors &lt; /dev/null \
         || refuse &quot;cannot read ${source_url}manifest.json (not a released dataset prefix?)&quot;
     # jq 1.6 -e exits 0 on empty input, so the checks below need a non-empty file
@@ -420,8 +411,6 @@ stage_dataset() {
     expected_rows=&quot;$(jq -r --arg v &quot;${variant}&quot; &apos;.variants[$v] | length&apos; &quot;${work}/manifest.json&quot;)&quot;
     written_rows=&quot;$(tail -n +7 &quot;${work}/manifest.tsv&quot; | wc -l | tr -d &apos; &apos;)&quot;
     [ &quot;${written_rows}&quot; = &quot;${expected_rows}&quot; ] || refuse &quot;manifest.tsv has ${written_rows} data rows, the ${variant} variant has ${expected_rows} entries; not uploading it&quot;
-
-    clear_source_credentials
 
     # manifest.tsv last: its presence marks the stage prefix complete and immutable.
     aws s3 cp &quot;${work}/manifest.tsv&quot; &quot;s3://${stack_s3_bucket}/${stage_key_prefix}manifest.tsv&quot; --sse AES256 --only-show-errors &lt; /dev/null
