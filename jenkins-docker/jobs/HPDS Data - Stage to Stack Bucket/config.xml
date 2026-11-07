@@ -283,7 +283,9 @@ validate_source() {
 
 ### Source role: one definition for both paths. The legacy path assumes it with Bash_Functions (assume_role / reset_role); the
 ### dataset path reads the source through an AWS CLI profile that assumes it (see setup_source_profile).
-curated_datasets_s3_role=&quot;${curated_datasets_s3_role:-arn:aws:iam::515157839325:role/curated-datasets-s3-role}&quot;
+# Fixed on purpose, as in the old import: a global curated_datasets_s3_role on this Jenkins may name another account's role (the
+# dictionary restore reads the legacy bucket with it), and that role cannot read this bucket.
+curated_datasets_s3_role=&quot;arn:aws:iam::515157839325:role/curated-datasets-s3-role&quot;
 src_cfg=&quot;&quot;
 
 # Profile hpds-source in a private config file: the CLI itself assumes the role (credentials from the instance metadata) and renews

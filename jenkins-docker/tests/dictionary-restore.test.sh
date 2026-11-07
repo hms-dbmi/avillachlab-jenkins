@@ -2,7 +2,8 @@
 # shellcheck disable=SC2015  # "[ test ] && ok || bad" is the intended reporting idiom here
 # Tests for the job "Database PSQL - Dictionary Restore Dump": the dump URL comes from build-spec.json
 # (jq, whitespace stripped, refused before any AWS call unless s3://<bucket>/<key>.tar), the in-boundary bucket is read
-# with the instance role while any other bucket takes the legacy curated_datasets_s3_role path, and the dump is checked
+# as the fixed 515157839325 curated-datasets-s3-role through an AWS CLI profile (--profile dict-source), any other bucket
+# takes the legacy curated_datasets_s3_role path, and the dump is checked
 # (non-empty, extracts, toc.dat) before the secret fetch, the connection test or pg_restore.
 # The job shell step is extracted from config.xml and run against a fake `aws` (S3 = a directory tree), fake `psql` and
 # `pg_restore` on PATH, and a fake Bash_Functions workspace (assume_role, reset_role, fetch_secret, extract_field).
@@ -35,7 +36,18 @@ mkdir -p "$BIN"
 cat > "$BIN/aws" << 'FAKE_AWS'
 #!/bin/bash
 # fake aws: bucket/key lives at $FAKE_S3/<bucket>/<key>; every call is logged to the shared call log.
+# `--profile <name>` (first) is logged as part of the call; for it the config file must hold the profile with role_arn and
+# credential_source, which is logged as an "aws-profile" line (role, credential source, session, file path).
 echo "aws $*" >> "$CALLS"
+if [ "${1:-}" = --profile ]; then
+    if [ -f "${AWS_CONFIG_FILE:-}" ] && grep -qx "\[profile $2\]" "$AWS_CONFIG_FILE"; then
+        echo "aws-profile name=$2 role=$(sed -n 's/^role_arn = //p' "$AWS_CONFIG_FILE") source=$(sed -n 's/^credential_source = //p' "$AWS_CONFIG_FILE") session=$(sed -n 's/^role_session_name = //p' "$AWS_CONFIG_FILE") cfg=$AWS_CONFIG_FILE mode=$(ls -ld "$AWS_CONFIG_FILE" | cut -c1-10)" >> "$CALLS"
+    else
+        echo "The config profile ($2) could not be found" >&2
+        exit 255
+    fi
+    shift 2
+fi
 if [ "$1/$2" = "s3/cp" ]; then
     src="$FAKE_S3/${3#s3://}"
     [ -f "$src" ] || { echo "fake aws: missing source $3" >&2; exit 1; }
@@ -94,6 +106,7 @@ INB_BUCKET=bdc-etl-data-d0d6191
 INB_URL="s3://$INB_BUCKET/data/dictionary/db-dumps/dictionary_db_11-05-26T14.tar"
 LEGACY_URL="s3://$LEGACY_BUCKET/general/hpds/javabin/dictionary_db_10-01-26T09.tar"
 ROLE="arn:aws:iam::000000000000:role/fake-curated"
+INB_ROLE="arn:aws:iam::515157839325:role/curated-datasets-s3-role"
 EXPECTED_RESTORE="pg_restore --host=db.example.invalid --port=5432 --username=fakeuser --dbname=picsure --format=d --jobs=10 --clean --verbose --no-owner --no-privileges --no-tablespaces --no-comments --no-publications --no-subscriptions --no-security-labels --no-table-access-method --schema=dict dump_files/"
 
 python3 -I "$HERE/extract-shell.py" "$JOB_XML" > "$T/job.sh" || { echo "cannot extract the job shell"; exit 1; }
@@ -132,7 +145,9 @@ run_job() {
     if [ "$1" != "-NONE-" ]; then printf '%s\n' "$1" > "$T/ws/build-spec.json"; fi
     (
         cd "$T/ws" || exit 99
-        curated_datasets_s3_role="${CURATED_ROLE-$ROLE}" database_psql_root_user_secret_name=fake-secret \
+        mkdir -p "$T/tmp"
+        TMPDIR="$T/tmp" JOB_NAME="Database PSQL - Dictionary Restore Dump" BUILD_NUMBER=7 \
+            curated_datasets_s3_role="${CURATED_ROLE-$ROLE}" database_psql_root_user_secret_name=fake-secret \
             database_psql_host_address=db.example.invalid \
             bash "$T/job.sh" > "$T/out" 2> "$T/err" < /dev/null
     )
@@ -156,12 +171,16 @@ check "in-boundary: no reset_role" test "$(count '^reset_role')" = 0
 check "in-boundary: the only assume_role is the bare one for the secret, after the download" bash -c "
     [ \"\$(grep -c '^assume_role' '$CALLS')\" = 1 ] && grep -qx 'assume_role' '$CALLS' &&
     [ \$(grep -n '^aws ' '$CALLS' | head -1 | cut -d: -f1) -lt \$(grep -n '^assume_role' '$CALLS' | head -1 | cut -d: -f1) ]"
-check "in-boundary: exactly one aws call, s3 cp from the URL" test "$(grep -c '^aws ' "$CALLS")" = 1 -a "$(grep -c "^aws s3 cp $INB_URL dictionary_db.tar\$" "$CALLS")" = 1
+check "in-boundary: exactly one aws call, a copy from the URL with --profile dict-source" test "$(grep -c '^aws ' "$CALLS")" = 1 -a "$(grep -c "^aws --profile dict-source s3 cp $INB_URL dictionary_db.tar\$" "$CALLS")" = 1
+check "in-boundary: the profile assumes the fixed 515157839325 role from the instance metadata, not the global role" grep -qF "aws-profile name=dict-source role=$INB_ROLE source=Ec2InstanceMetadata session=Database-PSQL---Dictionary-Restore-Dump-7 " "$CALLS"
+check "in-boundary: the profile file was private (mode 600) and under TMPDIR" grep -qE "^aws-profile .* cfg=$T/tmp/dict-source-profile\\.[^ ]+ mode=-rw-------\$" "$CALLS"
+check "in-boundary: the profile file is gone afterwards" test -z "$(ls -A "$T/tmp")"
+check "in-boundary: no AWS_ variable is passed through env (argv) or exported" test "$(grep -cE '(^|[^A-Za-z_])env +([^ ]+ +)*AWS_|export +AWS_' "$T/job.sh")" = 0
 check "in-boundary: pg_restore called with the unchanged flags on dump_files/" grep -qxF "$EXPECTED_RESTORE" "$CALLS"
 check "in-boundary: pg_restore sees the flattened files (toc.dat and the data files)" grep -qx 'pg_restore sees: 3001.dat.gz 3002.dat.gz toc.dat ' "$CALLS"
 check "in-boundary: psql connection test ran against picsure" grep -q '^psql --host=db.example.invalid --port=5432 --username=fakeuser --dbname=picsure -c \\q$' "$CALLS"
 check "in-boundary: fetch_secret before psql before pg_restore" test "$(line_of '^fetch_secret')" -lt "$(line_of '^psql')" -a "$(line_of '^psql')" -lt "$(line_of '^pg_restore ')"
-check "in-boundary: log names the source and the instance role" grep -q "in-boundary bucket, $INB_URL (identity: Jenkins instance role" "$T/out"
+check "in-boundary: log names the source and the role" grep -qF "in-boundary bucket, $INB_URL (identity: $INB_ROLE through an AWS CLI profile)" "$T/out"
 check "in-boundary: no secret in the output" bash -c "! grep -q fakepass '$T/out' '$T/err'"
 check "in-boundary: the dump TOC was read offline (pg_restore --list dump_files/)" grep -qx 'pg_restore --list dump_files/' "$CALLS.list"
 
@@ -212,7 +231,14 @@ rm -rf "$FAKE_S3"
 make_dump "$INB_BUCKET" data/dictionary/db-dumps/dictionary_db_11-05-26T14.tar valid
 run_job "{\"source_dictionary_db_s3_url\": \"  \\t $INB_URL \\n \"}"
 [ "$rc" = 0 ] && ok "whitespace around the URL: works" || { bad "whitespace around the URL: works (rc=$rc)"; cat "$T/err"; }
-check "whitespace around the URL: s3 cp gets the clean URL" grep -qx "aws s3 cp $INB_URL dictionary_db.tar" "$CALLS"
+check "whitespace around the URL: the copy gets the clean URL" grep -qx "aws --profile dict-source s3 cp $INB_URL dictionary_db.tar" "$CALLS"
+
+# a global curated_datasets_s3_role naming another account's role does not change the in-boundary read
+rm -rf "$FAKE_S3"
+make_dump "$INB_BUCKET" data/dictionary/db-dumps/dictionary_db_11-05-26T14.tar valid
+CURATED_ROLE="arn:aws:iam::736265540791:role/curated-datasets-s3-role" run_job "$(spec "$INB_URL")"
+[ "$rc" = 0 ] && ok "in-boundary with a legacy-account global role: exits 0" || { bad "in-boundary, legacy global role (rc=$rc)"; cat "$T/err"; }
+check "in-boundary with a legacy-account global role: still the fixed 515157839325 role, no assume_role of the global" bash -c "grep -qF 'aws-profile name=dict-source role=$INB_ROLE ' '$CALLS' && ! grep -q '736265540791' '$CALLS'"
 rm -rf "$FAKE_S3"
 make_dump "$LEGACY_BUCKET" general/hpds/javabin/dictionary_db_10-01-26T09.tar valid
 run_job "{\"source_dictionary_db_s3_url\": \" $LEGACY_URL\\n\"}"
@@ -255,7 +281,7 @@ bad_dump() { # bad_dump <description> <kind> <message regexp>
         [ "$rc" != 0 ] && ok "$1 ($which): exits non-zero" || bad "$1 ($which): exits non-zero"
         check "$1 ($which): clear message" grep -q "$3" "$T/err"
         check "$1 ($which): no fetch_secret, psql or pg_restore" no_db_calls
-        check "$1 ($which): the download did happen (so the check is the gate)" called '^aws s3 cp '
+        check "$1 ($which): the download did happen (so the check is the gate)" called '^aws \(--profile dict-source \)\{0,1\}s3 cp '
     done
 }
 bad_dump "empty download" empty "empty"
@@ -324,11 +350,12 @@ assert kids == ["hudson.plugins.groovy.SystemGroovy", "hudson.tasks.Shell"], kid
 PY
 check "Groovy step builds the Bash_Functions job" grep -q 'getItemByFullName("Bash_Functions").scheduleBuild2' "$T/job.groovy"
 check "job never mentions the real legacy bucket" test "$(grep -c 'avillach-73-bdcatalyst-etl' "$JOB_XML")" = 0
-check "in-boundary bucket is one constant near the top of the shell" test "$(grep -c 'bdc-etl-data-d0d6191' "$T/job.sh")" = 1 -a "$(grep -n 'INBOUNDARY_DUMP_BUCKET=' "$T/job.sh" | head -1 | cut -d: -f1)" -le 6
+check "in-boundary bucket is one constant near the top of the shell" test "$(grep -c 'bdc-etl-data-d0d6191' "$T/job.sh")" = 1 -a "$(grep -n 'INBOUNDARY_DUMP_BUCKET=' "$T/job.sh" | head -1 | cut -d: -f1)" -le 8
+check "the in-boundary role is one fixed constant, next to the bucket" test "$(grep -c 'arn:aws:iam::515157839325:role/curated-datasets-s3-role' "$T/job.sh")" = 1 -a "$(grep -c '^INBOUNDARY_SOURCE_ROLE=' "$T/job.sh")" = 1
 check "XML is well formed" python3 -I -c 'import sys, xml.etree.ElementTree as E; E.parse(sys.argv[1])' "$JOB_XML"
-check "description: source, in-boundary URL, instance role, legacy rollback, IAM grant and the follow-up job" bash -c "
+check "description: source, in-boundary URL, fixed role, legacy rollback, IAM grant and no weights job" bash -c "
     d=\$(python3 -I -c 'import sys, xml.etree.ElementTree as E; print(E.parse(sys.argv[1]).getroot().findtext(\"description\"))' '$JOB_XML')
-    for s in source_dictionary_db_s3_url 's3://bdc-etl-data-d0d6191/data/dictionary/db-dumps/dictionary_db_<ts>.tar' 'PIC-SURE Dictionary ETL Pipeline/dict-ingest' 'instance role' curated_datasets_s3_role rollback 's3:GetObject' 's3:ListBucket' 'bucket policy' 'PIC-SURE Dictionary Weights Build and Run'; do
+    for s in source_dictionary_db_s3_url 's3://bdc-etl-data-d0d6191/data/dictionary/db-dumps/dictionary_db_<ts>.tar' 'PIC-SURE Dictionary ETL Pipeline/dict-ingest' 'curated-datasets-s3-role' 'does not follow the global curated_datasets_s3_role' curated_datasets_s3_role rollback 's3:GetObject' 's3:ListBucket' 'trust policy' 'No weights job is needed'; do
         printf '%s' \"\$d\" | grep -qiF -- \"\$s\" || { echo \"description lacks: \$s\"; exit 1; }
     done"
 
