@@ -307,10 +307,11 @@ setup_source_profile() {
     } &gt; &quot;${src_cfg}&quot;
 }
 
-# aws as the source role: for reads of the source bucket only. The prefix assignments last for this one command and are never
-# exported, so everything else (stack bucket, lists, heads) keeps the default instance identity.
+# aws as the source role: for reads of the source bucket only. An explicit --profile makes the CLI ignore any AWS_* keys in the
+# environment (a profile named in the environment would not); the config-file prefix assignment lasts for this one command and is never exported,
+# so everything else (stack bucket, lists, heads) keeps the default instance identity.
 src_aws() {
-    AWS_CONFIG_FILE=&quot;${src_cfg}&quot; AWS_PROFILE=hpds-source aws &quot;$@&quot;
+    AWS_CONFIG_FILE=&quot;${src_cfg}&quot; aws --profile hpds-source &quot;$@&quot;
 }
 
 # Before anything is written: can the source role be assumed?
@@ -404,6 +405,9 @@ stage_dataset() {
         # fence_mapping.json belongs to the auth variant (PSAMA reads the auth key&apos;s); the open variant must not replace it.
         if [ &quot;${e_dest}&quot; = &quot;metadata.json&quot; ] &amp;&amp; [ &quot;${variant}&quot; = auth ]; then
             stream_copy &quot;${source_url}${e_src}&quot; &quot;s3://${stack_s3_bucket}/data/${deploy_key_value}/fence_mapping.json&quot; &quot;${e_bytes}&quot;
+            fence_json=&quot;$(aws s3api head-object --bucket &quot;${stack_s3_bucket}&quot; --key &quot;data/${deploy_key_value}/fence_mapping.json&quot; &lt; /dev/null)&quot;
+            fence_bytes=&quot;$(printf &apos;%s&apos; &quot;${fence_json}&quot; | jq -r &apos;.ContentLength&apos;)&quot;
+            [ &quot;${fence_bytes}&quot; = &quot;${e_bytes}&quot; ] || refuse &quot;fence_mapping.json: staged ${fence_bytes} bytes, metadata.json has ${e_bytes}&quot;
         fi
     done &lt; &quot;${work}/entries.tsv&quot;
 

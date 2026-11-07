@@ -35,19 +35,28 @@ cat > "$BIN/aws" << 'FAKE_AWS'
 #!/bin/bash
 # fake aws: bucket/key lives at $FAKE_S3/<bucket>/<key>; every call is logged.
 # Streams: `s3 cp <s3 URL> -` writes the object to stdout, `s3 cp - <s3 URL>` stores stdin.
-# $FAKE_AWS_IDENTITY_LOG gets one line per call with the identity it ran as: AWS_PROFILE=hpds-source (with an AWS_CONFIG_FILE that
-# holds role_arn and credential_source) is the source role, no AWS_PROFILE and no AWS_CONFIG_FILE is the instance role.
+# $FAKE_AWS_IDENTITY_LOG gets one line per call with the identity it ran as. Like the real CLI, an explicit --profile wins over
+# AWS_* keys in the environment while AWS_PROFILE does not: --profile hpds-source (with an AWS_CONFIG_FILE that holds role_arn and
+# credential_source) is the source role, no --profile and no AWS_PROFILE/AWS_CONFIG_FILE is the instance role, anything else a leak.
+# The --profile pair is dropped from the call log so the expected call lists stay identity-free.
+profile=""
+args=()
+while [ $# -gt 0 ]; do
+    if [ "$1" = --profile ] && [ $# -ge 2 ]; then profile="$2"; shift 2; continue; fi
+    args+=("$1"); shift
+done
+set -- ${args[@]+"${args[@]}"}
 echo "aws $*" >> "$FAKE_AWS_LOG"
-if [ "${AWS_PROFILE:-}" = hpds-source ]; then
+if [ "$profile" = hpds-source ]; then
     if [ -f "${AWS_CONFIG_FILE:-}" ] && grep -q '^role_arn = ' "$AWS_CONFIG_FILE" && grep -q '^credential_source = Ec2InstanceMetadata$' "$AWS_CONFIG_FILE"; then
-        echo "ident=source cfg=ok mode=$(ls -ld "$AWS_CONFIG_FILE" | cut -c1-10) role=$(sed -n 's/^role_arn = //p' "$AWS_CONFIG_FILE") session=$(sed -n 's/^role_session_name = //p' "$AWS_CONFIG_FILE") duration=$(sed -n 's/^duration_seconds = //p' "$AWS_CONFIG_FILE") aws $*" >> "$FAKE_AWS_IDENTITY_LOG"
+        echo "ident=source cfgpath=$AWS_CONFIG_FILE cfg=ok mode=$(ls -ld "$AWS_CONFIG_FILE" | cut -c1-10) role=$(sed -n 's/^role_arn = //p' "$AWS_CONFIG_FILE") session=$(sed -n 's/^role_session_name = //p' "$AWS_CONFIG_FILE") duration=$(sed -n 's/^duration_seconds = //p' "$AWS_CONFIG_FILE") aws $*" >> "$FAKE_AWS_IDENTITY_LOG"
     else
         echo "ident=source cfg=bad aws $*" >> "$FAKE_AWS_IDENTITY_LOG"
         echo "The config profile (hpds-source) could not be found" >&2
         exit 255
     fi
-elif [ -n "${AWS_PROFILE:-}${AWS_CONFIG_FILE:-}" ]; then
-    echo "ident=leak profile=${AWS_PROFILE:-none} cfg=${AWS_CONFIG_FILE:-none} aws $*" >> "$FAKE_AWS_IDENTITY_LOG"
+elif [ -n "${profile}${AWS_PROFILE:-}${AWS_CONFIG_FILE:-}" ]; then
+    echo "ident=leak profile=${profile:-${AWS_PROFILE:-none}} cfg=${AWS_CONFIG_FILE:-none} aws $*" >> "$FAKE_AWS_IDENTITY_LOG"
 else
     echo "ident=instance aws $*" >> "$FAKE_AWS_IDENTITY_LOG"
 fi
@@ -116,7 +125,7 @@ case "${pos[0]}/${pos[1]}" in
         done | jq -R -s -c 'split("\n") | map(select(length > 0)) | if length == 0 then empty else {Contents: map({Key: .})} end'
         ;;
     sts/get-caller-identity)
-        if [ -n "${FAKE_FAIL_SOURCE_IDENTITY:-}" ] && [ "${AWS_PROFILE:-}" = hpds-source ]; then
+        if [ -n "${FAKE_FAIL_SOURCE_IDENTITY:-}" ] && [ "$profile" = hpds-source ]; then
             echo "An error occurred (AccessDenied) when calling the AssumeRole operation: not authorized" >&2
             exit 255
         fi
@@ -706,6 +715,7 @@ check "source role: the profile file was seen by the CLI with role_arn + credent
 check "source role: the session name is a valid role session name" bash -c "grep -o 'session=[^ ]*' '$FAKE_AWS_IDENTITY_LOG' | sort -u | cut -d = -f 2 | grep -qE '^[A-Za-z0-9+=,.@_-]{2,64}\$'"
 check "source role: no role is assumed by the job itself (no sts assume-role call)" test "$(grep -c 'sts assume-role' "$FAKE_AWS_LOG")" = 0
 check "source role: the temporary profile file is gone after a successful run" tmp_is_empty
+check "source role: the temporary profile file was made under TMPDIR" bash -c "grep -q '^ident=source cfgpath=' '$FAKE_AWS_IDENTITY_LOG' && ! grep '^ident=source cfgpath=' '$FAKE_AWS_IDENTITY_LOG' | grep -v -q '^ident=source cfgpath=$T/tmp/'"
 
 # bytes: every staged file is the source file, the stream got the manifest bytes as --expected-size
 bytes_ok=true
@@ -720,7 +730,7 @@ done
 check "source role: every staged file of both variants is byte-identical to its source, was streamed with --expected-size = manifest bytes, and has its manifest.tsv row" $bytes_ok
 check "source role: fence_mapping.json was streamed (a second read of the auth metadata.json) with the metadata.json bytes as --expected-size" grep -qxF "stream to=s3://$STACK/data/$C1/fence_mapping.json bytes=7 expected=7" "$FAKE_AWS_IDENTITY_LOG"
 check "source role: every stream got exactly --expected-size bytes and none lacks it" streams_consistent
-check "source role: the byte check (head-object on the destination) still runs for every file" test "$(grep -c 's3api head-object' "$FAKE_AWS_LOG")" = 9
+check "source role: the byte check (head-object on the destination) still runs for every file and for fence_mapping.json" test "$(grep -c 's3api head-object' "$FAKE_AWS_LOG")" = 10
 check "source role: manifest.tsv is still the last object written" bash -c "grep -E 'aws s3 cp (-|dataset_work/manifest.tsv) s3://' '$FAKE_AWS_LOG' | tail -1 | grep -q '/$OPEN_DIR/manifest.tsv'"
 check "source role: no secret in stdout or stderr" test "$(cat "$T/out" "$T/err" | grep -cE "$SECRET_WORDS")" = 0
 
@@ -728,7 +738,8 @@ check "source role: no secret in stdout or stderr" test "$(cat "$T/out" "$T/err"
 check "source role: the job never calls env with an AWS_ argument (static)" test "$(grep -cE '(^|[^A-Za-z_])env +([^ ]+ +)*AWS_' "$T/import.sh")" = 0
 check "source role: a fake env on PATH was never given an AWS_ argument" test ! -e "$FAKE_ENV_LOG"
 check "source role: nothing exports credentials or the profile (no export / declare -x of AWS_ variables)" test "$(grep -cE 'export +AWS_|declare -x +AWS_' "$T/import.sh")" = 0
-check "source role: AWS_PROFILE and AWS_CONFIG_FILE are a prefix assignment of the one aws command in src_aws, nowhere else" bash -c "test \$(grep -cE 'AWS_(PROFILE|CONFIG_FILE)' '$T/import.sh') = 1 && grep -qF 'AWS_CONFIG_FILE=\"\${src_cfg}\" AWS_PROFILE=hpds-source aws \"\$@\"' '$T/import.sh'"
+check "source role: AWS_CONFIG_FILE is a prefix assignment of the one aws --profile hpds-source command in src_aws, nowhere else" bash -c "test \$(grep -cE 'AWS_CONFIG_FILE' '$T/import.sh') = 1 && grep -qF 'AWS_CONFIG_FILE=\"\${src_cfg}\" aws --profile hpds-source \"\$@\"' '$T/import.sh'"
+check "source role: the job never sets AWS_PROFILE (the CLI would let AWS_* keys in the environment win over it)" test "$(grep -c 'AWS_PROFILE' "$T/import.sh")" = 0
 check "source role: the job holds no credential variables (no AccessKeyId, SecretAccessKey or SessionToken in the shell step)" test "$(grep -cE 'AccessKeyId|SecretAccessKey|SessionToken' "$T/import.sh")" = 0
 check "source role: the dataset path does not source Bash_Functions" test "$(grep -c 'sourcing' "$T/out")" = 0 -a ! -d "$T/jh"
 
@@ -1332,6 +1343,7 @@ expected_flag_off_calls() {
         echo "aws s3api head-object --bucket $STACK --key data/$C1/$OPEN_DIR/$f"
     done
     echo "aws s3api head-object --bucket $STACK --key data/$C1/$OPEN_DIR/conceptsToRemove.txt"
+    echo "aws s3api head-object --bucket $STACK --key data/$C1/fence_mapping.json"
 }
 
 # ---- flag off (the default): behaves as before, reads no stacks.json, sources nothing, writes no file
@@ -1345,7 +1357,7 @@ for mode in unset false; do
     [ "$rc" = 0 ] && ok "staging flag $mode: both stages (rc 0)" || { bad "staging flag $mode (rc=$rc)"; cat "$T/err"; }
     check "staging flag $mode: no staging_deploy.properties (a stale one is deleted)" no_props
     check "staging flag $mode: no stack lookup (stacks.json, Bash_Functions, get_stack)" no_lookup
-    check "staging flag $mode: no fence_mapping.json existence probe (list or head) is made" test "$(grep -E 'list-objects-v2|head-object' "$FAKE_AWS_LOG" | grep -c 'fence_mapping.json')" = 0
+    check "staging flag $mode: no fence_mapping.json existence probe (no list; one head, the byte check after the write)" bash -c "test \$(grep -E 'list-objects-v2' '$FAKE_AWS_LOG' | grep -c 'fence_mapping.json') = 0 && test \$(grep -E 'head-object' '$FAKE_AWS_LOG' | grep -c 'fence_mapping.json') = 1"
     expected_flag_off_calls | sort -u > "$T/aws.expected"
     sort -u "$FAKE_AWS_LOG" > "$T/aws.actual"
     check "staging flag $mode: the set of aws calls is exactly the staging calls (no other probe, list, head or copy)" diff "$T/aws.expected" "$T/aws.actual"
