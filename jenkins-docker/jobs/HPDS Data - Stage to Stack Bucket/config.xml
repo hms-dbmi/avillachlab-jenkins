@@ -23,14 +23,21 @@ build-spec.json, then run this job).
 
 Source URL:
 - ends with .tar: legacy path (assume curated-datasets-s3-role, download, open: RemoveConceptFromMetadata in docker, re-tar, upload).
-- dataset prefix (ends with /, has manifest.json schema bdc-hpds-pheno-release/1): per-file staging. Server-side copies of the
-  variant&apos;s files with the instance role (no assume_role, no docker), byte check of every copy, the auth variant&apos;s metadata.json also
-  copied to fence_mapping.json, manifest.tsv written last. Refuses: unknown variant, bad manifest, open variant with the full
+- dataset prefix (ends with /, has manifest.json schema bdc-hpds-pheno-release/1): per-file staging. Each file of the variant is read
+  from the source with curated-datasets-s3-role (assumed per file with aws sts assume-role; the credentials are passed to the source
+  reads only, never exported) and streamed through this Jenkins host into the stack bucket with the instance role (SSE-S3, no docker,
+  no Bash_Functions). A failure on either side of a copy fails the build. Byte check of every copy against the manifest, the auth
+  variant&apos;s metadata.json also copied to fence_mapping.json, manifest.tsv written last. Refuses: unknown variant, bad manifest, open variant with the full
   columnMeta (stored sha or, when present, the gunzipped content sha of full and open is equal), auth files from open/. A run that died before manifest.tsv can be retried.
 
-IAM the instance role of this Jenkins needs for the dataset-prefix path:
-- source bucket (bdc-etl-data-d0d6191): s3:ListBucket (prefix data/hpds/pheno/datasets/*) and s3:GetObject on data/hpds/pheno/datasets/*
-- stack bucket (stack_s3_bucket): s3:ListBucket (prefix data/*), s3:GetObject and s3:PutObject on data/* (SSE-S3, no KMS)
+IAM for the dataset-prefix path:
+- the source bucket (bdc-etl-data-d0d6191) is in another account than this Jenkins: the instance role cannot read it. Dataset prefixes
+  are read through curated_datasets_s3_role (arn:aws:iam::515157839325:role/curated-datasets-s3-role by default, the same role as the
+  legacy .tar path): s3:GetObject on data/hpds/pheno/datasets/* of the source bucket. The instance role needs sts:AssumeRole on it.
+- the instance role writes and lists the stack bucket (stack_s3_bucket): s3:ListBucket (prefix data/*), s3:GetObject and s3:PutObject
+  on data/* (SSE-S3, no KMS). The source role is never used for the stack bucket.
+- the data streams through the Jenkins host (download from the source, upload to the stack bucket, one file at a time): allow time
+  and bandwidth for the large files, allObservationsStore.javabin is tens of GB.
 The legacy .tar path keeps using curated-datasets-s3-role and sources the scripts in the Bash_Functions job workspace
 (assume_role, reset_role, get_stack); Check For Updates no longer runs Bash_Functions first, so if that workspace is missing,
 build Bash_Functions once before a legacy run.
@@ -124,7 +131,8 @@ rm -f staging_deploy.properties
 # HPDS_VARIANT = both (auth, then open), auth or open. Run by hand; Check For Updates only checks that this was done.
 # Per variant the source URL and the deploy key come from build-spec.json, exactly as Check For Updates computes them.
 #   source URL ends with .tar -&gt; legacy path: download the tar, (open: remove concepts), re-tar, upload.
-#   source URL is a dataset prefix (ends with /) -&gt; per-file staging driven by its manifest.json.
+#   source URL is a dataset prefix (ends with /) -&gt; per-file staging driven by its manifest.json; the source is read with
+#   curated-datasets-s3-role and every file is streamed through this host into the stack bucket (instance role).
 # A variant that is already staged is skipped, never overwritten.
 # DEPLOY_TO_STAGING_STACK=true: once both variants are staged and the checks pass, write staging_deploy.properties (the three
 # deploy keys); the SystemGroovy step after this one then starts the job HPDS Data - Deploy to Staging Stack with them. That job
@@ -269,16 +277,80 @@ validate_source() {
     fi
 }
 
-### Per-file staging from a dataset prefix. One identity (the instance role); no docker.
-# IAM needed (see the job description):
-#   source bucket: s3:ListBucket + s3:GetObject on data/hpds/pheno/datasets/*
-#   stack bucket:  s3:ListBucket + s3:GetObject + s3:PutObject on data/*
+### Source role: one definition for both paths. The legacy path assumes it with Bash_Functions (assume_role / reset_role); the
+### dataset path asks STS itself and hands the credentials to the source-side aws calls only.
+curated_datasets_s3_role=&quot;${curated_datasets_s3_role:-arn:aws:iam::515157839325:role/curated-datasets-s3-role}&quot;
+src_access_key=&quot;&quot;
+src_secret_key=&quot;&quot;
+src_session_token=&quot;&quot;
+
+# Is shell tracing on? The helpers below switch it off while credentials are in a command or an assignment.
+xtrace_was_on() {
+    case &quot;$-&quot; in *x*) return 0 ;; esac
+    return 1
+}
+
+# Get credentials of the source role into shell variables (never exported, never printed). Session name: job and build number.
+assume_source_role() {
+    local out session traced=false
+    xtrace_was_on &amp;&amp; traced=true
+    set +x
+    session=&quot;$(printf &apos;%s-%s&apos; &quot;${JOB_NAME:-hpds-stage}&quot; &quot;${BUILD_NUMBER:-0}&quot; | tr -c &apos;A-Za-z0-9+=,.@_-&apos; &apos;-&apos;)&quot;
+    # a role session name is at most 64 characters: keep the end, it holds the build number
+    [ &quot;${#session}&quot; -le 64 ] || session=&quot;${session: -64}&quot;
+    src_access_key=&quot;&quot; src_secret_key=&quot;&quot; src_session_token=&quot;&quot;
+    if out=&quot;$(aws sts assume-role --role-arn &quot;${curated_datasets_s3_role}&quot; --role-session-name &quot;${session}&quot; --duration-seconds 3600 \
+        --query &apos;Credentials.[AccessKeyId,SecretAccessKey,SessionToken]&apos; --output text &lt; /dev/null)&quot;; then
+        read -r src_access_key src_secret_key src_session_token &lt;&lt;&lt; &quot;${out}&quot;
+    fi
+    out=&quot;&quot;
+    if [ -z &quot;${src_access_key}&quot; ] || [ -z &quot;${src_secret_key}&quot; ] || [ -z &quot;${src_session_token}&quot; ]; then
+        src_access_key=&quot;&quot; src_secret_key=&quot;&quot; src_session_token=&quot;&quot;
+        ! ${traced} || set -x
+        return 1
+    fi
+    ! ${traced} || set -x
+    return 0
+}
+
+clear_source_credentials() {
+    src_access_key=&quot;&quot; src_secret_key=&quot;&quot; src_session_token=&quot;&quot;
+}
+
+# aws with the source role&apos;s credentials: for reads of the source bucket only. Everything else runs as the instance role.
+src_aws() {
+    local rc traced=false
+    xtrace_was_on &amp;&amp; traced=true
+    set +x
+    env AWS_ACCESS_KEY_ID=&quot;${src_access_key}&quot; AWS_SECRET_ACCESS_KEY=&quot;${src_secret_key}&quot; AWS_SESSION_TOKEN=&quot;${src_session_token}&quot; aws &quot;$@&quot;
+    rc=$?
+    ! ${traced} || set -x
+    return ${rc}
+}
+
+# stream_copy &lt;source s3 URL&gt; &lt;destination s3 URL&gt; &lt;bytes&gt;: fresh source credentials, then read as the source role and write as the
+# instance role. Either side of the pipe failing fails the copy. --expected-size is needed by the CLI for streams over 50 GB.
+stream_copy() {
+    local src=&quot;$1&quot; dest=&quot;$2&quot; bytes=&quot;$3&quot;
+    assume_source_role || refuse &quot;cannot assume ${curated_datasets_s3_role} to read ${src}&quot;
+    (
+        set -o pipefail
+        src_aws s3 cp &quot;${src}&quot; - --only-show-errors &lt; /dev/null \
+            | aws s3 cp - &quot;${dest}&quot; --sse AES256 --expected-size &quot;${bytes}&quot; --only-show-errors
+    ) || refuse &quot;copy of ${src} to ${dest} failed&quot;
+}
+
+### Per-file staging from a dataset prefix. No docker. Reads of the source bucket use curated-datasets-s3-role (src_aws), writes to
+### the stack bucket the instance role. IAM needed (see the job description):
+#   curated-datasets-s3-role, source bucket: s3:GetObject on data/hpds/pheno/datasets/*
+#   instance role, stack bucket:             s3:ListBucket + s3:GetObject + s3:PutObject on data/*, and sts:AssumeRole on the source role
 stage_dataset() {
     local work=dataset_work dataset_id manifest_sha e_src e_dest e_bytes e_sha e_etag head_json got_bytes expected_rows written_rows
     rm -rf &quot;${work}&quot;
     mkdir -p &quot;${work}&quot;
 
-    aws s3 cp &quot;${source_url}manifest.json&quot; &quot;${work}/manifest.json&quot; --only-show-errors \
+    assume_source_role || refuse &quot;cannot assume ${curated_datasets_s3_role} to read ${source_url}manifest.json&quot;
+    src_aws s3 cp &quot;${source_url}manifest.json&quot; &quot;${work}/manifest.json&quot; --only-show-errors &lt; /dev/null \
         || refuse &quot;cannot read ${source_url}manifest.json (not a released dataset prefix?)&quot;
     # jq 1.6 -e exits 0 on empty input, so the checks below need a non-empty file
     [ -s &quot;${work}/manifest.json&quot; ] || refuse &quot;${source_url}manifest.json is empty&quot;
@@ -331,15 +403,16 @@ stage_dataset() {
 
     while IFS=$&apos;\t&apos; read -r e_src e_dest e_bytes e_sha e_etag; do
         echo &quot;staging ${e_src} -&gt; ${e_dest} (${e_bytes} bytes)&quot;
-        # Every aws call in this loop reads /dev/null: the loop reads entries.tsv on stdin and a CLI that reads stdin would end it early.
-        aws s3 cp &quot;${source_url}${e_src}&quot; &quot;s3://${stack_s3_bucket}/${stage_key_prefix}${e_dest}&quot; --sse AES256 --only-show-errors &lt; /dev/null
+        # Every aws call in this loop reads /dev/null or the stream pipe: the loop reads entries.tsv on stdin and a CLI that read it
+        # would end the loop early.
+        stream_copy &quot;${source_url}${e_src}&quot; &quot;s3://${stack_s3_bucket}/${stage_key_prefix}${e_dest}&quot; &quot;${e_bytes}&quot;
         head_json=&quot;$(aws s3api head-object --bucket &quot;${stack_s3_bucket}&quot; --key &quot;${stage_key_prefix}${e_dest}&quot; &lt; /dev/null)&quot;
         got_bytes=&quot;$(printf &apos;%s&apos; &quot;${head_json}&quot; | jq -r &apos;.ContentLength&apos;)&quot;
         [ &quot;${got_bytes}&quot; = &quot;${e_bytes}&quot; ] || refuse &quot;${e_dest}: staged ${got_bytes} bytes, manifest says ${e_bytes}&quot;
         printf &apos;%s\t%s\t%s\t%s\t%s\n&apos; &quot;${e_dest}&quot; &quot;${e_bytes}&quot; &quot;${e_sha}&quot; &quot;${e_etag}&quot; &quot;${e_src}&quot; &gt;&gt; &quot;${work}/manifest.tsv&quot;
         # fence_mapping.json belongs to the auth variant (PSAMA reads the auth key&apos;s); the open variant must not replace it.
         if [ &quot;${e_dest}&quot; = &quot;metadata.json&quot; ] &amp;&amp; [ &quot;${variant}&quot; = auth ]; then
-            aws s3 cp &quot;${source_url}${e_src}&quot; &quot;s3://${stack_s3_bucket}/data/${deploy_key_value}/fence_mapping.json&quot; --sse AES256 --only-show-errors &lt; /dev/null
+            stream_copy &quot;${source_url}${e_src}&quot; &quot;s3://${stack_s3_bucket}/data/${deploy_key_value}/fence_mapping.json&quot; &quot;${e_bytes}&quot;
         fi
     done &lt; &quot;${work}/entries.tsv&quot;
 
@@ -348,13 +421,14 @@ stage_dataset() {
     written_rows=&quot;$(tail -n +7 &quot;${work}/manifest.tsv&quot; | wc -l | tr -d &apos; &apos;)&quot;
     [ &quot;${written_rows}&quot; = &quot;${expected_rows}&quot; ] || refuse &quot;manifest.tsv has ${written_rows} data rows, the ${variant} variant has ${expected_rows} entries; not uploading it&quot;
 
+    clear_source_credentials
+
     # manifest.tsv last: its presence marks the stage prefix complete and immutable.
     aws s3 cp &quot;${work}/manifest.tsv&quot; &quot;s3://${stack_s3_bucket}/${stage_key_prefix}manifest.tsv&quot; --sse AES256 --only-show-errors &lt; /dev/null
     echo &quot;Staged ${variant} from ${source_url} (dataset ${dataset_id}) to s3://${stack_s3_bucket}/${stage_key_prefix}&quot;
 }
 
 ### Legacy .tar path (unchanged behaviour; output name and concept removal derive from the variant).
-curated_datasets_s3_role=&quot;arn:aws:iam::515157839325:role/curated-datasets-s3-role&quot;
 bash_functions_loaded=false
 etl_image_loaded=false
 
@@ -444,7 +518,8 @@ stage_legacy() {
     )
 }
 
-# data/&lt;auth key&gt;/fence_mapping.json is what the PSAMA deploy reads. Called with the auth variant set up and already staged.
+# data/&lt;auth key&gt;/fence_mapping.json is what the PSAMA deploy reads. Stack bucket only, instance role (no source credentials exist
+# here: src_aws is the only place that passes them on). Called with the auth variant set up and already staged.
 # Staged per-file: a missing mapping is restored from the staged metadata.json. Staged as a legacy tar: its metadata.json is inside
 # the tar and cannot be reached from here, so that is refused.
 ensure_fence_mapping() {
