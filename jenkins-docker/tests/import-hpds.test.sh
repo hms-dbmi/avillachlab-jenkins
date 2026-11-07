@@ -1350,7 +1350,13 @@ for mode in unset false; do
     sort -u "$FAKE_AWS_LOG" > "$T/aws.actual"
     check "staging flag $mode: the set of aws calls is exactly the staging calls (no other probe, list, head or copy)" diff "$T/aws.expected" "$T/aws.actual"
     check "staging flag $mode: fence_mapping.json is written once (auth only)" test "$(grep -c 's3://.*/fence_mapping.json' "$FAKE_AWS_LOG")" = 1
-    if [ "$mode" = unset ]; then cp "$FAKE_AWS_LOG" "$T/aws.flag-unset.log"; else check "staging flag false: the aws calls are identical, in order, to those of an unset flag" cmp "$FAKE_AWS_LOG" "$T/aws.flag-unset.log"; fi
+    if [ "$mode" = unset ]; then cp "$FAKE_AWS_LOG" "$T/aws.flag-unset.log"; else
+        # The two sides of a stream (source read | destination write) run concurrently, so their log lines may
+        # interleave in either order: compare the calls with their counts, not the line order.
+        sort "$FAKE_AWS_LOG" > "$T/aws.flag-false.sorted"
+        sort "$T/aws.flag-unset.log" > "$T/aws.flag-unset.sorted"
+        check "staging flag false: the aws calls (with counts) are identical to those of an unset flag" cmp "$T/aws.flag-false.sorted" "$T/aws.flag-unset.sorted"
+    fi
     check "staging flag $mode: no staging text in the output" test "$(grep -ci 'staging deploy\|staging stack' "$T/out")" = 0
     check "staging flag $mode: output still ends with the Next line" test "$(tail -1 "$T/out")" = "Next: run Check For Updates (or wait for the scheduled run) to deploy."
 done
