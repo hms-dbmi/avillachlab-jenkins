@@ -1,0 +1,695 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description>Stages the HPDS data named in build-spec.json (of the release-control checkout) into the stack bucket as data/&lt;deploy key&gt;/...
+Run by hand; Check For Updates does not call this job. It only checks that the data for the current deploy keys is staged
+and that data/&lt;auth key&gt;/fence_mapping.json exists.
+
+Order of a data release: (1) commit the new source URLs in build-spec.json, (2) run this job with HPDS_VARIANT=both,
+(3) run Check For Updates (or wait for the scheduled run) to deploy.
+Rollback: put the old tar URLs back in build-spec.json (that gives a new deploy key), run this job with both, then Check For Updates.
+
+HPDS_VARIANT: both (default) = auth, then open, in one build; a failed auth stops before open. auth -&gt; javabins_rekeyed/ (legacy tar
+javabins_rekeyed.tar), open -&gt; destigmatized_javabins_rekeyed/ (legacy tar destigmatized_javabins_rekeyed.tar, concepts removed).
+Per variant the source URL and the deploy key (blame commit of the source_dataset_s3_url / source_destigmatized_dataset_s3_url line)
+are derived from build-spec.json by the same rules as Check For Updates. A variant that is already staged is skipped
+("already staged, skipping"); a staged prefix (manifest.tsv) or tar is never overwritten. data/&lt;auth key&gt;/fence_mapping.json sits
+outside the stage prefixes and is written by the auth variant only (its metadata.json; for a legacy tar, the metadata.json inside the
+tar). The open variant never writes it: PSAMA reads the auth key&apos;s. When the auth variant is already staged per-file but
+fence_mapping.json is missing, this job copies data/&lt;auth key&gt;/javabins_rekeyed/metadata.json to it (server-side, SSE-S3), prints
+&quot;fence_mapping.json restored from the staged metadata.json&quot; and checks that it exists afterwards. An auth variant staged as a legacy
+tar without fence_mapping.json is refused: restage it under a new deploy key (commit a change to the source URL lines of
+build-spec.json, then run this job).
+
+Source URL:
+- ends with .tar: legacy path (assume curated-datasets-s3-role, download, open: RemoveConceptFromMetadata in docker, re-tar, upload).
+- dataset prefix (ends with /, has manifest.json schema bdc-hpds-pheno-release/1): per-file staging. Each file of the variant is read
+  from the source with curated-datasets-s3-role (an AWS CLI profile in a private temporary config file assumes it; the CLI renews the
+  session, no credential passes through the shell and the profile is used for the source reads only) and streamed through this
+  Jenkins host into the stack bucket with the instance role (SSE-S3, no docker, no Bash_Functions). Before anything is written the
+  job checks that the role can be assumed (sts get-caller-identity) and refuses otherwise. A failure on either side of a copy fails the build. Byte check of every copy against the manifest, the auth
+  variant&apos;s metadata.json also copied to fence_mapping.json, manifest.tsv written last. Refuses: unknown variant, bad manifest, open variant with the full
+  columnMeta (stored sha or, when present, the gunzipped content sha of full and open is equal), auth files from open/. A run that died before manifest.tsv can be retried.
+
+IAM for the dataset-prefix path:
+- the source bucket (bdc-etl-data-d0d6191) is in another account than this Jenkins: the instance role cannot read it. Dataset prefixes
+  are read through curated_datasets_s3_role (arn:aws:iam::515157839325:role/curated-datasets-s3-role by default, the same role as the
+  legacy .tar path): s3:GetObject on data/hpds/pheno/datasets/* of the source bucket. The instance role needs sts:AssumeRole on it,
+  and the trust policy of curated-datasets-s3-role in account 515157839325 must allow the deploy-account instance role.
+- the source credentials are obtained by the CLI from the instance metadata (credential_source=Ec2InstanceMetadata), so the instance
+  metadata service must be reachable from the Jenkins container, as it already is for every aws call.
+- the instance role writes and lists the stack bucket (stack_s3_bucket): s3:ListBucket (prefix data/*), s3:GetObject and s3:PutObject
+  on data/* (SSE-S3, no KMS). The source role is never used for the stack bucket.
+- the data streams through the Jenkins host (download from the source, upload to the stack bucket, one file at a time): allow time
+  and bandwidth for the large files, allObservationsStore.javabin is tens of GB.
+The legacy .tar path keeps using curated-datasets-s3-role and sources the scripts in the Bash_Functions job workspace
+(assume_role, reset_role, get_stack); Check For Updates no longer runs Bash_Functions first, so if that workspace is missing,
+build Bash_Functions once before a legacy run.
+
+DEPLOY_TO_STAGING_STACK (default false):
+false = stage only; nothing is deployed. A flag-off run can still restore a missing data/&lt;auth key&gt;/fence_mapping.json (auth data
+staged per-file) or refuse an auth variant that is staged as a legacy tar without one (see above).
+true = after every requested variant is staged or already staged, a second build step starts HPDS Data - Deploy to Staging Stack (which
+takes the locks) with the auth, open and genomic deploy keys, and waits for it. That job takes the deployment-state lock and the stack
+lock, resolves the staging stack (environments.next_prod in deployment_state_metadata/stacks.json), re-checks that the data is staged
+and deploys, in this order: (1) PIC-SURE HPDS Auth Deploy, (2) PIC-SURE HPDS Open Deploy, (3) PIC-SURE Auth Micro App Deploy. Why PSAMA:
+it copies data/&lt;auth deploy key&gt;/fence_mapping.json into its container when it starts, so it is redeployed with the dataset. Its
+description names the locks, the time limit and the IAM it needs.
+The genomic deploy key is computed as in Check For Updates (blame commit of the source_genomic_dataset_s3_url line).
+The deploy needs the data of BOTH variants: with HPDS_VARIANT=auth or open the other variant must already be staged for its current
+deploy key. The build is refused, and the deploy job is not started, when: the other variant is not staged, fence_mapping.json is
+missing and cannot be restored (auth staged as a legacy tar), or the genomic deploy key is empty or not a git hash.
+The live stack cannot be targeted from this job: it has no stack parameter and looks up no stack. The deploy job is started only from
+the file the checks write (staging_deploy.properties in the workspace, deleted at the start of every build), which holds the three
+keys and nothing else. If the deploy job does not end SUCCESS this build fails and names it.
+Aborting this build only stops its wait: the deploy job it started keeps running (and releases its lock at the end). To stop the
+deployment, abort the job HPDS Data - Deploy to Staging Stack itself.
+On success the build prints &quot;Deployed to the staging stack only. A later Deployment Pipeline run rebuilds the staging stack from
+build-spec.json.&quot; (Deployment Pipeline targets the staging stack too; the live stack changes only by a stack swap.)
+The deploy step is a non-sandboxed system Groovy script that runs on EVERY build (with the flag off it only prints
+&quot;staging deploy: not requested&quot;). After the job definition is upserted, approve the script under Manage Jenkins, In-process Script
+Approval, before the first build, whatever the flag is.
+The last line of the build says either &quot;Deployed to the staging stack only. A later Deployment Pipeline run rebuilds the staging
+stack from build-spec.json.&quot; or &quot;staging deploy: not requested&quot;.</description>
+  <keepDependencies>false</keepDependencies>
+  <properties>
+    <com.sonyericsson.rebuild.RebuildSettings plugin="rebuild@338.va_0a_b_50e29397">
+      <autoRebuild>false</autoRebuild>
+      <rebuildDisabled>false</rebuildDisabled>
+    </com.sonyericsson.rebuild.RebuildSettings>
+    <hudson.model.ParametersDefinitionProperty>
+      <parameterDefinitions>
+        <hudson.model.ChoiceParameterDefinition>
+          <name>HPDS_VARIANT</name>
+          <description>both stages auth then open; auth stages javabins_rekeyed/, open stages destigmatized_javabins_rekeyed/. Variants that are already staged are skipped.</description>
+          <choices class="java.util.Arrays$ArrayList">
+            <a class="string-array">
+              <string>both</string>
+              <string>auth</string>
+              <string>open</string>
+            </a>
+          </choices>
+        </hudson.model.ChoiceParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>DEPLOY_TO_STAGING_STACK</name>
+          <description>After the requested variants are staged, start HPDS Data - Deploy to Staging Stack (which takes the locks, resolves the staging stack and deploys HPDS auth, HPDS open and PSAMA to it) with the current deploy keys. Needs both variants staged for their current deploy keys and data/&lt;auth key&gt;/fence_mapping.json. Never targets the live stack. Default false: stage only.</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+      </parameterDefinitions>
+    </hudson.model.ParametersDefinitionProperty>
+  </properties>
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.10.0">
+    <configVersion>2</configVersion>
+    <userRemoteConfigs>
+      <hudson.plugins.git.UserRemoteConfig>
+        <url>${release_control_git_repo}</url>
+        <credentialsId>${git_credentials_id}</credentialsId>
+      </hudson.plugins.git.UserRemoteConfig>
+    </userRemoteConfigs>
+    <branches>
+      <hudson.plugins.git.BranchSpec>
+        <name>${release_control_git_hash}</name>
+      </hudson.plugins.git.BranchSpec>
+    </branches>
+    <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+    <submoduleCfg class="empty-list"/>
+    <extensions/>
+  </scm>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <jdk>JDK-21</jdk>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+# shellcheck disable=SC2154  # stack_s3_bucket, HPDS_VARIANT, ... are provided by Jenkins
+set -e
+
+# A properties file from an earlier build must never reach the deploy step.
+rm -f staging_deploy.properties
+
+# Stages the HPDS data named in build-spec.json (release-control checkout in the workspace) into the stack bucket.
+# HPDS_VARIANT = both (auth, then open), auth or open. Run by hand; Check For Updates only checks that this was done.
+# Per variant the source URL and the deploy key come from build-spec.json, exactly as Check For Updates computes them.
+#   source URL ends with .tar -&gt; legacy path: download the tar, (open: remove concepts), re-tar, upload.
+#   source URL is a dataset prefix (ends with /) -&gt; per-file staging driven by its manifest.json; the source is read with
+#   curated-datasets-s3-role and every file is streamed through this host into the stack bucket (instance role).
+# A variant that is already staged is skipped, never overwritten.
+# DEPLOY_TO_STAGING_STACK=true: once both variants are staged and the checks pass, write staging_deploy.properties (the three
+# deploy keys); the SystemGroovy step after this one then starts the job HPDS Data - Deploy to Staging Stack with them. That job
+# takes the locks, resolves the staging stack and deploys. This step looks up no stack.
+# Contract: bdc-hpds-pheno-release/1 (manifest.json) and bdc-hpds-deploy/1 (manifest.tsv).
+
+refuse() {
+    echo &quot;REFUSED: $*&quot; &gt;&amp;2
+    exit 1
+}
+
+case &quot;${HPDS_VARIANT}&quot; in
+    both) variants=&quot;auth open&quot; ;;
+    auth) variants=&quot;auth&quot; ;;
+    open) variants=&quot;open&quot; ;;
+    *) refuse &quot;unknown HPDS_VARIANT &apos;${HPDS_VARIANT}&apos; (expected both, auth or open)&quot; ;;
+esac
+
+case &quot;${DEPLOY_TO_STAGING_STACK:-false}&quot; in
+    true) deploy_to_staging=true ;;
+    false) deploy_to_staging=false ;;
+    *) refuse &quot;unknown DEPLOY_TO_STAGING_STACK &apos;${DEPLOY_TO_STAGING_STACK}&apos; (expected true or false)&quot; ;;
+esac
+
+[ -n &quot;${stack_s3_bucket}&quot; ] || refuse &quot;stack_s3_bucket is not set&quot;
+[ -f build-spec.json ] || refuse &quot;build-spec.json not found in the release-control checkout&quot;
+
+# ---- shared with the other HPDS job (Check For Updates / HPDS Data - Stage to Stack Bucket): keep this block identical ----
+dataset_marker=&quot;/data/hpds/pheno/datasets/&quot;
+
+# ListBucket on data/* is granted while HeadObject on a missing key may answer 403, so list first.
+key_exists() {
+    local key=&quot;$1&quot; out
+    if out=$(aws s3api list-objects-v2 --bucket &quot;${stack_s3_bucket}&quot; --prefix &quot;${key}&quot; --output json 2&gt; /dev/null); then
+        # jq 1.6 -e exits 0 on empty input: an empty listing must mean &quot;not there&quot;
+        [ -n &quot;${out}&quot; ] || return 1
+        printf &apos;%s&apos; &quot;${out}&quot; | jq -e --arg k &quot;${key}&quot; &apos;any(.Contents[]?; .Key == $k)&apos; &gt; /dev/null
+    else
+        aws s3api head-object --bucket &quot;${stack_s3_bucket}&quot; --key &quot;${key}&quot; &gt; /dev/null 2&gt;&amp;1
+    fi
+}
+
+# Commit that last changed the line of build-spec.json that holds the given field.
+# A boundary commit (root or shallow clone) is blamed as &quot;^&lt;hash&gt;&quot;; the marker is not part of the hash.
+blame_commit() {
+    local key
+    key=$(git blame --abbrev=39 build-spec.json | grep &quot;$1&quot; | cut -f 1 -d &apos; &apos;)
+    echo &quot;${key#^}&quot;
+}
+
+# Deploy key = blame commit; must look like a git hash (7-40 hex) because it becomes an S3 key segment.
+deploy_key() {
+    local key
+    key=$(blame_commit &quot;$1&quot;)
+    if [ -z &quot;${key}&quot; ]; then
+        echo &quot;ERROR: no line for $1 in build-spec.json&quot; &gt;&amp;2
+        exit 1
+    fi
+    if ! [[ &quot;${key}&quot; =~ ^[0-9a-f]{7,40}$ ]]; then
+        echo &quot;ERROR: blame commit &apos;${key}&apos; for $1 is not a git hash&quot; &gt;&amp;2
+        exit 1
+    fi
+    echo &quot;${key}&quot;
+}
+
+spec_url() {
+    jq -r --arg f &quot;$1&quot; &apos;.[$f] // &quot;&quot;&apos; build-spec.json | tr -d &apos;[:space:]&apos;
+}
+
+is_dataset_prefix() {
+    case &quot;$1&quot; in
+        *&quot;${dataset_marker}&quot;*) return 0 ;;
+    esac
+    return 1
+}
+
+# Dataset prefixes carry both variants in one dataset: the two URLs must be the same.
+require_identical_dataset_urls() {
+    local auth_url open_url
+    auth_url=$(spec_url source_dataset_s3_url)
+    open_url=$(spec_url source_destigmatized_dataset_s3_url)
+    if is_dataset_prefix &quot;${auth_url}&quot; || is_dataset_prefix &quot;${open_url}&quot;; then
+        if [ &quot;${auth_url}&quot; != &quot;${open_url}&quot; ]; then
+            echo &quot;ERROR: source_dataset_s3_url (${auth_url}) and source_destigmatized_dataset_s3_url (${open_url}) must be identical for a dataset prefix&quot; &gt;&amp;2
+            exit 1
+        fi
+    fi
+}
+
+# is_staged &lt;deploy key&gt; &lt;stage prefix&gt; &lt;legacy tar name&gt;
+# Staged = data/&lt;key&gt;/&lt;stage prefix&gt;manifest.tsv exists (per-file staging, written last)
+#       or data/&lt;key&gt;/&lt;legacy tar name&gt;.tar exists (legacy .tar staging).
+is_staged() {
+    key_exists &quot;data/$1/$2manifest.tsv&quot; || key_exists &quot;data/$1/$3.tar&quot;
+}
+# ---- end of shared block ----
+
+require_identical_dataset_urls
+
+sha256_of() {
+    if command -v sha256sum &gt; /dev/null 2&gt;&amp;1; then
+        sha256sum &quot;$1&quot; | cut -d &apos; &apos; -f 1
+    else
+        shasum -a 256 &quot;$1&quot; | cut -d &apos; &apos; -f 1
+    fi
+}
+
+# variant_setup &lt;auth|open&gt;: sets variant, stage_prefix, legacy_name, remove_concepts, deploy_key_value, source_url, stage_key_prefix
+variant_setup() {
+    local field
+    variant=&quot;$1&quot;
+    case &quot;${variant}&quot; in
+        auth)
+            field=source_dataset_s3_url
+            stage_prefix=&quot;javabins_rekeyed/&quot;
+            legacy_name=&quot;javabins_rekeyed&quot;
+            remove_concepts=false
+            ;;
+        open)
+            field=source_destigmatized_dataset_s3_url
+            stage_prefix=&quot;destigmatized_javabins_rekeyed/&quot;
+            legacy_name=&quot;destigmatized_javabins_rekeyed&quot;
+            remove_concepts=true
+            ;;
+    esac
+    deploy_key_value=$(deploy_key &quot;${field}&quot;)
+    source_url=$(spec_url &quot;${field}&quot;)
+    stage_key_prefix=&quot;data/${deploy_key_value}/${stage_prefix}&quot;
+    install_path=&quot;&quot;
+}
+
+# validate_source: the source URL of the current variant must be an s3 URL ending in .tar (legacy) or / (dataset prefix).
+# Sets install_path.
+validate_source() {
+    [[ &quot;${source_url}&quot; =~ ^s3://[a-z0-9][a-z0-9.-]*/[A-Za-z0-9._/=+%:-]+$ ]] || refuse &quot;${variant}: source URL &apos;${source_url}&apos; in build-spec.json is not an s3:// object or prefix URL&quot;
+    if [[ &quot;${source_url}&quot; == *.tar ]]; then
+        install_path=legacy
+    elif [[ &quot;${source_url}&quot; == */ ]]; then
+        install_path=dataset
+    else
+        refuse &quot;${variant}: source URL &apos;${source_url}&apos; must end with .tar (legacy) or / (dataset prefix)&quot;
+    fi
+}
+
+### Source role: one definition for both paths. The legacy path assumes it with Bash_Functions (assume_role / reset_role); the
+### dataset path reads the source through an AWS CLI profile that assumes it (see setup_source_profile).
+# Fixed on purpose, as in the old import: a global curated_datasets_s3_role on this Jenkins may name another account's role (the
+# dictionary restore reads the legacy bucket with it), and that role cannot read this bucket.
+curated_datasets_s3_role=&quot;arn:aws:iam::515157839325:role/curated-datasets-s3-role&quot;
+src_cfg=&quot;&quot;
+
+# Profile hpds-source in a private config file: the CLI itself assumes the role (credentials from the instance metadata) and renews
+# the session, so no credential passes through this shell, an environment variable or a command line.
+setup_source_profile() {
+    local session
+    [ -z &quot;${src_cfg}&quot; ] || return 0
+    [[ &quot;${curated_datasets_s3_role}&quot; =~ ^arn:aws:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_/-]+$ ]] || refuse &quot;curated_datasets_s3_role &apos;${curated_datasets_s3_role}&apos; is not a role ARN&quot;
+    # Role session name: job and build number, at most 64 characters of [A-Za-z0-9+=,.@_-]; the end (build number) is kept.
+    session=&quot;$(printf &apos;%s-%s&apos; &quot;${JOB_NAME:-hpds-stage}&quot; &quot;${BUILD_NUMBER:-0}&quot; | tr -c &apos;A-Za-z0-9+=,.@_-&apos; &apos;-&apos;)&quot;
+    [ &quot;${#session}&quot; -le 64 ] || session=&quot;${session: -64}&quot;
+    src_cfg=&quot;$(mktemp &quot;${TMPDIR:-/tmp}/hpds-source-profile.XXXXXX&quot;)&quot; || refuse &quot;cannot create the AWS profile file for ${curated_datasets_s3_role}&quot;
+    trap &apos;rm -f &quot;${src_cfg}&quot;&apos; EXIT
+    chmod 600 &quot;${src_cfg}&quot;
+    {
+        echo &quot;[profile hpds-source]&quot;
+        echo &quot;role_arn = ${curated_datasets_s3_role}&quot;
+        echo &quot;credential_source = Ec2InstanceMetadata&quot;
+        echo &quot;role_session_name = ${session}&quot;
+        echo &quot;duration_seconds = 3600&quot;
+    } &gt; &quot;${src_cfg}&quot;
+}
+
+# aws as the source role: for reads of the source bucket only. An explicit --profile makes the CLI ignore any AWS_* keys in the
+# environment (a profile named in the environment would not); the config-file prefix assignment lasts for this one command and is never exported,
+# so everything else (stack bucket, lists, heads) keeps the default instance identity.
+src_aws() {
+    AWS_CONFIG_FILE=&quot;${src_cfg}&quot; aws --profile hpds-source &quot;$@&quot;
+}
+
+# Before anything is written: can the source role be assumed?
+check_source_access() {
+    setup_source_profile
+    src_aws sts get-caller-identity --output text &gt; /dev/null &lt; /dev/null \
+        || refuse &quot;cannot assume ${curated_datasets_s3_role} to read ${source_url}&quot;
+}
+
+# stream_copy &lt;source s3 URL&gt; &lt;destination s3 URL&gt; &lt;bytes&gt;: read as the source role, write as the instance role. Either side of
+# the pipe failing fails the copy. --expected-size is needed by the CLI for streams over 50 GB.
+stream_copy() {
+    local src=&quot;$1&quot; dest=&quot;$2&quot; bytes=&quot;$3&quot;
+    (
+        set -o pipefail
+        src_aws s3 cp &quot;${src}&quot; - --only-show-errors &lt; /dev/null \
+            | aws s3 cp - &quot;${dest}&quot; --sse AES256 --expected-size &quot;${bytes}&quot; --only-show-errors
+    ) || refuse &quot;copy of ${src} to ${dest} failed&quot;
+}
+
+### Per-file staging from a dataset prefix. No docker. Reads of the source bucket use curated-datasets-s3-role (src_aws), writes to
+### the stack bucket the instance role. IAM needed (see the job description):
+#   curated-datasets-s3-role, source bucket: s3:GetObject on data/hpds/pheno/datasets/*; its trust policy allows the instance role
+#   instance role, stack bucket:             s3:ListBucket + s3:GetObject + s3:PutObject on data/*, and sts:AssumeRole on the source role
+stage_dataset() {
+    local work=dataset_work dataset_id manifest_sha e_src e_dest e_bytes e_sha e_etag head_json got_bytes expected_rows written_rows
+    rm -rf &quot;${work}&quot;
+    mkdir -p &quot;${work}&quot;
+
+    check_source_access
+    src_aws s3 cp &quot;${source_url}manifest.json&quot; &quot;${work}/manifest.json&quot; --only-show-errors &lt; /dev/null \
+        || refuse &quot;cannot read ${source_url}manifest.json (not a released dataset prefix?)&quot;
+    # jq 1.6 -e exits 0 on empty input, so the checks below need a non-empty file
+    [ -s &quot;${work}/manifest.json&quot; ] || refuse &quot;${source_url}manifest.json is empty&quot;
+
+    jq -e --arg v &quot;${variant}&quot; &apos;
+        def okpath: type == &quot;string&quot; and test(&quot;^[A-Za-z0-9._/-]+$&quot;)
+            and (startswith(&quot;/&quot;) | not) and (endswith(&quot;/&quot;) | not)
+            and (test(&quot;//&quot;) | not) and (test(&quot;(^|/)\\.{1,2}(/|$)&quot;) | not);
+        .schema == &quot;bdc-hpds-pheno-release/1&quot;
+        and (.dataset_id | type == &quot;string&quot; and test(&quot;^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{4}Z$&quot;))
+        and (.variants[$v] | type == &quot;array&quot; and length &gt; 0)
+        and all(.variants[$v][];
+            (.src | okpath) and (.dest | okpath)
+            and (.bytes | type == &quot;number&quot; and . &gt;= 0 and . == floor)
+            and (.sha256 == null or (.sha256 | type == &quot;string&quot; and test(&quot;^[0-9a-f]{64}$&quot;)))
+            and (.etag == null or (.etag | type == &quot;string&quot; and test(&quot;^[!-~]*$&quot;))))
+        and ([.variants[$v][].dest] | length) == ([.variants[$v][].dest] | unique | length)
+        and any(.variants[$v][]; .dest == &quot;metadata.json&quot;)
+        and any(.variants[$v][]; .dest == &quot;columnMeta.javabin&quot;)
+    &apos; &quot;${work}/manifest.json&quot; &gt; /dev/null || refuse &quot;manifest.json is not a valid bdc-hpds-pheno-release/1 manifest with a usable &apos;${variant}&apos; variant&quot;
+
+    if [ &quot;${variant}&quot; = &quot;open&quot; ]; then
+        jq -e &apos;
+            (.removal.open_columnmeta_sha256 | type == &quot;string&quot; and length &gt; 0)
+            and (.removal.full_columnmeta_sha256 | type == &quot;string&quot; and length &gt; 0)
+            and (.removal.open_columnmeta_sha256 != .removal.full_columnmeta_sha256)
+            and (((.removal.full_columnmeta_content_sha256 | type) == &quot;string&quot; and (.removal.open_columnmeta_content_sha256 | type) == &quot;string&quot;
+                  and .removal.full_columnmeta_content_sha256 == .removal.open_columnmeta_content_sha256) | not)
+            and all(.variants.open[] | select(.dest == &quot;columnMeta.javabin&quot;); .src != &quot;columnMeta.javabin&quot;)
+        &apos; &quot;${work}/manifest.json&quot; &gt; /dev/null || refuse &quot;open variant would ship the full columnMeta.javabin (concepts were not removed, or full and open columnMeta contents are identical)&quot;
+    else
+        jq -e &apos;all(.variants.auth[]; (.src | startswith(&quot;open/&quot;)) | not)&apos; &quot;${work}/manifest.json&quot; &gt; /dev/null \
+            || refuse &quot;auth variant must not use files from open/&quot;
+    fi
+
+    dataset_id=&quot;$(jq -r &apos;.dataset_id&apos; &quot;${work}/manifest.json&quot;)&quot;
+    manifest_sha=&quot;$(sha256_of &quot;${work}/manifest.json&quot;)&quot;
+
+    {
+        echo &quot;# bdc-hpds-deploy/1&quot;
+        echo &quot;# variant=${variant}&quot;
+        echo &quot;# dataset_id=${dataset_id}&quot;
+        echo &quot;# source=${source_url}&quot;
+        echo &quot;# manifest_sha256=${manifest_sha}&quot;
+        printf &apos;dest\tbytes\tsha256\tetag\tsrc\n&apos;
+    } &gt; &quot;${work}/manifest.tsv&quot;
+
+    jq -r --arg v &quot;${variant}&quot; &apos;.variants[$v][] | [.src, .dest, (.bytes | tostring), (.sha256 // &quot;-&quot;), (.etag // &quot;-&quot;)] | @tsv&apos; \
+        &quot;${work}/manifest.json&quot; &gt; &quot;${work}/entries.tsv&quot;
+
+    while IFS=$&apos;\t&apos; read -r e_src e_dest e_bytes e_sha e_etag; do
+        echo &quot;staging ${e_src} -&gt; ${e_dest} (${e_bytes} bytes)&quot;
+        # Every aws call in this loop reads /dev/null or the stream pipe: the loop reads entries.tsv on stdin and a CLI that read it
+        # would end the loop early.
+        stream_copy &quot;${source_url}${e_src}&quot; &quot;s3://${stack_s3_bucket}/${stage_key_prefix}${e_dest}&quot; &quot;${e_bytes}&quot;
+        head_json=&quot;$(aws s3api head-object --bucket &quot;${stack_s3_bucket}&quot; --key &quot;${stage_key_prefix}${e_dest}&quot; &lt; /dev/null)&quot;
+        got_bytes=&quot;$(printf &apos;%s&apos; &quot;${head_json}&quot; | jq -r &apos;.ContentLength&apos;)&quot;
+        [ &quot;${got_bytes}&quot; = &quot;${e_bytes}&quot; ] || refuse &quot;${e_dest}: staged ${got_bytes} bytes, manifest says ${e_bytes}&quot;
+        printf &apos;%s\t%s\t%s\t%s\t%s\n&apos; &quot;${e_dest}&quot; &quot;${e_bytes}&quot; &quot;${e_sha}&quot; &quot;${e_etag}&quot; &quot;${e_src}&quot; &gt;&gt; &quot;${work}/manifest.tsv&quot;
+        # fence_mapping.json belongs to the auth variant (PSAMA reads the auth key&apos;s); the open variant must not replace it.
+        if [ &quot;${e_dest}&quot; = &quot;metadata.json&quot; ] &amp;&amp; [ &quot;${variant}&quot; = auth ]; then
+            stream_copy &quot;${source_url}${e_src}&quot; &quot;s3://${stack_s3_bucket}/data/${deploy_key_value}/fence_mapping.json&quot; &quot;${e_bytes}&quot;
+            fence_json=&quot;$(aws s3api head-object --bucket &quot;${stack_s3_bucket}&quot; --key &quot;data/${deploy_key_value}/fence_mapping.json&quot; &lt; /dev/null)&quot;
+            fence_bytes=&quot;$(printf &apos;%s&apos; &quot;${fence_json}&quot; | jq -r &apos;.ContentLength&apos;)&quot;
+            [ &quot;${fence_bytes}&quot; = &quot;${e_bytes}&quot; ] || refuse &quot;fence_mapping.json: staged ${fence_bytes} bytes, metadata.json has ${e_bytes}&quot;
+        fi
+    done &lt; &quot;${work}/entries.tsv&quot;
+
+    # Never publish a manifest.tsv that lists fewer files than the variant has.
+    expected_rows=&quot;$(jq -r --arg v &quot;${variant}&quot; &apos;.variants[$v] | length&apos; &quot;${work}/manifest.json&quot;)&quot;
+    written_rows=&quot;$(tail -n +7 &quot;${work}/manifest.tsv&quot; | wc -l | tr -d &apos; &apos;)&quot;
+    [ &quot;${written_rows}&quot; = &quot;${expected_rows}&quot; ] || refuse &quot;manifest.tsv has ${written_rows} data rows, the ${variant} variant has ${expected_rows} entries; not uploading it&quot;
+
+    # manifest.tsv last: its presence marks the stage prefix complete and immutable.
+    aws s3 cp &quot;${work}/manifest.tsv&quot; &quot;s3://${stack_s3_bucket}/${stage_key_prefix}manifest.tsv&quot; --sse AES256 --only-show-errors &lt; /dev/null
+    echo &quot;Staged ${variant} from ${source_url} (dataset ${dataset_id}) to s3://${stack_s3_bucket}/${stage_key_prefix}&quot;
+}
+
+### Legacy .tar path (unchanged behaviour; output name and concept removal derive from the variant).
+bash_functions_loaded=false
+etl_image_loaded=false
+
+# assume_role, reset_role and get_stack come from the Bash_Functions job workspace; only the legacy path needs them.
+load_bash_functions() {
+    local source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot; script_file
+    [ &quot;${bash_functions_loaded}&quot; = false ] || return 0
+    ls -la &quot;$source_scripts_folder&quot;
+    # Iterate through the files in the folder and source them
+    for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+        chmod +x &quot;$script_file&quot;
+        if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+            echo &quot;sourcing $script_file&quot;
+            # shellcheck source=/dev/null
+            source &quot;$script_file&quot;
+        fi
+    done
+    bash_functions_loaded=true
+}
+
+# The open variant removes concepts with the ETL image in docker.
+load_etl_image() {
+    local stack
+    [ &quot;${etl_image_loaded}&quot; = false ] || return 0
+    stack=$(get_stack &quot;staging&quot;)
+
+    ### Build ETL Image
+    aws s3 --sse=AES256 cp &quot;s3://${stack_s3_bucket}/${stack}/containers/pic-sure-hpds-etl.tar.gz&quot; pic-sure-hpds-etl.tar.gz --no-progress
+
+    HPDS_ETL_IMAGE=$(docker load &lt; ./pic-sure-hpds-etl.tar.gz | cut -d &apos; &apos; -f 3)
+    echo &quot;$HPDS_ETL_IMAGE&quot;
+    ls -alh &quot;$(pwd)&quot;
+    etl_image_loaded=true
+}
+
+stage_legacy() {
+    load_bash_functions
+    rm -rf local/hpds local/source
+    mkdir -p local/hpds/
+    mkdir -p local/source/
+
+    if [ &quot;${remove_concepts}&quot; = &quot;true&quot; ]; then
+        load_etl_image
+    fi
+
+    ### Pull data set to rekey.
+    assume_role &quot;${curated_datasets_s3_role}&quot;
+
+    aws s3 cp &quot;${source_url}&quot; local/source/javabins.tar --no-progress
+
+    ### Try extracting as compressed tar
+    if tar -xzvf local/source/javabins.tar -C local/source; then
+        echo &quot;Extracted compressed tar file.&quot;
+    else
+        echo &quot;Compressed extraction failed, trying non-compressed...&quot;
+        if tar -xvf local/source/javabins.tar -C local/source; then
+            echo &quot;Extracted non-compressed tar file.&quot;
+        else
+            echo &quot;Error: Extraction failed for both compressed and non-compressed tar files.&quot;
+            exit 1
+        fi
+    fi
+
+    reset_role
+
+    # For caution replicate data into local/hpds as the loader used to write there.
+    cp -r local/source/* local/hpds/
+
+    ### Open variant: remove concepts
+    if [ &quot;${remove_concepts}&quot; = &quot;true&quot; ]; then
+        # RemoveConceptFromMetadata reads the data set in /opt/local/hpds.
+        # add concepts to remove to /opt/local/hpds that contains the list of concepts to destigmatize
+        cp local/source/conceptsToRemove.txt local/hpds/
+        docker run -e HEAPSIZE=20480 -e JAVA_OPTS=&quot;-Xms4g&quot; -i -v &quot;${WORKSPACE}&quot;/local:/opt/local:Z -e LOADER_NAME=RemoveConceptFromMetadata &quot;$HPDS_ETL_IMAGE&quot;
+    fi
+
+    (
+        cd &quot;${WORKSPACE}&quot;/local/hpds/
+        # Leave the data set artifact as non-compressed for the rest of it&apos;s lifecycle
+        tar -cvf &quot;${legacy_name}.tar&quot; -- *.javabin encryption_key metadata.json
+        # fence_mapping.json is the auth variant&apos;s only (see stage_dataset). It goes first: the tar is the &quot;staged&quot; marker, so it
+        # must be the last upload.
+        if [ &quot;${variant}&quot; = auth ]; then
+            aws s3 --sse=AES256 cp metadata.json &quot;s3://${stack_s3_bucket}/data/${deploy_key_value}/fence_mapping.json&quot;
+        fi
+        aws s3 --sse=AES256 cp &quot;${legacy_name}.tar&quot; &quot;s3://${stack_s3_bucket}/data/${deploy_key_value}/${legacy_name}.tar&quot; --quiet
+    )
+}
+
+# data/&lt;auth key&gt;/fence_mapping.json is what the PSAMA deploy reads. Stack bucket only, instance role (no source credentials exist
+# here: src_aws is the only place that passes them on). Called with the auth variant set up and already staged.
+# Staged per-file: a missing mapping is restored from the staged metadata.json. Staged as a legacy tar: its metadata.json is inside
+# the tar and cannot be reached from here, so that is refused.
+ensure_fence_mapping() {
+    local fence_key=&quot;data/${deploy_key_value}/fence_mapping.json&quot;
+    if key_exists &quot;${fence_key}&quot;; then
+        return 0
+    fi
+    if ! key_exists &quot;${stage_key_prefix}manifest.tsv&quot;; then
+        refuse &quot;auth data for deploy key ${deploy_key_value} is staged as a legacy tar and ${fence_key} is missing; it cannot be restored in place: restage under a new deploy key (commit a change to the source URL lines of build-spec.json, then run this job)&quot;
+    fi
+    aws s3 cp &quot;s3://${stack_s3_bucket}/${stage_key_prefix}metadata.json&quot; &quot;s3://${stack_s3_bucket}/${fence_key}&quot; --sse AES256 --only-show-errors \
+        || refuse &quot;cannot restore ${fence_key} from ${stage_key_prefix}metadata.json&quot;
+    key_exists &quot;${fence_key}&quot; || refuse &quot;${fence_key} is still missing after the restore&quot;
+    echo &quot;fence_mapping.json restored from the staged metadata.json&quot;
+}
+
+# Plan first: work out the keys and validate the source of every variant that still has to be staged,
+# so a bad build-spec.json is refused before anything is copied.
+for variant in ${variants}; do
+    variant_setup &quot;${variant}&quot;
+    if ! is_staged &quot;${deploy_key_value}&quot; &quot;${stage_prefix}&quot; &quot;${legacy_name}&quot;; then
+        validate_source
+    fi
+done
+
+summary=&quot;&quot;
+for variant in ${variants}; do
+    variant_setup &quot;${variant}&quot;
+    if is_staged &quot;${deploy_key_value}&quot; &quot;${stage_prefix}&quot; &quot;${legacy_name}&quot;; then
+        echo &quot;${variant}: already staged, skipping (deploy key ${deploy_key_value})&quot;
+        if [ &quot;${variant}&quot; = auth ]; then
+            ensure_fence_mapping
+        fi
+        summary=&quot;${summary}${variant}: already staged (deploy key ${deploy_key_value})&quot;$&apos;\n&apos;
+        continue
+    fi
+    validate_source
+    echo &quot;${variant}: staging ${source_url} as deploy key ${deploy_key_value}&quot;
+    if [ &quot;${install_path}&quot; = dataset ]; then
+        stage_dataset
+    else
+        stage_legacy
+    fi
+    summary=&quot;${summary}${variant}: staged (deploy key ${deploy_key_value})&quot;$&apos;\n&apos;
+done
+
+### Optional deploy to the staging stack (DEPLOY_TO_STAGING_STACK=true).
+# The deploy needs the data of BOTH variants and the fence mapping, whichever variant was requested here. Everything is checked
+# first; staging_deploy.properties is written only when every check passed. The SystemGroovy step after this shell step starts
+# the deploy job from that file alone. No stack is looked up here: the deploy job resolves the staging stack under its locks.
+prepare_staging_deploy() {
+    local v auth_key=&quot;&quot; open_key=&quot;&quot; genomic_key props_tmp=&quot;staging_deploy.properties.tmp&quot;
+
+    for v in auth open; do
+        variant_setup &quot;${v}&quot;
+        is_staged &quot;${deploy_key_value}&quot; &quot;${stage_prefix}&quot; &quot;${legacy_name}&quot; \
+            || refuse &quot;staging deploy needs the ${v} data, which is not staged for deploy key ${deploy_key_value}; run this job with HPDS_VARIANT=${v} (or both) first&quot;
+        if [ &quot;${v}&quot; = auth ]; then auth_key=&quot;${deploy_key_value}&quot;; else open_key=&quot;${deploy_key_value}&quot;; fi
+    done
+
+    # PSAMA copies data/&lt;auth key&gt;/fence_mapping.json into its container: restore it when the auth data is staged per-file.
+    variant_setup auth
+    ensure_fence_mapping
+
+    genomic_key=$(blame_commit source_genomic_dataset_s3_url)
+    [ -n &quot;${genomic_key}&quot; ] || refuse &quot;staging deploy: no source_genomic_dataset_s3_url line in build-spec.json&quot;
+    [[ &quot;${genomic_key}&quot; =~ ^[0-9a-f]{7,40}$ ]] || refuse &quot;staging deploy: blame commit &apos;${genomic_key}&apos; for source_genomic_dataset_s3_url is not a git hash&quot;
+
+    {
+        echo &quot;auth_key=${auth_key}&quot;
+        echo &quot;open_key=${open_key}&quot;
+        echo &quot;genomic_key=${genomic_key}&quot;
+    } &gt; &quot;${props_tmp}&quot;
+    mv &quot;${props_tmp}&quot; staging_deploy.properties
+    echo &quot;staging deploy: checks passed; the next build step starts HPDS Data - Deploy to Staging Stack with the deploy keys (auth ${auth_key}, open ${open_key}, genomic ${genomic_key})&quot;
+}
+
+printf &apos;%s&apos; &quot;${summary}&quot;
+if [ &quot;${deploy_to_staging}&quot; = true ]; then
+    prepare_staging_deploy
+else
+    echo &quot;Next: run Check For Updates (or wait for the scheduled run) to deploy.&quot;
+fi
+</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+    <hudson.plugins.groovy.SystemGroovy plugin="groovy@457.v99900cb_85593">
+      <source class="hudson.plugins.groovy.StringSystemScriptSource">
+        <script plugin="script-security@1362.v67dc1f0e1b_b_3">
+          <script>import jenkins.*
+import jenkins.model.*
+import hudson.*
+import hudson.model.*
+
+// Starts HPDS Data - Deploy to Staging Stack, only when the shell step above asked for it by writing staging_deploy.properties
+// (auth_key, open_key, genomic_key) after all of its checks passed. The deploy job takes the locks, resolves the staging stack
+// and deploys. There is no stack parameter and no stack lookup here.
+def deployJobName = &quot;HPDS Data - Deploy to Staging Stack&quot;
+def propsFile = build.workspace?.child(&quot;staging_deploy.properties&quot;)
+if (propsFile == null || !propsFile.exists()) {
+    if (&quot;true&quot;.equals(build.buildVariables?.get(&quot;DEPLOY_TO_STAGING_STACK&quot;))) {
+        throw new AbortException(&quot;DEPLOY_TO_STAGING_STACK is true but staging_deploy.properties is missing; nothing was deployed&quot;)
+    }
+    println &quot;staging deploy: not requested&quot;
+    return
+}
+// The file is only ever written for a build that asked for the deploy; anything else is not trusted.
+if (!&quot;true&quot;.equals(build.buildVariables?.get(&quot;DEPLOY_TO_STAGING_STACK&quot;))) {
+    throw new AbortException(&quot;staging_deploy.properties exists but DEPLOY_TO_STAGING_STACK is not true; nothing was deployed&quot;)
+}
+
+def props = new Properties()
+props.load(new StringReader(propsFile.readToString()))
+
+def need = { String name, String pattern -&gt;
+    String value = (props.getProperty(name) ?: &quot;&quot;).trim()
+    if (!(value ==~ pattern)) {
+        throw new AbortException(&quot;staging_deploy.properties: &quot; + name + &quot; is missing or malformed; nothing was deployed&quot;)
+    }
+    return value
+}
+String authKey = need(&quot;auth_key&quot;, /[0-9a-f]{7,40}/)
+String openKey = need(&quot;open_key&quot;, /[0-9a-f]{7,40}/)
+String genomicKey = need(&quot;genomic_key&quot;, /[0-9a-f]{7,40}/)
+
+// Schedules a job and waits for it. Parameters that are not given keep their default value, as in a manual build.
+def deploy = { String jobName, Map&lt;String, String&gt; given -&gt;
+    def job = Jenkins.instance.getItemByFullName(jobName)
+    if (job == null) {
+        throw new AbortException(jobName + &quot; does not exist; nothing was deployed&quot;)
+    }
+    def values = []
+    job.getProperty(ParametersDefinitionProperty)?.parameterDefinitions?.each { pd -&gt;
+        if (!given.containsKey(pd.name)) {
+            def dv = pd.getDefaultParameterValue()
+            if (dv != null) {
+                values &lt;&lt; dv
+            }
+        }
+    }
+    given.each { k, v -&gt; values &lt;&lt; new StringParameterValue(k, v) }
+    println &quot;staging deploy: starting &quot; + jobName
+    def future = job.scheduleBuild2(0, new CauseAction(new Cause.UpstreamCause(build)), new ParametersAction(values))
+    if (future == null) {
+        throw new AbortException(jobName + &quot; could not be scheduled; nothing was deployed&quot;)
+    }
+    def started = future.waitForStart()
+    println &quot;staging deploy: &quot; + jobName + &quot; #&quot; + started.getNumber() + &quot; (&quot; + started.getUrl() + &quot;)&quot;
+    def run = future.get()
+    if (run.getResult() != Result.SUCCESS) {
+        throw new AbortException(jobName + &quot; #&quot; + run.getNumber() + &quot; failed (&quot; + run.getResult() + &quot;)&quot;)
+    }
+    println &quot;staging deploy: &quot; + jobName + &quot; #&quot; + run.getNumber() + &quot; succeeded&quot;
+}
+
+deploy(deployJobName, [
+    DATA_S3_OBJECT_KEY                 : authKey,
+    DESTIGMATIZED_DATASET_S3_OBJECT_KEY: openKey,
+    GENOMIC_DATASET_S3_OBJECT_KEY      : genomicKey,
+])
+
+println &quot;Deployed to the staging stack only. A later Deployment Pipeline run rebuilds the staging stack from build-spec.json.&quot;
+</script>
+          <sandbox>false</sandbox>
+        </script>
+      </source>
+    </hudson.plugins.groovy.SystemGroovy>
+  </builders>
+  <publishers/>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.49">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
+</project>

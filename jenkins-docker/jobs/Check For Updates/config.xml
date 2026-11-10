@@ -1,7 +1,20 @@
 <?xml version='1.1' encoding='UTF-8'?>
 <project>
   <actions/>
-  <description></description>
+  <description>Deploys when the data for the current deploy keys is already staged.
+
+Shell step (first): computes the auth and open deploy keys from build-spec.json (blame commit of the
+source_dataset_s3_url / source_destigmatized_dataset_s3_url lines) and checks that data/&lt;key&gt;/ is staged in the stack bucket
+(per-file: &lt;stage prefix&gt;manifest.tsv, legacy: &lt;name&gt;.tar), and that data/&lt;auth key&gt;/fence_mapping.json exists (the PSAMA deploy
+copies it into its container). If a variant is not staged, or the fence mapping is missing, the build FAILS before anything is built
+or scheduled, and says what to do: auth data staged per-file gets the mapping back from HPDS Data - Stage to Stack Bucket with
+HPDS_VARIANT=auth (it restores it from the staged metadata.json); auth data staged as a legacy tar must be restaged under a new deploy key.
+
+This job does not stage data. Order of a data release: commit the new URLs in build-spec.json, run HPDS Data - Stage to Stack Bucket
+with HPDS_VARIANT=both (by hand), then run this job (or wait for its scheduled run). Rollback: put the old tar URLs back in
+build-spec.json (new deploy key), run HPDS Data - Stage to Stack Bucket with both, then this job.
+
+When both variants are staged: Bash_Functions and PIC-SURE Pipeline run, then Deployment Pipeline is scheduled with the deploy keys.</description>
   <keepDependencies>false</keepDependencies>
   <properties/>
   <scm class="hudson.plugins.git.GitSCM" plugin="git@5.6.0">
@@ -29,6 +42,147 @@
   <triggers/>
   <concurrentBuild>false</concurrentBuild>
   <builders>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+# shellcheck disable=SC2154  # stack_s3_bucket is provided by Jenkins
+set -e
+
+# Fails fast unless the data for the current deploy keys is already staged in the stack bucket
+# (both variants, plus data/&lt;auth key&gt;/fence_mapping.json).
+# Nothing is staged here: run HPDS Data - Stage to Stack Bucket (by hand) for a variant that is reported missing.
+# Outputs (read by the last SystemGroovy step, only when both variants are staged):
+#   datasetKey.txt                 auth deploy key
+#   destigmatizedDatasetKey.txt    open deploy key
+#   genomicDatasetKey.txt
+
+rm -f datasetKey.txt destigmatizedDatasetKey.txt genomicDatasetKey.txt
+
+# ---- shared with the other HPDS job (Check For Updates / HPDS Data - Stage to Stack Bucket): keep this block identical ----
+dataset_marker=&quot;/data/hpds/pheno/datasets/&quot;
+
+# ListBucket on data/* is granted while HeadObject on a missing key may answer 403, so list first.
+key_exists() {
+    local key=&quot;$1&quot; out
+    if out=$(aws s3api list-objects-v2 --bucket &quot;${stack_s3_bucket}&quot; --prefix &quot;${key}&quot; --output json 2&gt; /dev/null); then
+        # jq 1.6 -e exits 0 on empty input: an empty listing must mean &quot;not there&quot;
+        [ -n &quot;${out}&quot; ] || return 1
+        printf &apos;%s&apos; &quot;${out}&quot; | jq -e --arg k &quot;${key}&quot; &apos;any(.Contents[]?; .Key == $k)&apos; &gt; /dev/null
+    else
+        aws s3api head-object --bucket &quot;${stack_s3_bucket}&quot; --key &quot;${key}&quot; &gt; /dev/null 2&gt;&amp;1
+    fi
+}
+
+# Commit that last changed the line of build-spec.json that holds the given field.
+# A boundary commit (root or shallow clone) is blamed as &quot;^&lt;hash&gt;&quot;; the marker is not part of the hash.
+blame_commit() {
+    local key
+    key=$(git blame --abbrev=39 build-spec.json | grep &quot;$1&quot; | cut -f 1 -d &apos; &apos;)
+    echo &quot;${key#^}&quot;
+}
+
+# Deploy key = blame commit; must look like a git hash (7-40 hex) because it becomes an S3 key segment.
+deploy_key() {
+    local key
+    key=$(blame_commit &quot;$1&quot;)
+    if [ -z &quot;${key}&quot; ]; then
+        echo &quot;ERROR: no line for $1 in build-spec.json&quot; &gt;&amp;2
+        exit 1
+    fi
+    if ! [[ &quot;${key}&quot; =~ ^[0-9a-f]{7,40}$ ]]; then
+        echo &quot;ERROR: blame commit &apos;${key}&apos; for $1 is not a git hash&quot; &gt;&amp;2
+        exit 1
+    fi
+    echo &quot;${key}&quot;
+}
+
+spec_url() {
+    jq -r --arg f &quot;$1&quot; &apos;.[$f] // &quot;&quot;&apos; build-spec.json | tr -d &apos;[:space:]&apos;
+}
+
+is_dataset_prefix() {
+    case &quot;$1&quot; in
+        *&quot;${dataset_marker}&quot;*) return 0 ;;
+    esac
+    return 1
+}
+
+# Dataset prefixes carry both variants in one dataset: the two URLs must be the same.
+require_identical_dataset_urls() {
+    local auth_url open_url
+    auth_url=$(spec_url source_dataset_s3_url)
+    open_url=$(spec_url source_destigmatized_dataset_s3_url)
+    if is_dataset_prefix &quot;${auth_url}&quot; || is_dataset_prefix &quot;${open_url}&quot;; then
+        if [ &quot;${auth_url}&quot; != &quot;${open_url}&quot; ]; then
+            echo &quot;ERROR: source_dataset_s3_url (${auth_url}) and source_destigmatized_dataset_s3_url (${open_url}) must be identical for a dataset prefix&quot; &gt;&amp;2
+            exit 1
+        fi
+    fi
+}
+
+# is_staged &lt;deploy key&gt; &lt;stage prefix&gt; &lt;legacy tar name&gt;
+# Staged = data/&lt;key&gt;/&lt;stage prefix&gt;manifest.tsv exists (per-file staging, written last)
+#       or data/&lt;key&gt;/&lt;legacy tar name&gt;.tar exists (legacy .tar staging).
+is_staged() {
+    key_exists &quot;data/$1/$2manifest.tsv&quot; || key_exists &quot;data/$1/$3.tar&quot;
+}
+# ---- end of shared block ----
+
+require_identical_dataset_urls
+
+# check_variant &lt;variant&gt; &lt;build-spec field&gt; &lt;stage prefix&gt; &lt;legacy tar name&gt;
+# Sets variant_key (deploy key) and variant_missing (true|false).
+check_variant() {
+    local variant=&quot;$1&quot; field=&quot;$2&quot; stage_prefix=&quot;$3&quot; legacy_name=&quot;$4&quot;
+    variant_key=$(deploy_key &quot;${field}&quot;)
+    if is_staged &quot;${variant_key}&quot; &quot;${stage_prefix}&quot; &quot;${legacy_name}&quot;; then
+        variant_missing=false
+        echo &quot;${variant}: staged (deploy key ${variant_key})&quot;
+    else
+        variant_missing=true
+    fi
+}
+
+check_variant auth source_dataset_s3_url javabins_rekeyed/ javabins_rekeyed
+auth_key=&quot;${variant_key}&quot;
+auth_missing=&quot;${variant_missing}&quot;
+check_variant open source_destigmatized_dataset_s3_url destigmatized_javabins_rekeyed/ destigmatized_javabins_rekeyed
+open_key=&quot;${variant_key}&quot;
+open_missing=&quot;${variant_missing}&quot;
+
+if [ &quot;${auth_missing}&quot; = true ] || [ &quot;${open_missing}&quot; = true ]; then
+    hint=auth
+    if [ &quot;${auth_missing}&quot; = true ] &amp;&amp; [ &quot;${open_missing}&quot; = true ]; then
+        hint=both
+    elif [ &quot;${open_missing}&quot; = true ]; then
+        hint=open
+    fi
+    if [ &quot;${auth_missing}&quot; = true ]; then
+        echo &quot;ERROR: auth dataset is not staged: deploy key ${auth_key}, source $(spec_url source_dataset_s3_url); run HPDS Data - Stage to Stack Bucket with HPDS_VARIANT=${hint}&quot; &gt;&amp;2
+    fi
+    if [ &quot;${open_missing}&quot; = true ]; then
+        echo &quot;ERROR: open dataset is not staged: deploy key ${open_key}, source $(spec_url source_destigmatized_dataset_s3_url); run HPDS Data - Stage to Stack Bucket with HPDS_VARIANT=${hint}&quot; &gt;&amp;2
+    fi
+    echo &quot;Nothing was scheduled.&quot; &gt;&amp;2
+    exit 1
+fi
+
+# The PSAMA deploy copies data/&lt;auth key&gt;/fence_mapping.json into its container, so &quot;staged&quot; also requires it.
+if ! key_exists &quot;data/${auth_key}/fence_mapping.json&quot;; then
+    if key_exists &quot;data/${auth_key}/javabins_rekeyed/manifest.tsv&quot;; then
+        echo &quot;ERROR: auth dataset is staged but fence_mapping.json missing: deploy key ${auth_key} (data/${auth_key}/fence_mapping.json); run HPDS Data - Stage to Stack Bucket with HPDS_VARIANT=auth (restores it from the staged metadata.json)&quot; &gt;&amp;2
+    else
+        echo &quot;ERROR: auth dataset is staged as a legacy tar but fence_mapping.json missing: deploy key ${auth_key} (data/${auth_key}/fence_mapping.json); it cannot be restored in place: restage under a new deploy key (commit a change to the source URL lines of build-spec.json, then run HPDS Data - Stage to Stack Bucket)&quot; &gt;&amp;2
+    fi
+    echo &quot;Nothing was scheduled.&quot; &gt;&amp;2
+    exit 1
+fi
+
+echo &quot;${auth_key}&quot; &gt; datasetKey.txt
+echo &quot;${open_key}&quot; &gt; destigmatizedDatasetKey.txt
+blame_commit source_genomic_dataset_s3_url &gt; genomicDatasetKey.txt
+</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
     <hudson.plugins.groovy.SystemGroovy plugin="groovy@457.v99900cb_85593">
       <source class="hudson.plugins.groovy.StringSystemScriptSource">
         <script plugin="script-security@1362.v67dc1f0e1b_b_3">
@@ -58,39 +212,6 @@ if (run.getResult() != Result.SUCCESS) {
         </script>
       </source>
     </hudson.plugins.groovy.SystemGroovy>
-    <hudson.tasks.Shell>
-      <command>#!/bin/bash
-
-LAST_DATASET_MODIFICATION_COMMIT=`git blame --abbrev=39 build-spec.json | grep source_dataset_s3_url | cut -f 1 -d &apos; &apos;`
-
-aws s3api head-object --bucket $stack_s3_bucket --key &quot;data/${LAST_DATASET_MODIFICATION_COMMIT}/javabins_rekeyed.tar&quot; || not_exist=true
-if [ $not_exist ]; then
-  echo $LAST_DATASET_MODIFICATION_COMMIT &gt; toBeRekeyed.txt
-  echo &quot;Will rekey new dataset.&quot;
-else
-  echo $LAST_DATASET_MODIFICATION_COMMIT &gt; alreadyRekeyed.txt
-  echo &quot;Using existing dataset (Skipping rekey).&quot;
-fi
-
-
-LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT=`git blame --abbrev=39 build-spec.json | grep source_destigmatized_dataset_s3_url | cut -f 1 -d &apos; &apos;`
-
-aws s3api head-object --bucket $stack_s3_bucket --key &quot;data/${LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT}/destigmatized_javabins_rekeyed.tar&quot; || not_exist_destig=false
-
-if [ $not_exist_destig ]; then
-  echo $LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT &gt; destigmatized_toBeRekeyed.txt
-  echo &quot;Will rekey new destigmatized dataset.&quot;
-else
-  echo $LAST_DESTIGMATIZED_DATASET_MODIFICATION_COMMIT &gt; destigmatized_alreadyRekeyed.txt
-  echo &quot;Using existing destigmatized dataset (Skipping rekey).&quot;
-fi
-
-LAST_GENOMIC_DATASET_MODIFICATION_COMMIT=`git blame --abbrev=39 build-spec.json | grep source_genomic_dataset_s3_url | cut -f 1 -d &apos; &apos;`
-echo $LAST_GENOMIC_DATASET_MODIFICATION_COMMIT &gt; genomicDatasetKey.txt
-
-</command>
-      <configuredLocalRules/>
-    </hudson.tasks.Shell>
     <hudson.plugins.groovy.SystemGroovy plugin="groovy@457.v99900cb_85593">
       <source class="hudson.plugins.groovy.StringSystemScriptSource">
         <script plugin="script-security@1362.v67dc1f0e1b_b_3">
@@ -98,50 +219,28 @@ echo $LAST_GENOMIC_DATASET_MODIFICATION_COMMIT &gt; genomicDatasetKey.txt
 import jenkins.model.*
 import hudson.*
 import hudson.model.*
-import groovy.json.JsonSlurper;
-
-def buildSpec = new JsonSlurper().parse(new File(&quot;/var/jenkins_home/workspace/Check For Updates/build-spec.json&quot;));
 
 def envVars= Hudson.instance.getItem(&quot;Check For Updates&quot;).lastBuild.properties.get(&quot;envVars&quot;);
 
-String dataset_s3_object_key ;
-if(new File(&quot;/var/jenkins_home/workspace/Check For Updates/toBeRekeyed.txt&quot;).exists()){
-    def bucket_hash = new File(&quot;/var/jenkins_home/workspace/Check For Updates/toBeRekeyed.txt&quot;).text
-    Jenkins.instance.getItemByFullName(&quot;Import_and_Rekey_HPDS_Data&quot;)
-    .scheduleBuild2(0, new ParametersAction([
-        new StringParameterValue(&quot;source_s3_url&quot;, buildSpec.source_dataset_s3_url.trim()),
-        new StringParameterValue(&quot;output_file_name&quot;, &quot;javabins_rekeyed&quot;),
-        new StringParameterValue(&quot;destination_bucket_hash&quot;, bucket_hash.trim()),
-        new BooleanParameterValue(&quot;isDestigmatized&quot;,false)
-        ])).get()
-    dataset_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/toBeRekeyed.txt&quot;).text
-} else {
-    dataset_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/alreadyRekeyed.txt&quot;).text
+// The shell step above failed the build unless both datasets are staged; it left the deploy keys in the workspace.
+def readKey = { String fileName -&gt;
+    def keyFile = new File(&quot;/var/jenkins_home/workspace/Check For Updates/&quot; + fileName)
+    if (!keyFile.exists()) {
+        throw new AbortException(fileName + &quot; is missing: the staged check did not run or did not pass; Deployment Pipeline not started&quot;)
+    }
+    return keyFile.text.trim()
 }
 
-String destigmatized_dataset_s3_object_key ;
-if(new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_toBeRekeyed.txt&quot;).exists()){
-    def bucket_hash = new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_toBeRekeyed.txt&quot;).text
-    Jenkins.instance.getItemByFullName(&quot;Import_and_Rekey_HPDS_Data&quot;)
-    .scheduleBuild2(0, new ParametersAction([
-        new StringParameterValue(&quot;source_s3_url&quot;, buildSpec.source_destigmatized_dataset_s3_url.trim()),
-        new StringParameterValue(&quot;output_file_name&quot;, &quot;destigmatized_javabins_rekeyed&quot;),
-        new StringParameterValue(&quot;destination_bucket_hash&quot;, bucket_hash.trim()),
-        new BooleanParameterValue(&quot;isDestigmatized&quot;,true)
-        ])).get()
-    destigmatized_dataset_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_toBeRekeyed.txt&quot;).text
-} else {
-    destigmatized_dataset_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/destigmatized_alreadyRekeyed.txt&quot;).text
-}
-
-genomic_s3_object_key = new File(&quot;/var/jenkins_home/workspace/Check For Updates/genomicDatasetKey.txt&quot;).text
+String dataset_s3_object_key = readKey(&quot;datasetKey.txt&quot;)
+String destigmatized_dataset_s3_object_key = readKey(&quot;destigmatizedDatasetKey.txt&quot;)
+String genomic_s3_object_key = readKey(&quot;genomicDatasetKey.txt&quot;)
 
 Jenkins.instance.getItemByFullName(&quot;Deployment Pipeline&quot;)
     .scheduleBuild2(0, new ParametersAction([
         new StringParameterValue(&quot;deployment_git_hash&quot;, envVars[&quot;GIT_COMMIT&quot;].trim()),
-        new StringParameterValue(&quot;dataset_s3_object_key&quot;, dataset_s3_object_key.trim()),
-        new StringParameterValue(&quot;destigmatized_dataset_s3_object_key&quot;, destigmatized_dataset_s3_object_key.trim()),
-        new StringParameterValue(&quot;genomic_dataset_s3_object_key&quot;, genomic_s3_object_key.trim()),
+        new StringParameterValue(&quot;dataset_s3_object_key&quot;, dataset_s3_object_key),
+        new StringParameterValue(&quot;destigmatized_dataset_s3_object_key&quot;, destigmatized_dataset_s3_object_key),
+        new StringParameterValue(&quot;genomic_dataset_s3_object_key&quot;, genomic_s3_object_key),
 ])).get()
 
 

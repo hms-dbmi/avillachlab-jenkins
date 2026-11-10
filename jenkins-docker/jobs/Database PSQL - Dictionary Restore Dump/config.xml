@@ -1,0 +1,207 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<project>
+  <actions/>
+  <description>Restores the PIC-SURE dictionary (schema dict) into the picsure database with pg_restore --clean from a pg_dump --format=d tar.
+
+Source: source_dictionary_db_s3_url in build-spec.json of the release-control checkout. It must be s3://&lt;bucket&gt;/&lt;key&gt; with a key ending in .tar (surrounding whitespace is ignored). Anything else is refused ("REFUSED: ...", exit 1) before any AWS call.
+- In-boundary dump: s3://bdc-etl-data-d0d6191/data/dictionary/db-dumps/dictionary_db_&lt;ts&gt;.tar, written by the pheno job PIC-SURE Dictionary ETL Pipeline/dict-ingest (export-db step). Read as arn:aws:iam::515157839325:role/curated-datasets-s3-role through a temporary AWS CLI profile (credential_source = Ec2InstanceMetadata, selected with --profile), the same way HPDS Data - Stage to Stack Bucket reads a dataset prefix. This role is fixed: it does not follow the global curated_datasets_s3_role.
+- Legacy dump (any other bucket): read with curated_datasets_s3_role (assume_role before the download, reset_role after it, role skipped when the variable is not set). This is the rollback: put the old legacy URL back in build-spec.json.
+The log says which source and identity were used.
+
+Before the database is touched the dump is checked: the download is non-empty, it extracts, dump_files/toc.dat exists after the files are flattened into dump_files/, pg_restore --list reads the table of contents, and every TABLE DATA entry has its data file. If a check fails the build fails before the secret fetch, the connection test and pg_restore. Then the secret is fetched through the Bash_Functions job scripts, the connection is tested and pg_restore runs (flags unchanged).
+
+IAM needed for the in-boundary path: curated-datasets-s3-role (515157839325) needs s3:GetObject on bdc-etl-data-d0d6191/data/dictionary/db-dumps/* and s3:ListBucket on that bucket for the prefix data/dictionary/db-dumps/*; its trust policy allows this Jenkins' instance role, which needs sts:AssumeRole on it.
+
+No weights job is needed afterwards: the search weights (concept_node.searchable_fields) are in the dictionary database the dump was taken from, built by the dictionary ETL's reset-weights step (rebuild_searchable_fields.sql, the same tiers as the weights job's defaults), so the restore brings them along.</description>
+  <keepDependencies>false</keepDependencies>
+  <properties/>
+  <scm class="hudson.plugins.git.GitSCM" plugin="git@5.10.0">
+    <configVersion>2</configVersion>
+    <userRemoteConfigs>
+      <hudson.plugins.git.UserRemoteConfig>
+        <url>${release_control_git_repo}</url>
+        <credentialsId>${git_credentials_id}</credentialsId>
+      </hudson.plugins.git.UserRemoteConfig>
+    </userRemoteConfigs>
+    <branches>
+      <hudson.plugins.git.BranchSpec>
+        <name>${release_control_git_hash}</name>
+      </hudson.plugins.git.BranchSpec>
+    </branches>
+    <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+    <submoduleCfg class="empty-list"/>
+    <extensions/>
+  </scm>
+  <canRoam>true</canRoam>
+  <disabled>false</disabled>
+  <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+  <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+  <jdk>(System)</jdk>
+  <triggers/>
+  <concurrentBuild>false</concurrentBuild>
+  <builders>
+    <hudson.plugins.groovy.SystemGroovy plugin="groovy@497.v7b_061a_a_de65d">
+      <source class="hudson.plugins.groovy.StringSystemScriptSource">
+        <script plugin="script-security@1399.ve6a_66547f6e1">
+          <script>import jenkins.*
+import jenkins.model.*
+import hudson.*
+import hudson.model.*
+
+def bashFunctionsJob = Jenkins.instance.getItemByFullName(&quot;Bash_Functions&quot;).scheduleBuild2(0).get()</script>
+          <sandbox>false</sandbox>
+        </script>
+      </source>
+    </hudson.plugins.groovy.SystemGroovy>
+    <hudson.tasks.Shell>
+      <command>#!/bin/bash
+# shellcheck disable=SC2154  # database_psql_*, curated_datasets_s3_role, JENKINS_HOME are provided by Jenkins
+set -e
+# Bucket the in-boundary dictionary pipeline writes its dumps to. A dump URL in this bucket is read as INBOUNDARY_SOURCE_ROLE
+# (fixed: the global curated_datasets_s3_role may name another account's role); any other bucket is the legacy location and is
+# read through ${curated_datasets_s3_role}.
+INBOUNDARY_DUMP_BUCKET=&quot;bdc-etl-data-d0d6191&quot;
+INBOUNDARY_SOURCE_ROLE=&quot;arn:aws:iam::515157839325:role/curated-datasets-s3-role&quot;
+
+# Source folder containing the scripts
+source_scripts_folder=&quot;${JENKINS_HOME}/workspace/Bash_Functions/&quot;
+ls -la &quot;$source_scripts_folder&quot;
+
+# Iterate through the files in the folder and source them
+for script_file in &quot;$source_scripts_folder&quot;*.sh; do
+    chmod +x &quot;$script_file&quot;
+    if [ -f &quot;$script_file&quot; ] &amp;&amp; [ -x &quot;$script_file&quot; ]; then
+        echo &quot;sourcing $script_file&quot;
+        # shellcheck source=/dev/null
+        source &quot;$script_file&quot;
+    fi
+done
+
+refuse() {
+    echo &quot;REFUSED: $*&quot; &gt;&amp;2
+    exit 1
+}
+
+### Get the s3 source location for the dump archive from the build-spec.json (surrounding whitespace is stripped).
+### All of this is checked before anything talks to AWS.
+S3_SOURCE_LOCATION=$(jq -r &apos;(.source_dictionary_db_s3_url // &quot;&quot;) | if type == &quot;string&quot; then gsub(&quot;^\\s+|\\s+$&quot;; &quot;&quot;) else &quot;&quot; end&apos; build-spec.json) \
+    || refuse &quot;cannot read source_dictionary_db_s3_url from build-spec.json&quot;
+[ -n &quot;$S3_SOURCE_LOCATION&quot; ] || refuse &quot;source_dictionary_db_s3_url is missing or empty in build-spec.json&quot;
+s3_url_regex=&apos;^s3://([^/[:space:]]+)/([^[:space:]]+)$&apos;
+[[ &quot;$S3_SOURCE_LOCATION&quot; =~ $s3_url_regex ]] || refuse &quot;source_dictionary_db_s3_url is not s3://&lt;bucket&gt;/&lt;key&gt;: $S3_SOURCE_LOCATION&quot;
+SOURCE_BUCKET=&quot;${BASH_REMATCH[1]}&quot;
+SOURCE_KEY=&quot;${BASH_REMATCH[2]}&quot;
+[[ &quot;$SOURCE_KEY&quot; == *.tar ]] || refuse &quot;source_dictionary_db_s3_url key does not end in .tar: $S3_SOURCE_LOCATION&quot;
+
+rm -rf dictionary_db.tar temp_extract dump_files dump_toc.list
+
+### Download the dump. The in-boundary bucket is read as INBOUNDARY_SOURCE_ROLE through a temporary AWS CLI profile: the CLI
+### assumes the role itself (credentials from the instance metadata), so no credential passes through this shell, and --profile
+### makes the CLI ignore any AWS_* keys in the environment. Any other bucket is the legacy path.
+if [ &quot;$SOURCE_BUCKET&quot; = &quot;$INBOUNDARY_DUMP_BUCKET&quot; ]; then
+    echo &quot;Dictionary dump source: in-boundary bucket, $S3_SOURCE_LOCATION (identity: $INBOUNDARY_SOURCE_ROLE through an AWS CLI profile)&quot;
+    session=&quot;$(printf &apos;%s-%s&apos; &quot;${JOB_NAME:-dictionary-restore}&quot; &quot;${BUILD_NUMBER:-0}&quot; | tr -c &apos;A-Za-z0-9+=,.@_-&apos; &apos;-&apos;)&quot;
+    [ &quot;${#session}&quot; -le 64 ] || session=&quot;${session: -64}&quot;
+    src_cfg=&quot;$(mktemp &quot;${TMPDIR:-/tmp}/dict-source-profile.XXXXXX&quot;)&quot; || refuse &quot;cannot create the AWS profile file&quot;
+    trap &apos;rm -f &quot;${src_cfg}&quot;&apos; EXIT
+    chmod 600 &quot;$src_cfg&quot;
+    printf &apos;[profile dict-source]\nrole_arn = %s\ncredential_source = Ec2InstanceMetadata\nrole_session_name = %s\n&apos; &quot;$INBOUNDARY_SOURCE_ROLE&quot; &quot;$session&quot; &gt; &quot;$src_cfg&quot;
+    download_rc=0
+    AWS_CONFIG_FILE=&quot;$src_cfg&quot; aws --profile dict-source s3 cp &quot;$S3_SOURCE_LOCATION&quot; dictionary_db.tar || download_rc=$?
+    rm -f &quot;$src_cfg&quot;
+    [ &quot;$download_rc&quot; -eq 0 ] || { echo &quot;Download of $S3_SOURCE_LOCATION as $INBOUNDARY_SOURCE_ROLE failed (exit $download_rc)&quot; &gt;&amp;2; exit &quot;$download_rc&quot;; }
+else
+    role_assumed=&quot;&quot;
+    if [ -n &quot;${curated_datasets_s3_role:-}&quot; ]; then
+        echo &quot;Dictionary dump source: legacy location, $S3_SOURCE_LOCATION (identity: curated_datasets_s3_role)&quot;
+        assume_role &quot;${curated_datasets_s3_role}&quot;
+        role_assumed=1
+    else
+        echo &quot;Dictionary dump source: legacy location, $S3_SOURCE_LOCATION (identity: instance role, curated_datasets_s3_role is not set)&quot;
+    fi
+    download_rc=0
+    aws s3 cp &quot;$S3_SOURCE_LOCATION&quot; dictionary_db.tar || download_rc=$?
+    if [ -n &quot;$role_assumed&quot; ]; then
+        reset_role
+    fi
+    [ &quot;$download_rc&quot; -eq 0 ] || { echo &quot;Download of $S3_SOURCE_LOCATION failed (exit $download_rc)&quot; &gt;&amp;2; exit &quot;$download_rc&quot;; }
+fi
+
+### Check the dump before anything touches the database (pg_restore --clean drops objects).
+[ -s dictionary_db.tar ] || { echo &quot;Dump check failed: the downloaded dictionary_db.tar is missing or empty&quot; &gt;&amp;2; exit 1; }
+
+# extract archive and move dump files to set workspace location called dump_files
+mkdir temp_extract
+tar -xvf dictionary_db.tar -C temp_extract || { echo &quot;Dump check failed: dictionary_db.tar could not be extracted&quot; &gt;&amp;2; exit 1; }
+
+mkdir dump_files
+find temp_extract -type f -exec mv {} dump_files/ \;
+[ -f dump_files/toc.dat ] || { echo &quot;Dump check failed: no toc.dat in the dump (not a pg_dump --format=d directory)&quot; &gt;&amp;2; exit 1; }
+# Read the dump&apos;s table of contents without a database, and require the data file of every TABLE DATA entry
+# (&lt;dumpId&gt;.dat or a compressed &lt;dumpId&gt;.dat.*): a truncated toc.dat or a missing data file fails here, not halfway
+# through pg_restore --clean.
+pg_restore --list dump_files/ &gt; dump_toc.list || { echo &quot;Dump check failed: pg_restore cannot read the dump table of contents&quot; &gt;&amp;2; exit 1; }
+missing_data_files=0
+while read -r dump_id; do
+    if ! compgen -G &quot;dump_files/${dump_id}.dat*&quot; &gt; /dev/null; then
+        echo &quot;Dump check failed: missing data file ${dump_id}.dat for a TABLE DATA entry&quot; &gt;&amp;2
+        missing_data_files=$((missing_data_files + 1))
+    fi
+done &lt; &lt;(grep -E &apos;^[0-9]+; [0-9]+ [0-9]+ TABLE DATA &apos; dump_toc.list | cut -d &apos;;&apos; -f 1)
+[ &quot;${missing_data_files}&quot; -eq 0 ] || exit 1
+echo &quot;Dump looks like a pg_dump directory: $(find dump_files -type f | wc -l | tr -d &apos; &apos;) files&quot;
+
+assume_role
+
+# Fetch and extract credentials
+db_psql_user_secrets=$(fetch_secret &quot;$database_psql_root_user_secret_name&quot;)
+conn_user=$(extract_field &quot;$db_psql_user_secrets&quot; &quot;username&quot;)
+conn_pass=$(extract_field &quot;$db_psql_user_secrets&quot; &quot;password&quot;)
+
+# Test the connection (this command tests the connection and exits)
+echo &quot;Testing connection...&quot;
+PGPASSWORD=&quot;$conn_pass&quot; psql \
+    --host=&quot;$database_psql_host_address&quot; \
+    --port=&quot;5432&quot; \
+    --username=&quot;$conn_user&quot; \
+    --dbname=&quot;picsure&quot; \
+    -c &quot;\q&quot; || { echo &quot;Connection test failed!&quot;; exit 1; }
+
+echo &quot;Connection test successful!&quot;
+
+# Run pg_restore using the dump files provided in the dump_files workspace directory
+PGPASSWORD=&quot;$(extract_field &quot;$db_psql_user_secrets&quot; &apos;password&apos;)&quot; \
+pg_restore \
+   --host=&quot;${database_psql_host_address}&quot; \
+   --port=&quot;5432&quot; \
+   --username=&quot;$(extract_field &quot;$db_psql_user_secrets&quot; &apos;username&apos;)&quot; \
+   --dbname=&quot;picsure&quot; \
+   --format=d \
+   --jobs=10 \
+   --clean \
+   --verbose \
+   --no-owner \
+   --no-privileges \
+   --no-tablespaces \
+   --no-comments \
+   --no-publications \
+   --no-subscriptions \
+   --no-security-labels \
+   --no-table-access-method \
+   --schema=&quot;dict&quot; \
+   &quot;dump_files/&quot;
+
+</command>
+      <configuredLocalRules/>
+    </hudson.tasks.Shell>
+  </builders>
+  <publishers/>
+  <buildWrappers>
+    <hudson.plugins.ws__cleanup.PreBuildCleanup plugin="ws-cleanup@0.49">
+      <deleteDirs>false</deleteDirs>
+      <cleanupParameter></cleanupParameter>
+      <externalDelete></externalDelete>
+      <disableDeferredWipeout>false</disableDeferredWipeout>
+    </hudson.plugins.ws__cleanup.PreBuildCleanup>
+  </buildWrappers>
+</project>
