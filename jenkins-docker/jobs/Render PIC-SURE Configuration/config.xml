@@ -5,11 +5,13 @@
 
 The .tftpl is the file people edit. Pull it with Download PIC-SURE Configuration Template, change it, push it back with Upload PIC-SURE Configuration Template, then render. The rendered .env in S3 is a build artifact: hand-editing it accomplishes nothing, because the next render overwrites it.
 
-Secrets are reused, not minted. PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT are read back out of this stack's currently rendered gateway.env, operations.env and query.env, and LOGGING_API_KEY out of the shared logging.env that every stack reads. Re-rendering one service therefore leaves the values the other services are still running with alone. If the files that share a value disagree, the run aborts instead of picking one.
+Secrets are reused, not minted. PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT are read back out of this stack's currently rendered gateway.env, operations.env and query.env, and LOGGING_API_KEY out of the shared logging.env that every stack reads. PICSURE_INTERNAL_TOKEN is read back out of the shared picsure-dictionary.env, and out of this stack&apos;s auth-hpds.env when the dictionary env does not carry it yet. Re-rendering one service therefore leaves the values the other services are still running with alone. If the files that share a value disagree, the run aborts instead of picking one.
 
 ROTATE_STACK_SECRETS and ROTATE_LOGGING_API_KEY mint instead of reusing. Each requires every consumer of its values to render in the same run: gateway, operations and query for the first; logging, gateway, operations, visualization and dictionary for the second. Both are checkboxes on Rotate PIC-SURE Stack Secrets, which is the job to use, because a new value is only safe once the matching redeploys have followed it. A first render, where the object does not exist yet, mints under the same all-consumers gate; an object that exists but holds a blank value aborts and sends you to the rotation job.
 
 LOGGING_API_KEY is one value for every stack. This job renders it into logging.env, which has no stack segment, and into the dictionary env and this stack's gateway, operations and visualization env files. Two consumers are not rendered here. Upload PSAMA Configuration adds the key to psama.env, and the frontend reads it from configs/pic-sure-frontend/&lt;target_stack&gt;/bdc.env, which is uploaded by hand through Upload PIC-SURE-Frontend Configuration. Minting a new key here leaves both of those files, and every other stack's gateway, operations and visualization env files, on the old key until each is uploaded or rendered again. Until then their audit events are dropped.
+
+PICSURE_INTERNAL_TOKEN is also one value for every stack. The dictionary checks it on its /internal endpoints and auth HPDS presents it, so this job renders it into the stackless picsure-dictionary.env and into this stack&apos;s auth-hpds.env whenever RENDER_DICTIONARY or RENDER_AUTH_HPDS is set. When both files hold a value and the two differ, the run aborts before Terraform. A run mints a value only when neither file holds one and RENDER_DICTIONARY is true, so that the new value lands in the one file every other stack reads it back from. ROTATE_PICSURE_INTERNAL_TOKEN mints regardless and requires RENDER_DICTIONARY and RENDER_AUTH_HPDS both true. ADOPT_PICSURE_INTERNAL_TOKEN overwrites this stack&apos;s selected copy with the dictionary&apos;s value, which is how every other stack follows a rotation. A selected template that does not reference the token stops the run: the value could not be read back afterwards, and each stack would end up minting its own. That is most likely a shared S3 template from before the token, so add the PICSURE_INTERNAL_TOKEN line to it. An infrastructure revision from before the token, one that declares no picsure_internal_token variable, renders as it did before unless a selected env file carries a token now. Then the run stops, because rendering that file would drop the token, and for the dictionary env it would drop it for every stack. When a file assigns the token twice the last assignment counts, as it does for the container, and a trailing carriage return is ignored.
 
 TARGET_STACK means what it says for six of the eight objects. picsure-dictionary.env and logging.env are the exceptions: their keys carry no stack segment, so every stack's deploy pulls those files and rendering either one reaches all of them at once.
 
@@ -17,7 +19,7 @@ operations.env carries no database password. It names the AWS Secrets Manager My
 
 The dictionary's DATASOURCE_URL and DATASOURCE_USERNAME are never minted. Each is read back out of the rendered picsure-dictionary.env, falls back to the controller global the dictionary image was built from when the object does not carry it (database_psql_host_address and database_psql_app_user_secret_name), and stops the run only when both sources are empty.
 
-One thing to watch in the console. Terraform prints the rendered picsure-dictionary.env in full in the auto-approved plan: its inputs are an RDS hostname and a Secrets Manager secret id rather than credentials, so nothing feeding it is marked sensitive. Every env file that does carry a secret is masked instead. That is new exposure for a file that used to be hand-uploaded, so treat a dictionary render's console output accordingly.</description>
+No secret reaches the console. Terraform masks the content of every env file that carries one in the auto-approved plan, and picsure-dictionary.env is one of them: LOGGING_API_KEY and PICSURE_INTERNAL_TOKEN are sensitive inputs, so its content prints as (sensitive value). This job reports only whether each shared value was reused or generated, never the value.</description>
   <keepDependencies>false</keepDependencies>
   <properties>
     <hudson.model.ParametersDefinitionProperty>
@@ -81,6 +83,16 @@ One thing to watch in the console. Terraform prints the rendered picsure-diction
         <hudson.model.BooleanParameterDefinition>
           <name>ROTATE_STACK_SECRETS</name>
           <description>Mint new PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT values instead of reusing the rendered ones. All three live in per-stack objects, so this reaches TARGET_STACK and no other stack. It requires RENDER_GATEWAY, RENDER_OPERATIONS and RENDER_QUERY all true, and those three services must be redeployed afterwards. Use the Rotate PIC-SURE Stack Secrets job, which pairs the mint with the redeploys.</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>ROTATE_PICSURE_INTERNAL_TOKEN</name>
+          <description>Mint a new PICSURE_INTERNAL_TOKEN instead of reusing the rendered one. The dictionary checks it and auth HPDS presents it, so this requires RENDER_DICTIONARY and RENDER_AUTH_HPDS both true, and both must be redeployed afterwards. One value serves every stack: configs/picsure-dictionary/picsure-dictionary.env has no stack segment. Every other stack&apos;s auth HPDS must then be rendered with ADOPT_PICSURE_INTERNAL_TOKEN and redeployed together with that stack&apos;s dictionary, or its PFB exports end in ERROR. Use the Rotate PIC-SURE Stack Secrets job with this box ticked; it does this stack&apos;s render and redeploys and names the follow-ups at the end.</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>ADOPT_PICSURE_INTERNAL_TOKEN</name>
+          <description>Take PICSURE_INTERNAL_TOKEN from the shared picsure-dictionary.env and overwrite this stack&apos;s copy with it, instead of aborting when the two differ. Requires RENDER_AUTH_HPDS true, and auth HPDS must be redeployed afterwards. This is the follow-up for every other stack after a rotation. It cannot be combined with ROTATE_PICSURE_INTERNAL_TOKEN, and it aborts when the dictionary env holds no value to adopt.</description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
@@ -168,6 +180,8 @@ render_logging=&quot;${RENDER_LOGGING:-false}&quot;
 render_dictionary=&quot;${RENDER_DICTIONARY:-false}&quot;
 rotate_stack_secrets=&quot;${ROTATE_STACK_SECRETS:-false}&quot;
 rotate_logging_api_key=&quot;${ROTATE_LOGGING_API_KEY:-false}&quot;
+rotate_picsure_internal_token=&quot;${ROTATE_PICSURE_INTERNAL_TOKEN:-false}&quot;
+adopt_picsure_internal_token=&quot;${ADOPT_PICSURE_INTERNAL_TOKEN:-false}&quot;
 
 if [ &quot;$render_gateway&quot; != &quot;true&quot; ] &amp;&amp;
    [ &quot;$render_operations&quot; != &quot;true&quot; ] &amp;&amp;
@@ -204,6 +218,29 @@ if [ &quot;$render_logging&quot; = &quot;true&quot; ] || [ &quot;$render_gateway
   logging_consumer_selected=true
 fi
 
+# PICSURE_INTERNAL_TOKEN is checked by the dictionary on /internal and presented by auth HPDS.
+# picsure-dictionary.env has no stack segment, so it is the one copy every stack reads. Each entry
+# below is a per-stack consumer: the name of its render flag, the flag&apos;s value, its rendered env
+# object, and its template.
+internal_token_stack_consumers=(
+  &quot;RENDER_AUTH_HPDS|${render_auth_hpds}|configs/hpds/${TARGET_STACK}/auth-hpds.env|hpds-auth.env.tftpl&quot;
+)
+
+internal_token_consumer_selected=&quot;$render_dictionary&quot;
+internal_token_stack_consumer_selected=false
+all_internal_token_consumers_selected=&quot;$render_dictionary&quot;
+internal_token_stack_flags=&quot;&quot;
+for internal_token_stack_consumer in &quot;${internal_token_stack_consumers[@]}&quot;; do
+  IFS=&apos;|&apos; read -r internal_token_flag_name internal_token_flag_value _ _ &lt;&lt;&lt; &quot;$internal_token_stack_consumer&quot;
+  internal_token_stack_flags=&quot;${internal_token_stack_flags:+${internal_token_stack_flags}, }${internal_token_flag_name}&quot;
+  if [ &quot;$internal_token_flag_value&quot; = &quot;true&quot; ]; then
+    internal_token_consumer_selected=true
+    internal_token_stack_consumer_selected=true
+  else
+    all_internal_token_consumers_selected=false
+  fi
+done
+
 # The gateway, operations and query services share PICSURE_APPLICATION_TOKEN,
 # QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT. When only some of the three
 # re-render, the rest keep the old value: InternalTokenFilter answers the stale token with 403,
@@ -221,6 +258,28 @@ if [ &quot;$rotate_logging_api_key&quot; = &quot;true&quot; ] &amp;&amp; [ &quot
   echo &quot;Error: ROTATE_LOGGING_API_KEY changes a value that the pic-sure-logging, gateway, operations, visualization and dictionary services share between them.&quot; &gt;&amp;2
   echo &quot;Set RENDER_LOGGING, RENDER_GATEWAY, RENDER_OPERATIONS, RENDER_VISUALIZATION and RENDER_DICTIONARY all true so the five render together, then redeploy all five.&quot; &gt;&amp;2
   exit 1
+fi
+
+# The dictionary checks PICSURE_INTERNAL_TOKEN and every per-stack consumer presents it. A consumer
+# left on the old value has its /internal calls rejected, and every PFB export on that stack ends
+# in ERROR.
+if [ &quot;$rotate_picsure_internal_token&quot; = &quot;true&quot; ] &amp;&amp; [ &quot;$all_internal_token_consumers_selected&quot; != &quot;true&quot; ]; then
+  echo &quot;Error: ROTATE_PICSURE_INTERNAL_TOKEN changes a value that the dictionary and the services that call its /internal endpoints share between them.&quot; &gt;&amp;2
+  echo &quot;Set all of these true so they render together, then redeploy each: RENDER_DICTIONARY, ${internal_token_stack_flags}.&quot; &gt;&amp;2
+  exit 1
+fi
+
+if [ &quot;$adopt_picsure_internal_token&quot; = &quot;true&quot; ]; then
+  if [ &quot;$rotate_picsure_internal_token&quot; = &quot;true&quot; ]; then
+    echo &quot;Error: ROTATE_PICSURE_INTERNAL_TOKEN and ADOPT_PICSURE_INTERNAL_TOKEN are both true.&quot; &gt;&amp;2
+    echo &quot;The first mints a new value and the second keeps the one picsure-dictionary.env already holds. Set only one.&quot; &gt;&amp;2
+    exit 1
+  fi
+  if [ &quot;$internal_token_stack_consumer_selected&quot; != &quot;true&quot; ]; then
+    echo &quot;Error: ADOPT_PICSURE_INTERNAL_TOKEN overwrites this stack&apos;s copies of PICSURE_INTERNAL_TOKEN, and no env file that carries one was selected.&quot; &gt;&amp;2
+    echo &quot;Set every one of these whose copy has to change, then re-run this job: ${internal_token_stack_flags}.&quot; &gt;&amp;2
+    exit 1
+  fi
 fi
 
 temp_files=()
@@ -689,6 +748,157 @@ if [ &quot;$render_dictionary&quot; = &quot;true&quot; ]; then
   done
 fi
 
+# Sets internal_token_value to the PICSURE_INTERNAL_TOKEN a rendered env object holds, or to &quot;&quot;
+# when the object is not rendered yet or carries none. The last assignment wins, as it does for
+# the container runtime&apos;s --env-file, and a trailing carriage return is not part of the value.
+read_rendered_internal_token() {
+  local object_key=$1
+  local download_status
+  local line
+
+  internal_token_value=&quot;&quot;
+  new_temp_file &quot;internal-token-source.env&quot;
+  if download_s3_template &quot;$object_key&quot; &quot;$temp_file_path&quot;; then
+    echo &quot;Reading PICSURE_INTERNAL_TOKEN back from s3://${stack_s3_bucket}/${object_key}&quot;
+    while IFS= read -r line || [ -n &quot;$line&quot; ]; do
+      case &quot;$line&quot; in
+        &quot;PICSURE_INTERNAL_TOKEN=&quot;*)
+          internal_token_value=&quot;${line#*=}&quot;
+          internal_token_value=&quot;${internal_token_value%$&apos;\r&apos;}&quot;
+          ;;
+      esac
+    done &lt; &quot;$temp_file_path&quot;
+    return 0
+  else
+    download_status=$?
+    if [ &quot;$download_status&quot; -ne 1 ]; then
+      echo &quot;Error: the message above is from the shared S3 download helper. It was reading a rendered env back from s3://${stack_s3_bucket}/${object_key} to recover PICSURE_INTERNAL_TOKEN, and there is no template or repository fallback for a rendered env file, so this run stops.&quot; &gt;&amp;2
+      exit &quot;$download_status&quot;
+    fi
+  fi
+  echo &quot;s3://${stack_s3_bucket}/${object_key} is not rendered yet&quot;
+}
+
+# PICSURE_INTERNAL_TOKEN is read back from picsure-dictionary.env first, because that one object
+# serves every stack, and from this stack&apos;s own env files when the dictionary env does not carry
+# it yet. Every copy that holds a value has to hold the same one. Minting needs RENDER_DICTIONARY:
+# a value written only to one stack&apos;s env file is a value no other stack can read back, and the
+# next stack to render would mint a different one. For the same reason a selected template that
+# does not reference the token stops the run, and so does an infrastructure revision from before
+# the token when it would rewrite an object that carries one now.
+picsure_internal_token=&quot;&quot;
+resolve_internal_token=false
+if [ &quot;$internal_token_consumer_selected&quot; = &quot;true&quot; ]; then
+  internal_token_dictionary_key=&quot;configs/picsure-dictionary/picsure-dictionary.env&quot;
+  internal_token_selected_keys=()
+  internal_token_selected_templates=()
+  internal_token_source_keys=(&quot;$internal_token_dictionary_key&quot;)
+
+  if [ &quot;$render_dictionary&quot; = &quot;true&quot; ]; then
+    internal_token_selected_keys+=(&quot;$internal_token_dictionary_key&quot;)
+    internal_token_selected_templates+=(&quot;picsure-dictionary.env.tftpl&quot;)
+  fi
+  for internal_token_stack_consumer in &quot;${internal_token_stack_consumers[@]}&quot;; do
+    IFS=&apos;|&apos; read -r _ internal_token_flag_value internal_token_env_key internal_token_template &lt;&lt;&lt; &quot;$internal_token_stack_consumer&quot;
+    if [ &quot;$internal_token_flag_value&quot; = &quot;true&quot; ]; then
+      internal_token_selected_keys+=(&quot;$internal_token_env_key&quot;)
+      internal_token_selected_templates+=(&quot;$internal_token_template&quot;)
+    fi
+    if [ &quot;$adopt_picsure_internal_token&quot; != &quot;true&quot; ] || [ &quot;$internal_token_flag_value&quot; != &quot;true&quot; ]; then
+      internal_token_source_keys+=(&quot;$internal_token_env_key&quot;)
+    fi
+  done
+
+  if grep -q &apos;^variable &quot;picsure_internal_token&quot;&apos; variables.tf; then
+    resolve_internal_token=true
+  else
+    if [ &quot;$rotate_picsure_internal_token&quot; = &quot;true&quot; ] || [ &quot;$adopt_picsure_internal_token&quot; = &quot;true&quot; ]; then
+      echo &quot;Error: infrastructure revision ${INFRASTRUCTURE_GIT_HASH:-} declares no picsure_internal_token variable, so it cannot render PICSURE_INTERNAL_TOKEN.&quot; &gt;&amp;2
+      echo &quot;Re-run with an INFRASTRUCTURE_GIT_HASH that renders the token.&quot; &gt;&amp;2
+      exit 1
+    fi
+    for internal_token_env_key in &quot;${internal_token_selected_keys[@]}&quot;; do
+      read_rendered_internal_token &quot;$internal_token_env_key&quot;
+      if [ -n &quot;$internal_token_value&quot; ]; then
+        echo &quot;Error: s3://${stack_s3_bucket}/${internal_token_env_key} carries a PICSURE_INTERNAL_TOKEN, and infrastructure revision ${INFRASTRUCTURE_GIT_HASH:-} is from before the token: it declares no picsure_internal_token variable, so rendering that object from it would drop the token.&quot; &gt;&amp;2
+        if [ &quot;$internal_token_env_key&quot; = &quot;$internal_token_dictionary_key&quot; ]; then
+          echo &quot;That object serves every stack, so every stack&apos;s PFB exports would end in ERROR at its next dictionary deploy.&quot; &gt;&amp;2
+        fi
+        echo &quot;Re-run with an INFRASTRUCTURE_GIT_HASH that renders the token, or leave that env file out of this render.&quot; &gt;&amp;2
+        exit 1
+      fi
+    done
+  fi
+fi
+
+if [ &quot;$resolve_internal_token&quot; = &quot;true&quot; ]; then
+  for internal_token_template in &quot;${internal_token_selected_templates[@]}&quot;; do
+    if ! grep -q &apos;picsure_internal_token&apos; &quot;templates/${internal_token_template}&quot;; then
+      echo &quot;Error: templates/${internal_token_template} does not reference picsure_internal_token, so the env file it renders would carry no PICSURE_INTERNAL_TOKEN. Nothing could read the value back afterwards, and each stack would end up minting its own.&quot; &gt;&amp;2
+      echo &quot;The template in use predates the token. When the log above says the shared S3 template was used, add the PICSURE_INTERNAL_TOKEN line to it through Download and Upload PIC-SURE Configuration Template, then re-run this job.&quot; &gt;&amp;2
+      exit 1
+    fi
+  done
+
+  internal_token_dictionary_value=&quot;&quot;
+  internal_token_conflict=false
+  if [ &quot;$rotate_picsure_internal_token&quot; = &quot;true&quot; ]; then
+    echo &quot;ROTATE_PICSURE_INTERNAL_TOKEN is true: minting a new PICSURE_INTERNAL_TOKEN. Every service rendered with it must be redeployed afterwards, and every other stack must adopt the new value.&quot;
+  else
+    if [ &quot;$adopt_picsure_internal_token&quot; = &quot;true&quot; ]; then
+      echo &quot;ADOPT_PICSURE_INTERNAL_TOKEN is true: taking PICSURE_INTERNAL_TOKEN from picsure-dictionary.env and overwriting the selected copies rendered for stack ${TARGET_STACK}.&quot;
+    fi
+    for internal_token_source_key in &quot;${internal_token_source_keys[@]}&quot;; do
+      read_rendered_internal_token &quot;$internal_token_source_key&quot;
+      if [ &quot;$internal_token_source_key&quot; = &quot;$internal_token_dictionary_key&quot; ]; then
+        internal_token_dictionary_value=&quot;$internal_token_value&quot;
+      fi
+      if [ -z &quot;$internal_token_value&quot; ]; then
+        continue
+      fi
+      if [ -z &quot;$picsure_internal_token&quot; ]; then
+        picsure_internal_token=&quot;$internal_token_value&quot;
+      elif [ &quot;$internal_token_value&quot; != &quot;$picsure_internal_token&quot; ]; then
+        internal_token_conflict=true
+      fi
+    done
+  fi
+
+  if [ &quot;$adopt_picsure_internal_token&quot; = &quot;true&quot; ] &amp;&amp; [ -z &quot;$internal_token_dictionary_value&quot; ]; then
+    echo &quot;Error: ADOPT_PICSURE_INTERNAL_TOKEN is true, but s3://${stack_s3_bucket}/${internal_token_dictionary_key} carries no PICSURE_INTERNAL_TOKEN to adopt.&quot; &gt;&amp;2
+    echo &quot;Render the dictionary env first, then re-run this job.&quot; &gt;&amp;2
+    exit 1
+  fi
+
+  if [ &quot;$internal_token_conflict&quot; = &quot;true&quot; ]; then
+    echo &quot;Error: s3://${stack_s3_bucket}/${internal_token_dictionary_key} and the env files rendered for stack ${TARGET_STACK} hold different values for PICSURE_INTERNAL_TOKEN.&quot; &gt;&amp;2
+    if [ -n &quot;$internal_token_dictionary_value&quot; ]; then
+      echo &quot;The dictionary env serves every stack, so its value is the one to keep. Re-run this job with ADOPT_PICSURE_INTERNAL_TOKEN and all of these true, then redeploy each: ${internal_token_stack_flags}.&quot; &gt;&amp;2
+    else
+      echo &quot;The dictionary env carries no value to adopt. Run the Rotate PIC-SURE Stack Secrets job with ROTATE_PICSURE_INTERNAL_TOKEN to put one value back.&quot; &gt;&amp;2
+    fi
+    exit 1
+  fi
+
+  picsure_internal_token_origin=reused
+  if [ -z &quot;$picsure_internal_token&quot; ]; then
+    if [ &quot;$render_dictionary&quot; != &quot;true&quot; ]; then
+      echo &quot;Error: neither s3://${stack_s3_bucket}/${internal_token_dictionary_key} nor the env files rendered for stack ${TARGET_STACK} carry PICSURE_INTERNAL_TOKEN, so this run would have to mint one.&quot; &gt;&amp;2
+      echo &quot;Every stack reads that value back from the stackless dictionary env: set RENDER_DICTIONARY true as well so the new value lands there, then redeploy the dictionary.&quot; &gt;&amp;2
+      exit 1
+    fi
+    generate_shared_token
+    picsure_internal_token=&quot;$generated_value&quot;
+    picsure_internal_token_origin=generated
+    if [ &quot;$rotate_picsure_internal_token&quot; != &quot;true&quot; ]; then
+      echo &quot;Warning: no rendered env file carried PICSURE_INTERNAL_TOKEN, so a new one was minted into the dictionary env that every stack shares. Redeploy the dictionary on every stack, and render and redeploy every service that presents the token on every stack, before PFB exports can succeed.&quot; &gt;&amp;2
+    fi
+  fi
+
+  echo &quot;Internal token resolution:&quot;
+  echo &quot;  PICSURE_INTERNAL_TOKEN: ${picsure_internal_token_origin}&quot;
+fi
+
 # Every sensitive value reaches Terraform through the environment. A -var argument would be
 # readable in the process list of a shared Jenkins agent for the length of the apply.
 if [ &quot;$render_gateway&quot; = &quot;true&quot; ]; then
@@ -697,6 +907,10 @@ fi
 
 if [ &quot;$logging_consumer_selected&quot; = &quot;true&quot; ]; then
   export TF_VAR_logging_api_key=&quot;$logging_api_key&quot;
+fi
+
+if [ &quot;$resolve_internal_token&quot; = &quot;true&quot; ]; then
+  export TF_VAR_picsure_internal_token=&quot;$picsure_internal_token&quot;
 fi
 
 if [ &quot;$render_services&quot; = &quot;true&quot; ]; then
