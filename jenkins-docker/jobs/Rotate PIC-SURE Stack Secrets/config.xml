@@ -6,8 +6,9 @@
 Pick what to rotate. At least one is required:
   ROTATE_STACK_SECRETS - PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT, shared by gateway, operations and query.
   ROTATE_LOGGING_API_KEY - LOGGING_API_KEY, shared by gateway, operations, visualization, dictionary, PSAMA, the frontend and pic-sure-logging on every stack.
+  ROTATE_PICSURE_INTERNAL_TOKEN: PICSURE_INTERNAL_TOKEN, checked by the dictionary and presented by auth HPDS on every stack.
 
-The gateway carries secrets from both sets, so it always renders and always redeploys. The other services are pulled in only by the flag that needs them, and a flag left false makes the render read those values back out of this stack&apos;s own env files and preserve them unchanged. Rotating both in one run is the usual case after an exposure, because a leaked gateway.env carries all four, and it restarts the gateway once instead of twice.
+The gateway carries secrets from the first two sets, so either of them renders and redeploys it. The other services are pulled in only by the flag that needs them, and a flag left false makes the render read those values back out of the rendered env files and preserve them unchanged. Rotating the first two in one run is the usual case after an exposure, because a leaked gateway.env carries all four, and it restarts the gateway once instead of twice.
 
 ROTATE_STACK_SECRETS touches only the selected stack. Those values live in per-stack objects and no request crosses between stacks, so the other stack keeps its own values and is never rendered, redeployed or read. LOGGING_API_KEY is different: one key serves every stack, held in the stackless configs/pic-sure-logging/logging.env. This job renders and redeploys the selected stack's consumers, but every other stack's gateway, operations and visualization keep the old key until they are rendered and redeployed too, and their audit events are dropped until then.
 
@@ -18,6 +19,10 @@ With ROTATE_LOGGING_API_KEY, expect a short window between the Wildfly deploy an
 ROTATE_LOGGING_API_KEY also refreshes PSAMA: it runs Upload PSAMA Configuration with REFRESH_LOGGING_KEY, which writes the new key into the shared psama.env, then redeploys PSAMA with the other services. It leaves a manual tail, and the job says so when it finishes. Render and redeploy the gateway, operations and visualization on every other stack. The frontend reads LOGGING_API_KEY from configs/pic-sure-frontend/&lt;target_stack&gt;/bdc.env, which is uploaded by hand and not rendered here. Download the rendered configs/pic-sure-logging/logging.env to read the new key, then for each stack download its bdc.env through Download PIC-SURE-Frontend Configuration, set LOGGING_API_KEY to match, upload it and redeploy the frontend. Until then those services&apos; audit events are dropped. The key is never printed to this job&apos;s console.
 
 ROTATE_STACK_SECRETS changes AGGREGATE_OBFUSCATION_SALT, so this stack&apos;s reported aggregate counts shift for queries run before and after. The two stacks already carry different salts and report slightly different counts for the same query; that is a property of per-stack salts rather than a fault.
+
+PICSURE_INTERNAL_TOKEN is one value for every stack, like LOGGING_API_KEY: the dictionary reads it from the stackless configs/picsure-dictionary/picsure-dictionary.env, and each stack&apos;s auth HPDS presents it from its own auth-hpds.env. ROTATE_PICSURE_INTERNAL_TOKEN renders both files for the selected stack with a new value, then redeploys that stack&apos;s dictionary and auth HPDS. The auth HPDS deploy runs last. DATA_S3_OBJECT_KEY and GENOMIC_DATASET_S3_OBJECT_KEY are required with this flag and the run refuses to start without them: the auth HPDS host treats an empty key as the dataset it was provisioned with, and would roll a stack whose data was deployed since then back to it. Every other stack is left as a manual tail, and the job says so when it finishes: run Render PIC-SURE Configuration there with RENDER_AUTH_HPDS and ADOPT_PICSURE_INTERNAL_TOKEN true, at the infrastructure revision that stack runs, then PIC-SURE Dictionary Deploy and PIC-SURE HPDS Auth Deploy together. Until then that stack keeps working on the old value, because both of its containers still hold it. Redeploying only one of the two there ends its PFB exports in ERROR. Every render there that includes the dictionary or auth HPDS aborts on the mismatch until the adopt run is done, and that covers the Deployment Pipeline, the dictionary and auth HPDS Build and Deploy jobs, and a LOGGING_API_KEY or PICSURE_INTERNAL_TOKEN rotation on that stack. Expect a window on the selected stack where PFB exports fail, from the dictionary deploy until the auth HPDS deploy has finished. When LOGGING_API_KEY rotates in the same run the logging deploy sits between the two, so the window covers it as well.
+
+If a run stops after the render, whichever flags were set, the new values are already in S3 and a rerun would mint new ones on top of them. The job then ends by naming exactly the uploads and deploys that are still owed, to be run by hand in the order given.
 
 TOKEN_INTROSPECTION_TOKEN is not rotated here. PSAMA holds it in the application table and validates every stack&apos;s gateway against that single row, so unlike everything above it is genuinely fleet-wide. It is minted by Update PIC-SURE Token Introspection Token.</description>
   <keepDependencies>false</keepDependencies>
@@ -42,6 +47,23 @@ TOKEN_INTROSPECTION_TOKEN is not rotated here. PSAMA holds it in the application
           <description>Mint a new LOGGING_API_KEY. Pulls in operations, visualization, dictionary, PSAMA and pic-sure-logging alongside the gateway on this stack, and redeploys them. The key is shared by every stack, so it leaves manual steps for the other stacks and every frontend bdc.env; see the job description.</description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>ROTATE_PICSURE_INTERNAL_TOKEN</name>
+          <description>Mint a new PICSURE_INTERNAL_TOKEN. Renders the shared dictionary env and this stack&apos;s auth HPDS env, and redeploys this stack&apos;s dictionary and auth HPDS. Requires DATA_S3_OBJECT_KEY and GENOMIC_DATASET_S3_OBJECT_KEY. The value is shared by every stack, so it leaves manual steps for the other stacks; see the job description.</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>DATA_S3_OBJECT_KEY</name>
+          <description>Required with ROTATE_PICSURE_INTERNAL_TOKEN and ignored otherwise. The dataset key the stack&apos;s auth HPDS serves now, passed to PIC-SURE HPDS Auth Deploy. An empty key would make the host fall back to the dataset it was provisioned with. Take it from the last successful PIC-SURE HPDS Auth Deploy build for this stack, or from the Deployment Pipeline run that built the stack when there has been none since.</description>
+          <defaultValue></defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>GENOMIC_DATASET_S3_OBJECT_KEY</name>
+          <description>Required with ROTATE_PICSURE_INTERNAL_TOKEN and ignored otherwise. The genomic dataset key the stack&apos;s auth HPDS serves now, found in the same places as DATA_S3_OBJECT_KEY.</description>
+          <defaultValue></defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
         <hudson.model.StringParameterDefinition>
           <name>INFRASTRUCTURE_GIT_HASH</name>
           <description>Infrastructure repository revision to render the rotated configuration from. Leave empty to resolve it from build-spec.json.</description>
@@ -61,6 +83,11 @@ TOKEN_INTROSPECTION_TOKEN is not rotated here. PSAMA holds it in the application
 
 def targetStack
 def infrastructureGitHash
+def rotationRendered = false
+def psamaUploaded = false
+def wildflyDeployed = false
+def loggingDeployed = false
+def hpdsAuthDeployed = false
 
 pipeline {
     agent any
@@ -73,8 +100,11 @@ pipeline {
         stage(&apos;Validate Selection&apos;) {
             steps {
                 script {
-                    if (!params.ROTATE_STACK_SECRETS &amp;&amp; !params.ROTATE_LOGGING_API_KEY) {
-                        error(&quot;Neither ROTATE_STACK_SECRETS nor ROTATE_LOGGING_API_KEY is true, so this run would mint nothing and redeploy the gateway for no reason. Set at least one.&quot;)
+                    if (!params.ROTATE_STACK_SECRETS &amp;&amp; !params.ROTATE_LOGGING_API_KEY &amp;&amp; !params.ROTATE_PICSURE_INTERNAL_TOKEN) {
+                        error(&quot;None of ROTATE_STACK_SECRETS, ROTATE_LOGGING_API_KEY and ROTATE_PICSURE_INTERNAL_TOKEN is true, so this run would mint nothing. Set at least one.&quot;)
+                    }
+                    if (params.ROTATE_PICSURE_INTERNAL_TOKEN &amp;&amp; (!params.DATA_S3_OBJECT_KEY?.trim() || !params.GENOMIC_DATASET_S3_OBJECT_KEY?.trim())) {
+                        error(&quot;ROTATE_PICSURE_INTERNAL_TOKEN redeploys auth HPDS, and DATA_S3_OBJECT_KEY or GENOMIC_DATASET_S3_OBJECT_KEY is empty. With an empty key the host falls back to the dataset it was provisioned with, so a stack whose data was deployed since then would be rolled back to the old dataset. Nothing was minted or rendered. Set both to the keys the stack serves now: the parameters of the last successful PIC-SURE HPDS Auth Deploy build for this stack, or, when there has been none since the stack was built, the dataset keys of the Deployment Pipeline run that built it. /opt/picsure/deploy-script-last-execution-values.txt on the auth HPDS host records the same two values.&quot;)
                     }
                 }
             }
@@ -128,54 +158,115 @@ pipeline {
         stage(&apos;Rotate and Redeploy&apos;) {
             steps {
                 script {
-                    // The gateway carries secrets from both sets, so it is in every selection.
+                    // The gateway carries the stack secrets and the logging key, so either one pulls it in.
+                    // PICSURE_INTERNAL_TOKEN lives only in the dictionary and auth HPDS env files.
                     def rotateStack = params.ROTATE_STACK_SECRETS
                     def rotateLogging = params.ROTATE_LOGGING_API_KEY
+                    def rotateInternalToken = params.ROTATE_PICSURE_INTERNAL_TOKEN
+                    def rotateGateway = rotateStack || rotateLogging
 
-                    echo &quot;Rotating on stack ${targetStack}: stack secrets=${rotateStack}, logging api key=${rotateLogging}&quot;
+                    echo &quot;Rotating on stack ${targetStack}: stack secrets=${rotateStack}, logging api key=${rotateLogging}, picsure internal token=${rotateInternalToken}&quot;
 
                     lock(&quot;stack-${targetStack}&quot;) {
                         build job: &apos;Render PIC-SURE Configuration&apos;, parameters: [
                             [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: params.S3_BUCKET_NAME],
                             [$class: &apos;StringParameterValue&apos;, name: &apos;INFRASTRUCTURE_GIT_HASH&apos;, value: infrastructureGitHash],
                             [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_GATEWAY&apos;, value: true],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_GATEWAY&apos;, value: rotateGateway],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPERATIONS&apos;, value: rotateStack || rotateLogging],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_QUERY&apos;, value: rotateStack],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_AUTH_HPDS&apos;, value: false],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_AUTH_HPDS&apos;, value: rotateInternalToken],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_OPEN_HPDS&apos;, value: false],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_VISUALIZATION&apos;, value: rotateLogging],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_LOGGING&apos;, value: rotateLogging],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_DICTIONARY&apos;, value: rotateLogging],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;RENDER_DICTIONARY&apos;, value: rotateLogging || rotateInternalToken],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;ROTATE_STACK_SECRETS&apos;, value: rotateStack],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;ROTATE_LOGGING_API_KEY&apos;, value: rotateLogging]
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;ROTATE_LOGGING_API_KEY&apos;, value: rotateLogging],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;ROTATE_PICSURE_INTERNAL_TOKEN&apos;, value: rotateInternalToken]
                         ]
+                        rotationRendered = true
 
                         if (rotateLogging) {
                             build job: &apos;Upload PSAMA Configuration&apos;, parameters: [
                                 [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: params.S3_BUCKET_NAME],
                                 [$class: &apos;BooleanParameterValue&apos;, name: &apos;REFRESH_LOGGING_KEY&apos;, value: true]
                             ]
+                            psamaUploaded = true
                         }
                         build job: &apos;PIC-SURE Wildfly Stack Deploy&apos;, parameters: [
                             [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: params.S3_BUCKET_NAME],
                             [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_GATEWAY&apos;, value: true],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_GATEWAY&apos;, value: rotateGateway],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_OPERATIONS&apos;, value: rotateStack || rotateLogging],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_QUERY&apos;, value: rotateStack],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_PSAMA&apos;, value: rotateLogging],
-                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_DICTIONARY&apos;, value: rotateLogging],
+                            [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_DICTIONARY&apos;, value: rotateLogging || rotateInternalToken],
                             [$class: &apos;BooleanParameterValue&apos;, name: &apos;DEPLOY_VISUALIZATION&apos;, value: rotateLogging]
                         ]
+                        wildflyDeployed = true
 
                         if (rotateLogging) {
                             build job: &apos;PIC-SURE Logging Deploy&apos;, parameters: [
                                 [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: params.S3_BUCKET_NAME],
                                 [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack]
                             ]
+                            loggingDeployed = true
 
                             echo &quot;LOGGING_API_KEY was rotated for every stack. Render and redeploy gateway, operations and visualization on each other stack, and update every stack&apos;s configs/pic-sure-frontend/&lt;stack&gt;/bdc.env and redeploy its frontend, or their audit events are dropped.&quot;
                         }
+
+                        if (rotateInternalToken) {
+                            build job: &apos;PIC-SURE HPDS Auth Deploy&apos;, parameters: [
+                                [$class: &apos;StringParameterValue&apos;, name: &apos;S3_BUCKET_NAME&apos;, value: params.S3_BUCKET_NAME],
+                                [$class: &apos;StringParameterValue&apos;, name: &apos;TARGET_STACK&apos;, value: targetStack],
+                                [$class: &apos;StringParameterValue&apos;, name: &apos;DATA_S3_OBJECT_KEY&apos;, value: params.DATA_S3_OBJECT_KEY.trim()],
+                                [$class: &apos;StringParameterValue&apos;, name: &apos;GENOMIC_DATASET_S3_OBJECT_KEY&apos;, value: params.GENOMIC_DATASET_S3_OBJECT_KEY.trim()]
+                            ]
+                            hpdsAuthDeployed = true
+
+                            echo &quot;PICSURE_INTERNAL_TOKEN was rotated in the dictionary env that every stack shares, and stack ${targetStack} now runs on it. On each other stack, run Render PIC-SURE Configuration with RENDER_AUTH_HPDS and ADOPT_PICSURE_INTERNAL_TOKEN true, then PIC-SURE Dictionary Deploy and PIC-SURE HPDS Auth Deploy together. Until then that stack keeps the old value in both containers, redeploying only one of the two ends its PFB exports in ERROR, and every render there that includes the dictionary or auth HPDS aborts.&quot;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                if (rotationRendered) {
+                    def rotateStack = params.ROTATE_STACK_SECRETS
+                    def rotateLogging = params.ROTATE_LOGGING_API_KEY
+                    def rotateInternalToken = params.ROTATE_PICSURE_INTERNAL_TOKEN
+                    def owed = &apos;&apos;
+                    if (rotateLogging &amp;&amp; !psamaUploaded) {
+                        owed += &apos; Upload PSAMA Configuration with REFRESH_LOGGING_KEY true.&apos;
+                    }
+                    if (!wildflyDeployed) {
+                        def deployFlags = &apos;&apos;
+                        if (rotateStack || rotateLogging) {
+                            deployFlags += &apos; DEPLOY_GATEWAY DEPLOY_OPERATIONS&apos;
+                        }
+                        if (rotateStack) {
+                            deployFlags += &apos; DEPLOY_QUERY&apos;
+                        }
+                        if (rotateLogging) {
+                            deployFlags += &apos; DEPLOY_PSAMA DEPLOY_VISUALIZATION&apos;
+                        }
+                        if (rotateLogging || rotateInternalToken) {
+                            deployFlags += &apos; DEPLOY_DICTIONARY&apos;
+                        }
+                        owed += &quot; PIC-SURE Wildfly Stack Deploy for stack ${targetStack} with exactly these flags true:${deployFlags}.&quot;
+                    }
+                    if (rotateLogging &amp;&amp; !loggingDeployed) {
+                        owed += &quot; PIC-SURE Logging Deploy for stack ${targetStack}.&quot;
+                    }
+                    if (rotateInternalToken &amp;&amp; !hpdsAuthDeployed) {
+                        owed += &quot; PIC-SURE HPDS Auth Deploy for stack ${targetStack} with the same DATA_S3_OBJECT_KEY and GENOMIC_DATASET_S3_OBJECT_KEY.&quot;
+                    }
+                    if (owed) {
+                        echo &quot;The rotated values were already rendered to S3 for stack ${targetStack} when this run stopped, and its env files agree with each other. Do not run this rotation again: a rerun mints new values on top of these. Finish by hand instead, in this order:${owed} Then do the follow-ups the job description lists for the other stacks.&quot;
                     }
                 }
             }
