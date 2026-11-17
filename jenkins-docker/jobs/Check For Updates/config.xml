@@ -209,9 +209,9 @@ fi
 
 # The open variant of a partitioned dataset can be staged with the stigmatized variables not removed, on a dev stack only (the stage
 # job&apos;s ALLOW_OPEN_STIGVARS_NOT_REMOVED). Its manifest.tsv header says so: &quot;# stigvars_removed=false&quot;, and the override that allowed it
-# is recorded as &quot;# stigvars_override=true&quot;. Without the override line nothing is scheduled. Legacy and flat data have neither line.
+# is recorded as &quot;# stigvars_override=true&quot;. Without the override line nothing is scheduled. Open data staged as a legacy tar has no header and is not read; any other open data is read, and unreadable means fail.
 open_manifest_key=&quot;data/${open_key}/destigmatized_javabins_rekeyed/manifest.tsv&quot;
-if key_exists &quot;${open_manifest_key}&quot;; then
+if ! key_exists &quot;data/${open_key}/destigmatized_javabins_rekeyed.tar&quot;; then
     if ! open_manifest=$(aws s3 cp &quot;s3://${stack_s3_bucket}/${open_manifest_key}&quot; - --only-show-errors &lt; /dev/null); then
         echo &quot;ERROR: cannot read s3://${stack_s3_bucket}/${open_manifest_key} to check its stigvars header&quot; &gt;&amp;2
         echo &quot;Nothing was scheduled.&quot; &gt;&amp;2

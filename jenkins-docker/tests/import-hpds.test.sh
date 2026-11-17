@@ -2103,6 +2103,18 @@ stage_manifest "$C1" javabins_rekeyed
 stage_tar "$C1" destigmatized_javabins_rekeyed
 run_cfu
 [ "$rc" = 0 ] && ok "CFU: an open legacy tar has no stigvars header and passes" || bad "CFU open tar (rc=$rc)"
+check "CFU: an open legacy tar: the open manifest.tsv is not read" test "$(grep -c "cp s3://$STACK/data/$C1/$OPEN_DIR/manifest.tsv" "$FAKE_AWS_LOG")" = 0
+# no legacy tar: the open manifest.tsv is read, whatever the listing says; the listing and the head both failing does not skip the check
+reset_world
+cfu_repo "$DATASET_URL2" "$DATASET_URL2"
+stage_manifest "$C1" javabins_rekeyed
+stage_manifest "$C1" destigmatized_javabins_rekeyed
+printf '# bdc-hpds-deploy/1\n# stigvars_removed=false\n' > "$FAKE_S3/$STACK/data/$C1/$OPEN_DIR/manifest.tsv"
+export FAKE_LIST_DENIED=1
+run_cfu
+unset FAKE_LIST_DENIED
+[ "$rc" = 1 ] && grep -q '^ERROR: open dataset is staged with stigmatized variables not removed' "$T/err" && ok "CFU: with the listing denied the open manifest.tsv is still read and checked" || bad "CFU list denied, open header (rc=$rc)"
+check "CFU: the open manifest.tsv is read once no legacy tar exists" test "$(grep -c "cp s3://$STACK/data/$C1/$OPEN_DIR/manifest.tsv -" "$FAKE_AWS_LOG")" = 1
 # an unreadable open manifest.tsv fails closed
 reset_world
 cfu_repo "$DATASET_URL2" "$DATASET_URL2"
@@ -2233,6 +2245,16 @@ v2_refuses "an open variant with a top-level store, flag on" open true '.variant
 v2_refuses "an open variant with a columnMeta.javabin dest (v1 shape), flag on" open true '.variants.open += [{"src":"partitions/phs000000.c1/columnMeta.javabin","dest":"columnMeta.javabin","bytes":14,"sha256":.variants.open[3].sha256,"etag":.variants.open[3].etag}]'
 # an invalid open variant is refused for auth too (the manifest is checked as a whole) and a valid auth next to a broken open is not staged in a refused run
 v2_refuses "a broken open variant also refuses an auth run (subset D is a manifest check)" auth "" '.variants.open |= .[0:7]'
+v2_refuses "an extra variant key" auth "" '.variants.extra = .variants.auth'
+v2_refuses "an extra variant key next to auth only" auth "" 'del(.variants.open) | del(.open) | .variants.extra = .variants.auth'
+v2_refuses "variants.open without an open object (auth run)" auth "" 'del(.open)'
+v2_refuses "variants.open without an open object (open run, flag on)" open true 'del(.open)'
+v2_refuses "an open object without variants.open (auth run)" auth "" 'del(.variants.open)'
+v2_refuses "no variants.auth (auth run)" auth "" 'del(.variants.auth)'
+v2_refuses "no variants.auth (open run, flag on)" open true 'del(.variants.auth)'
+v2_refuses "variants.auth is null" open true '.variants.auth = null'
+v2_refuses "variants is empty" auth "" '.variants = {}'
+v2_refuses "variants.auth is not an array" auth "" '.variants.auth = {}'
 # open variant only needs the override for open: auth next to a variants.open-less manifest is fine
 reset_world
 make_dataset_v2
@@ -2243,14 +2265,30 @@ no_allow_flag
 run_import_in_repo open
 [ "$rc" != 0 ] && grep -q 'REFUSED' "$T/err" && ok "v2 open on a manifest with no open variant is refused" || bad "v2 open, no open variant (rc=$rc)"
 
-# a v2 prefix whose open refusal comes after auth was staged: auth stays staged, the build fails
+# a v2 prefix without the override: the open refusal comes up front, before anything (auth included) is staged
 reset_world
 make_dataset_v2
 no_allow_flag
 run_import both "$DATASET_URL2"
 [ "$rc" != 0 ] && grep -q 'REFUSED: open: ' "$T/err" && ok "v2 both without the override: the open refusal ends the build non-zero" || bad "v2 both, no override (rc=$rc)"
-check "v2 both without the override: auth was staged, open was not" test -f "$STAGE/$AUTH_DIR/manifest.tsv" -a ! -e "$STAGE/$OPEN_DIR"
+check "v2 both without the override: nothing is staged, not even auth, and no copy or source read is made (only the staged-marker lookups)" bash -c "test ! -e '$STAGE' && test \$(grep -c 'aws s3 cp\|sts ' '$FAKE_AWS_LOG') = 0 && test \$(grep -vc 's3api list-objects-v2' '$FAKE_AWS_LOG') = 0"
 check "v2 both without the override: no Next line" test "$(grep -c '^Next:' "$T/out")" = 0
+# an open variant that is already staged is skipped and needs no override, so auth can still be staged on its own run
+reset_world
+make_dataset_v2
+allow_flag
+run_import open "$DATASET_URL2"
+no_allow_flag
+run_import_in_repo both
+[ "$rc" = 0 ] && ok "v2 both without the override, open already staged: auth is staged, open is skipped (rc 0)" || { bad "v2 both, open already staged (rc=$rc)"; cat "$T/err"; }
+check "v2 both without the override, open already staged: both are staged" test -f "$STAGE/$AUTH_DIR/manifest.tsv" -a -f "$STAGE/$OPEN_DIR/manifest.tsv"
+# the up-front refusal applies to a v2 prefix only: a v1 prefix for open needs no flag (mixed form)
+reset_world
+make_dataset
+make_dataset_v2
+no_allow_flag
+run_import both "$DATASET_URL2" "$DATASET_URL"
+[ "$rc" = 0 ] && ok "v2 auth with a v1 open prefix needs no override (rc 0)" || bad "mixed form without the override (rc=$rc)"
 
 # fence_mapping.json repair works on v2 data (restored from the staged metadata.json)
 reset_world

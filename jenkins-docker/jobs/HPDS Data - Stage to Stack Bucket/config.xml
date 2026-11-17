@@ -453,6 +453,8 @@ validate_manifest_v2() {
         and ((has(&quot;open&quot;) | not) or (.open | type == &quot;object&quot; and .stigvars_removed == false))
         and (if $v == &quot;open&quot; then (.open | type == &quot;object&quot;) else true end)
         and (.variants | type == &quot;object&quot;)
+        and ((.variants | keys) == [&quot;auth&quot;] or (.variants | keys) == [&quot;auth&quot;, &quot;open&quot;])
+        and (has(&quot;open&quot;) == (.variants | has(&quot;open&quot;)))
         and (.variants[$v] | type == &quot;array&quot; and length &gt; 0)
         and ([.partitions[].name] as $n
              | ([{src: &quot;encryption_key&quot;, dest: &quot;encryption_key&quot;}, {src: &quot;static/metadata.json&quot;, dest: &quot;metadata.json&quot;}]
@@ -460,8 +462,9 @@ validate_manifest_v2() {
                    | {src: (&quot;partitions/&quot; + $p + &quot;/&quot; + $f), dest: (&quot;phenotypic/&quot; + $p + &quot;/&quot; + $f)}]
                 | sort_by(.dest)) as $want
              | (reduce (.files[], (.partitions[] | .name as $p | .files[] | . + {src: (&quot;partitions/&quot; + $p + &quot;/&quot; + .name)})) as $e ({}; .[$e.src] = $e)) as $idx
-             | all([.variants.auth, .variants.open] | .[] | select(. != null);
-                   ([.[] | {src: .src, dest: .dest}] | sort_by(.dest)) == $want
+             | all(([.variants.auth] + (if (.variants | has(&quot;open&quot;)) then [.variants.open] else [] end))[];
+                   type == &quot;array&quot;
+                   and ([.[] | {src: .src, dest: .dest}] | sort_by(.dest)) == $want
                    and all(.[];
                        (.src | okpath) and (.dest | okpath)
                        and (.etag | type == &quot;string&quot; and test(&quot;^[!-~]+$&quot;))
@@ -473,11 +476,13 @@ validate_manifest_v2() {
 # v2 open variant: its manifest says open.stigvars_removed=false, i.e. the full per-partition columnMeta is served by the open HPDS.
 # Refused unless ALLOW_OPEN_STIGVARS_NOT_REMOVED=true (set on a dev deploy Jenkins only). With it: a loud banner and the two
 # stigvars lines in the open manifest.tsv.
+refuse_open_without_override() {
+    [ &quot;${allow_open_stigvars_not_removed}&quot; = true ] || refuse &quot;open: the dataset at ${source_url} serves the open variant with the stigmatized variables NOT removed (open.stigvars_removed=false). Nothing was staged for open. To stage it on a dev stack only, run this job with ALLOW_OPEN_STIGVARS_NOT_REMOVED=true&quot;
+}
+
 require_open_override() {
     [ &quot;${variant}&quot; = open ] || return 0
-    if [ &quot;${allow_open_stigvars_not_removed}&quot; != true ]; then
-        refuse &quot;open: the dataset at ${source_url} serves the open variant with the stigmatized variables NOT removed (open.stigvars_removed=false). Nothing was staged for open. To stage it on a dev stack only, run this job with ALLOW_OPEN_STIGVARS_NOT_REMOVED=true&quot;
-    fi
+    refuse_open_without_override
     stigvars_override=true
     echo &quot;************************************************************************&quot;
     echo &quot;* OPEN: STIGMATIZED VARIABLES NOT REMOVED (dev only)&quot;
@@ -488,7 +493,7 @@ require_open_override() {
 
 ### Per-file staging from a dataset prefix. No docker. Reads of the source bucket use curated-datasets-s3-role (src_aws), writes to
 ### the stack bucket the instance role. IAM needed (see the job description):
-#   curated-datasets-s3-role, source bucket: s3:GetObject on data/hpds/pheno/datasets/*; its trust policy allows the instance role
+#   curated-datasets-s3-role, source bucket: s3:GetObject on data/hpds/pheno/datasets/* and data/hpds/pheno-partitioned/datasets/*; its trust policy allows the instance role
 #   instance role, stack bucket:             s3:ListBucket + s3:GetObject + s3:PutObject on data/*, and sts:AssumeRole on the source role
 stage_dataset() {
     local work=dataset_work dataset_id manifest_sha e_src e_dest e_bytes e_sha e_etag head_json got_bytes expected_rows written_rows
@@ -691,6 +696,10 @@ for variant in ${variants}; do
     variant_setup &quot;${variant}&quot;
     if ! is_staged &quot;${deploy_key_value}&quot; &quot;${stage_prefix}&quot; &quot;${legacy_name}&quot;; then
         validate_source
+        # a v2 prefix always serves the open variant with the stigmatized variables not removed: refuse before anything (auth included) is staged
+        if [ &quot;${variant}&quot; = open ] &amp;&amp; is_dataset_prefix_v2 &quot;${source_url}&quot;; then
+            refuse_open_without_override
+        fi
     fi
 done
 
