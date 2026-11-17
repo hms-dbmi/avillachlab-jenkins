@@ -14,7 +14,13 @@ This job does not stage data. Order of a data release: commit the new URLs in bu
 with HPDS_VARIANT=both (by hand), then run this job (or wait for its scheduled run). Rollback: put the old tar URLs back in
 build-spec.json (new deploy key), run HPDS Data - Stage to Stack Bucket with both, then this job.
 
-When both variants are staged: Bash_Functions and PIC-SURE Pipeline run, then Deployment Pipeline is scheduled with the deploy keys.</description>
+When both variants are staged: Bash_Functions and PIC-SURE Pipeline run, then Deployment Pipeline is scheduled with the deploy keys.
+Partitioned data (release contract v2): the data is staged and checked the same way, whatever its layout. The URL rule for datasets
+applies to build-spec.json: the same v1 dataset prefix for both source lines, the same v2 (partitioned) prefix for both, or a v2 prefix
+as source_dataset_s3_url with a v1 prefix as source_destigmatized_dataset_s3_url; every other combination that has a dataset prefix in
+it fails. The open manifest.tsv of the staged data is also read: a header line &quot;# stigvars_removed=false&quot; without the line
+&quot;# stigvars_override=true&quot; fails the build before anything is scheduled (the stage job writes both only when it was run with
+ALLOW_OPEN_STIGVARS_NOT_REMOVED=true, on a dev Jenkins).</description>
   <keepDependencies>false</keepDependencies>
   <properties/>
   <scm class="hudson.plugins.git.GitSCM" plugin="git@5.6.0">
@@ -59,6 +65,7 @@ rm -f datasetKey.txt destigmatizedDatasetKey.txt genomicDatasetKey.txt
 
 # ---- shared with the other HPDS job (Check For Updates / HPDS Data - Stage to Stack Bucket): keep this block identical ----
 dataset_marker=&quot;/data/hpds/pheno/datasets/&quot;
+dataset_marker_v2=&quot;/data/hpds/pheno-partitioned/datasets/&quot;
 
 # ListBucket on data/* is granted while HeadObject on a missing key may answer 403, so list first.
 key_exists() {
@@ -99,6 +106,7 @@ spec_url() {
     jq -r --arg f &quot;$1&quot; &apos;.[$f] // &quot;&quot;&apos; build-spec.json | tr -d &apos;[:space:]&apos;
 }
 
+# A v1 prefix contains the v1 marker, a v2 (partitioned) prefix the v2 marker; the v1 marker does not match a v2 prefix.
 is_dataset_prefix() {
     case &quot;$1&quot; in
         *&quot;${dataset_marker}&quot;*) return 0 ;;
@@ -106,16 +114,38 @@ is_dataset_prefix() {
     return 1
 }
 
-# Dataset prefixes carry both variants in one dataset: the two URLs must be the same.
+is_dataset_prefix_v2() {
+    case &quot;$1&quot; in
+        *&quot;${dataset_marker_v2}&quot;*) return 0 ;;
+    esac
+    return 1
+}
+
+# Dataset prefixes carry both variants in one dataset. Allowed pairs (auth URL, open URL), when either is a v1 or v2 prefix:
+# the same v1 prefix twice, the same v2 prefix twice, or a v2 prefix for auth with a v1 prefix for open. Anything else is refused.
+# Neither a v1 nor a v2 prefix (legacy .tar URLs): no check.
 require_identical_dataset_urls() {
-    local auth_url open_url
+    local auth_url open_url u allowed=false
     auth_url=$(spec_url source_dataset_s3_url)
     open_url=$(spec_url source_destigmatized_dataset_s3_url)
-    if is_dataset_prefix &quot;${auth_url}&quot; || is_dataset_prefix &quot;${open_url}&quot;; then
-        if [ &quot;${auth_url}&quot; != &quot;${open_url}&quot; ]; then
-            echo &quot;ERROR: source_dataset_s3_url (${auth_url}) and source_destigmatized_dataset_s3_url (${open_url}) must be identical for a dataset prefix&quot; &gt;&amp;2
+    for u in &quot;${auth_url}&quot; &quot;${open_url}&quot;; do
+        if is_dataset_prefix &quot;${u}&quot; &amp;&amp; is_dataset_prefix_v2 &quot;${u}&quot;; then
+            echo &quot;ERROR: ${u} names both a v1 and a v2 dataset prefix&quot; &gt;&amp;2
             exit 1
         fi
+    done
+    if ! is_dataset_prefix &quot;${auth_url}&quot; &amp;&amp; ! is_dataset_prefix_v2 &quot;${auth_url}&quot; \
+        &amp;&amp; ! is_dataset_prefix &quot;${open_url}&quot; &amp;&amp; ! is_dataset_prefix_v2 &quot;${open_url}&quot;; then
+        return 0
+    fi
+    if [ &quot;${auth_url}&quot; = &quot;${open_url}&quot; ]; then
+        allowed=true
+    elif is_dataset_prefix_v2 &quot;${auth_url}&quot; &amp;&amp; is_dataset_prefix &quot;${open_url}&quot;; then
+        allowed=true
+    fi
+    if [ &quot;${allowed}&quot; != true ]; then
+        echo &quot;ERROR: source_dataset_s3_url (${auth_url}) and source_destigmatized_dataset_s3_url (${open_url}) must be identical for a dataset prefix; allowed: the same v1 prefix (${dataset_marker}) twice, the same v2 prefix (${dataset_marker_v2}) twice, or a v2 prefix as source_dataset_s3_url with a v1 prefix as source_destigmatized_dataset_s3_url&quot; &gt;&amp;2
+        exit 1
     fi
 }
 
@@ -175,6 +205,24 @@ if ! key_exists &quot;data/${auth_key}/fence_mapping.json&quot;; then
     fi
     echo &quot;Nothing was scheduled.&quot; &gt;&amp;2
     exit 1
+fi
+
+# The open variant of a partitioned dataset can be staged with the stigmatized variables not removed, on a dev stack only (the stage
+# job&apos;s ALLOW_OPEN_STIGVARS_NOT_REMOVED). Its manifest.tsv header says so: &quot;# stigvars_removed=false&quot;, and the override that allowed it
+# is recorded as &quot;# stigvars_override=true&quot;. Without the override line nothing is scheduled. Legacy and flat data have neither line.
+open_manifest_key=&quot;data/${open_key}/destigmatized_javabins_rekeyed/manifest.tsv&quot;
+if key_exists &quot;${open_manifest_key}&quot;; then
+    if ! open_manifest=$(aws s3 cp &quot;s3://${stack_s3_bucket}/${open_manifest_key}&quot; - --only-show-errors &lt; /dev/null); then
+        echo &quot;ERROR: cannot read s3://${stack_s3_bucket}/${open_manifest_key} to check its stigvars header&quot; &gt;&amp;2
+        echo &quot;Nothing was scheduled.&quot; &gt;&amp;2
+        exit 1
+    fi
+    if printf &apos;%s\n&apos; &quot;${open_manifest}&quot; | grep -qx &apos;# stigvars_removed=false&apos; \
+        &amp;&amp; ! printf &apos;%s\n&apos; &quot;${open_manifest}&quot; | grep -qx &apos;# stigvars_override=true&apos;; then
+        echo &quot;ERROR: open dataset is staged with stigmatized variables not removed (# stigvars_removed=false) and without the override (# stigvars_override=true): deploy key ${open_key} (${open_manifest_key}); restage it under a new deploy key with HPDS Data - Stage to Stack Bucket and ALLOW_OPEN_STIGVARS_NOT_REMOVED=true, or put an open dataset with the variables removed in build-spec.json&quot; &gt;&amp;2
+        echo &quot;Nothing was scheduled.&quot; &gt;&amp;2
+        exit 1
+    fi
 fi
 
 echo &quot;${auth_key}&quot; &gt; datasetKey.txt
