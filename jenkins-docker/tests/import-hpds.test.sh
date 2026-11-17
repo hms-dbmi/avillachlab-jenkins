@@ -239,7 +239,7 @@ reset_world() {
     : > "$FAKE_AWS_LOG"
     : > "$FAKE_AWS_IDENTITY_LOG"
     : > "$FAKE_DOCKER_LOG"
-    unset AWS_PROFILE AWS_CONFIG_FILE FAKE_FAIL_COPY FAKE_FAIL_READ FAKE_FAIL_SOURCE_IDENTITY FAKE_NOOP_COPY FAKE_CORRUPT_COPY FAKE_LIST_DENIED FAKE_AWS_EAT_STDIN WS_SEED DEPLOY_TO_STAGING_STACK curated_datasets_s3_role IMPORT_BASH_OPTS
+    unset ALLOW_OPEN_STIGVARS_NOT_REMOVED AWS_PROFILE AWS_CONFIG_FILE FAKE_FAIL_COPY FAKE_FAIL_READ FAKE_FAIL_SOURCE_IDENTITY FAKE_NOOP_COPY FAKE_CORRUPT_COPY FAKE_LIST_DENIED FAKE_AWS_EAT_STDIN WS_SEED DEPLOY_TO_STAGING_STACK curated_datasets_s3_role IMPORT_BASH_OPTS
     # The Jenkins instance role: what every call that is not a source read must run as.
     export AWS_ACCESS_KEY_ID=AKIAINSTANCE AWS_SECRET_ACCESS_KEY=INSTANCESECRET AWS_SESSION_TOKEN=INSTANCETOKEN
 }
@@ -1802,17 +1802,17 @@ run_cfu
 check "CFU: auth not staged: no fence ERROR" test "$(grep -c 'fence_mapping' "$T/err")" = 0
 
 # ================================================================ job definitions
-check "Stage job: parameters are the HPDS_VARIANT choice both|auth|open (both is the default) and the boolean DEPLOY_TO_STAGING_STACK (default false)" python3 -I - "$IMPORT_XML" << 'PY'
+check "Stage job: parameters are the HPDS_VARIANT choice both|auth|open (both is the default), the boolean DEPLOY_TO_STAGING_STACK (default false) and the boolean ALLOW_OPEN_STIGVARS_NOT_REMOVED (default false)" python3 -I - "$IMPORT_XML" << 'PY'
 import sys, xml.etree.ElementTree as E
 r = E.parse(sys.argv[1]).getroot()
 names = [e.findtext("name") for e in r.findall(".//parameterDefinitions/*")]
-assert names == ["HPDS_VARIANT", "DEPLOY_TO_STAGING_STACK"], names
+assert names == ["HPDS_VARIANT", "DEPLOY_TO_STAGING_STACK", "ALLOW_OPEN_STIGVARS_NOT_REMOVED"], names
 c = r.find(".//hudson.model.ChoiceParameterDefinition")
 assert c.findtext("name") == "HPDS_VARIANT"
 assert [s.text for s in c.iter("string")] == ["both", "auth", "open"]
-b = r.find(".//hudson.model.BooleanParameterDefinition")
-assert b.findtext("name") == "DEPLOY_TO_STAGING_STACK"
-assert b.findtext("defaultValue") == "false"
+bs = r.findall(".//hudson.model.BooleanParameterDefinition")
+assert [b.findtext("name") for b in bs] == ["DEPLOY_TO_STAGING_STACK", "ALLOW_OPEN_STIGVARS_NOT_REMOVED"]
+assert all(b.findtext("defaultValue") == "false" for b in bs)
 PY
 check "Stage job: source_s3_url and destination_bucket_hash are gone from the job" test "$(grep -cE 'source_s3_url|destination_bucket_hash' "$IMPORT_XML")" = 0
 check "Stage job: release-control checkout is still configured" bash -c "grep -q '<url>\${release_control_git_repo}</url>' '$IMPORT_XML' && grep -q '<name>\${release_control_git_hash}</name>' '$IMPORT_XML'"
@@ -1860,6 +1860,545 @@ check "stage description: the old server-side-copy and instance-role-reads text 
 check "stage description: the trust policy of the source role must allow the deploy-account instance role" bash -c "grep -qF 'trust policy of curated-datasets-s3-role in account 515157839325 must allow the deploy-account instance role' '$T/import.desc'"
 check "stage description: the CLI gets the source credentials from the instance metadata (credential_source=Ec2InstanceMetadata), so IMDS must be reachable" bash -c "grep -qF 'credential_source=Ec2InstanceMetadata' '$T/import.desc' && grep -qF 'instance metadata service must be reachable from the Jenkins container' '$T/import.desc'"
 check "stage job: no names, task ids or workspace notes in the description or the shell step" bash -c "! grep -qiE 'thomas|umbrella|forgejo|local forge|claude|\bT[0-9]{2}[a-z]?\b' '$T/import.desc' '$T/import.sh'"
+
+# ================================================================ Release contract v2 (partitioned datasets)
+# A v2 dataset prefix (.../data/hpds/pheno-partitioned/datasets/<id>/) has a manifest.json of schema bdc-hpds-pheno-release/2: one
+# store per consent partition under phenotypic/<p>/, no removal object, no columnMeta.javabin destination. The open variant carries the
+# full per-partition columnMeta (open.stigvars_removed=false) and is staged only with ALLOW_OPEN_STIGVARS_NOT_REMOVED=true.
+DATASET_ID2=2026-11-17T0930Z
+DATASET_URL2="s3://$SRC_BUCKET/data/hpds/pheno-partitioned/datasets/$DATASET_ID2/"
+DATASET2_DIR="$FAKE_S3/$SRC_BUCKET/data/hpds/pheno-partitioned/datasets/$DATASET_ID2"
+V2_OPEN_NOTE='OPEN: STIGMATIZED VARIABLES NOT REMOVED (dev only)'
+
+# make_dataset_v2 [partitions, default 3]: a partitioned dataset with an auth and an open variant (same entries), no removal object.
+# Partition names use only the placeholder accessions; with more than 3 partitions the rest are phs000000.cN.
+make_dataset_v2() {
+    local d="$DATASET2_DIR"
+    rm -rf "$d"
+    mkdir -p "$d/static"
+    printf 'KEY0123' > "$d/encryption_key"
+    printf '{"bio_data_catalyst":[]}' > "$d/static/metadata.json"
+    printf '{"source_dataset_s3_url":"x"}\n' > "$d/build-spec.snippet.json"
+    printf 'summary\n' > "$d/release-summary.txt"
+    python3 -I - "$d" "${1:-3}" "$DATASET_ID2" "$DATASET_URL2" << 'PY' || { echo "cannot build the v2 fixture"; exit 1; }
+import hashlib, json, os, sys
+d, n, ds_id, url = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4]
+names = ["phs000000.c1", "phs999999.c1", "phs123456.c1"][:n]
+i = 2
+while len(names) < n:
+    names.append("phs000000.c%d" % i)
+    i += 1
+names.sort()
+
+def entry(rel, **extra):
+    data = open(os.path.join(d, rel), "rb").read()
+    e = {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(), "etag": '"etag-%s"' % rel}
+    e.update(extra)
+    return e
+
+parts, files = [], []
+for rel in ("encryption_key", "static/metadata.json", "build-spec.snippet.json", "release-summary.txt"):
+    files.append(entry(rel, src=rel))
+variant = [dict(src="encryption_key", dest="encryption_key", **entry("encryption_key")),
+           dict(src="static/metadata.json", dest="metadata.json", **entry("static/metadata.json"))]
+for p in names:
+    os.makedirs(os.path.join(d, "partitions", p), exist_ok=True)
+    pf = []
+    for f, content in (("allObservationsStore.javabin", "AOS-" + p), ("columnMeta.javabin", "CM-" + p), ("columnMeta.csv", "concept\n")):
+        with open(os.path.join(d, "partitions", p, f), "w") as fh:
+            fh.write(content)
+        rel = "partitions/%s/%s" % (p, f)
+        pf.append(dict(name=f, **entry(rel)))
+        if f != "columnMeta.csv":
+            variant.append(dict(src=rel, dest="phenotypic/%s/%s" % (p, f), **entry(rel)))
+    parts.append({"name": p, "rows": 1, "observations": 1, "concepts": 1, "files": pf})
+key = open(os.path.join(d, "encryption_key"), "rb").read()
+m = {
+    "schema": "bdc-hpds-pheno-release/2", "layout": "partitioned", "dataset_id": ds_id, "url": url,
+    "created_at": "2026-11-17T09:58:41Z", "created_by": {"job": "release", "build": "3"},
+    "source": {"load_prefix": "s3://example/load/", "run_id": "run-1", "flow": "split", "load_manifest_sha256": "0" * 64,
+               "requested_partitions": "", "loader": {"name": "CSVLoader", "jar_sha256": "0" * 64},
+               "pic_sure": {"sha": "abc", "ref": "main"},
+               "key": {"mode": "s3", "source": "s3://example/key", "sha256": hashlib.sha256(key).hexdigest()},
+               "static_prefix": "s3://example/static/"},
+    "static_set_sha256": "0" * 64,
+    "totals": {"partitions": n, "rows": n, "observations": n},
+    "consent_report": {"partitions": n, "fence_consents": 0, "partitions_without_fence": n, "fence_without_partition": 0},
+    "open": {"stigvars_removed": False},
+    "files": files, "partitions": parts,
+    "variants": {"auth": variant, "open": json.loads(json.dumps(variant))},
+}
+with open(os.path.join(d, "manifest.json"), "w") as fh:
+    json.dump(m, fh)
+PY
+}
+
+# mutate_v2 <jq filter>: edit the fixture's manifest.json
+mutate_v2() {
+    jq "$1" "$DATASET2_DIR/manifest.json" > "$T/m2.json" && mv "$T/m2.json" "$DATASET2_DIR/manifest.json"
+}
+allow_flag() { export ALLOW_OPEN_STIGVARS_NOT_REMOVED=true; }
+no_allow_flag() { unset ALLOW_OPEN_STIGVARS_NOT_REMOVED; }
+# tsv_rows FILE: the rows of a manifest.tsv, i.e. the lines after the column header (every header line starts with #)
+tsv_rows() { grep -v '^#' "$1" | tail -n +2; }
+tsv_header_has() { grep -qxF -- "$2" <(grep '^#' "$1"); }
+
+# ---- happy path: auth
+reset_world
+make_dataset_v2
+check "v2 fixture: the manifest has no removal object (v2 never has one)" jq -e 'has("removal") | not' "$DATASET2_DIR/manifest.json"
+run_import auth "$DATASET_URL2"
+[ "$rc" = 0 ] && ok "v2 auth staging exits 0" || { bad "v2 auth staging (rc=$rc)"; cat "$T/err"; }
+want_files="$( (jq -r '.variants.auth[].dest' "$DATASET2_DIR/manifest.json"; echo manifest.tsv) | sort | tr '\n' ' ')"
+[ "$(stage_files $AUTH_DIR)" = "$want_files" ] && ok "v2 auth layout: encryption_key, metadata.json, phenotypic/<p>/{store,columnMeta}.javabin per partition, manifest.tsv" || bad "v2 auth layout: $(stage_files $AUTH_DIR)"
+M2="$STAGE/$AUTH_DIR/manifest.tsv"
+check "v2 manifest.tsv magic line is still bdc-hpds-deploy/1" test "$(sed -n 1p "$M2")" = "# bdc-hpds-deploy/1"
+check "v2 manifest.tsv variant line" tsv_header_has "$M2" "# variant=auth"
+check "v2 manifest.tsv has # layout=partitioned" tsv_header_has "$M2" "# layout=partitioned"
+check "v2 manifest.tsv has # partitions=3" tsv_header_has "$M2" "# partitions=3"
+check "v2 manifest.tsv has the dataset_id, source and manifest_sha256 lines" bash -c "grep -qxF '# dataset_id=$DATASET_ID2' '$M2' && grep -qxF '# source=$DATASET_URL2' '$M2' && grep -qxF '# manifest_sha256=$(sha "$DATASET2_DIR/manifest.json")' '$M2'"
+check "v2 auth manifest.tsv has no stigvars lines" test "$(grep -c stigvars "$M2")" = 0
+check "v2 manifest.tsv: header is 7 comment lines then the column header" test "$(grep -c '^#' "$M2")" = 7 -a "$(grep -v '^#' "$M2" | head -1)" = "$(printf 'dest\tbytes\tsha256\tetag\tsrc')"
+check "v2 manifest.tsv: one row per variant entry (8 = key + metadata + 2 per partition), counted after the column header" test "$(tsv_rows "$M2" | wc -l | tr -d ' ')" = 8 -a "$(jq '.variants.auth | length' "$DATASET2_DIR/manifest.json")" = 8
+check "v2 manifest.tsv: the rows are sorted by dest" bash -c "tsv_rows() { grep -v '^#' '$M2' | tail -n +2; }; tsv_rows | cut -f1 | LC_ALL=C sort -c"
+check "v2 manifest.tsv: the sha256 column is a real digest in every row (never -)" test "$(tsv_rows "$M2" | cut -f3 | grep -cE '^[0-9a-f]{64}$')" = 8
+check "v2 manifest.tsv: a nested row has dest, bytes, sha256, etag and src" grep -qxF "$(printf 'phenotypic/phs000000.c1/columnMeta.javabin\t%s\t%s\t"etag-partitions/phs000000.c1/columnMeta.javabin"\tpartitions/phs000000.c1/columnMeta.javabin' "$(wc -c < "$DATASET2_DIR/partitions/phs000000.c1/columnMeta.javabin" | tr -d ' ')" "$(sha "$DATASET2_DIR/partitions/phs000000.c1/columnMeta.javabin")")" "$M2"
+check "v2 nested files are byte-identical to the partition files" cmp "$STAGE/$AUTH_DIR/phenotypic/phs999999.c1/allObservationsStore.javabin" "$DATASET2_DIR/partitions/phs999999.c1/allObservationsStore.javabin"
+check "v2 columnMeta.csv is not staged" test "$(find "$STAGE" -name columnMeta.csv | wc -l | tr -d ' ')" = 0
+check "v2 fence_mapping.json is the static metadata.json (from the dataset's metadata.json, as v1)" cmp "$STAGE/fence_mapping.json" "$DATASET2_DIR/static/metadata.json"
+check "v2: the written manifest.tsv rows equal the variant entries (dest and src)" bash -c "diff <(jq -r '.variants.auth | sort_by(.dest)[] | [.dest, .src] | @tsv' '$DATASET2_DIR/manifest.json') <(grep -v '^#' '$M2' | tail -n +2 | cut -f1,5)"
+check "v2: manifest.tsv is the last object written" bash -c "grep -E 'aws s3 cp (-|dataset_work/manifest.tsv) s3://' '$FAKE_AWS_LOG' | tail -1 | grep -q '/$AUTH_DIR/manifest.tsv'"
+check "v2: every copy into the stack bucket uses --sse AES256" test "$(grep -E 'aws s3 cp [^ ]+ s3://' "$FAKE_AWS_LOG" | grep -vc -- '--sse AES256')" = 0
+check "v2: every stream got exactly --expected-size bytes, and every v2 copy was a stream (8 files + fence_mapping.json)" test "$(grep -c '^stream ' "$FAKE_AWS_IDENTITY_LOG")" = 9
+check "v2: streams are consistent with --expected-size" streams_consistent
+check "v2: source reads ran as the source role, writes as the instance role, nothing leaked" test "$(count_without "$SRC_READ" "$SRC_ID")" = 0 -a "$(count_without "$DEST_WRITE" "$INST_ID")" = 0 -a "$(grep -c '^ident=leak' "$FAKE_AWS_IDENTITY_LOG")" = 0
+check "v2: the byte check (head-object) ran for every file and fence_mapping.json" test "$(grep -c 's3api head-object' "$FAKE_AWS_LOG")" = 9
+check "v2 auth prints no banner and writes no stigvars lines" bash -c "! grep -qF '$V2_OPEN_NOTE' '$T/out' && ! grep -q stigvars '$M2'"
+run_import_in_repo auth
+check "v2: a second run skips the staged variant" grep -q 'already staged, skipping' "$T/out"
+
+# header lines and row count with more partitions: the rows are counted after the column header, not from a fixed line number
+reset_world
+make_dataset_v2 12
+run_import auth "$DATASET_URL2"
+[ "$rc" = 0 ] && ok "v2 with 12 partitions: auth staging exits 0" || { bad "v2 12 partitions (rc=$rc)"; cat "$T/err"; }
+M2="$STAGE/$AUTH_DIR/manifest.tsv"
+check "v2 12 partitions: # partitions=12 (distinct <p>)" tsv_header_has "$M2" "# partitions=12"
+check "v2 12 partitions: 26 rows = key + metadata + 2 x 12" test "$(tsv_rows "$M2" | wc -l | tr -d ' ')" = 26
+check "v2 12 partitions: the old fixed 'tail -n +7' count would be wrong (it would count the extra header lines as rows)" test "$(tail -n +7 "$M2" | wc -l | tr -d ' ')" = 28
+check "v2 12 partitions: no row is a header line and no header line is a row" test "$(grep -c '^#' "$M2")" = 7 -a "$(grep -v '^#' "$M2" | wc -l | tr -d ' ')" = 27
+# the row-count guard still holds for v2: a loop cut short must not publish a manifest.tsv
+reset_world
+make_dataset_v2
+sed 's|< /dev/null||g' "$T/import.sh" > "$T/import-noredirect.sh"
+export FAKE_AWS_EAT_STDIN=1
+IMPORT_SCRIPT="$T/import-noredirect.sh"
+run_import auth "$DATASET_URL2"
+IMPORT_SCRIPT="$T/import.sh"
+unset FAKE_AWS_EAT_STDIN
+[ "$rc" != 0 ] && grep -q 'data rows' "$T/err" && ok "v2: a short manifest.tsv is refused before upload" || bad "v2 short manifest.tsv guard (rc=$rc)"
+check "v2: the short manifest.tsv was not uploaded" test ! -e "$STAGE/$AUTH_DIR/manifest.tsv"
+# a v2 stdin-eating aws does not end the loop either
+reset_world
+make_dataset_v2
+export FAKE_AWS_EAT_STDIN=1
+run_import auth "$DATASET_URL2"
+unset FAKE_AWS_EAT_STDIN
+[ "$rc" = 0 ] && ok "v2: aws that consumes stdin does not end the loop" || bad "v2 stdin-eating aws (rc=$rc)"
+
+# ---- open guardrail
+reset_world
+make_dataset_v2
+no_allow_flag
+run_import open "$DATASET_URL2"
+[ "$rc" != 0 ] && grep -q 'REFUSED: open: ' "$T/err" && ok "v2 open without ALLOW_OPEN_STIGVARS_NOT_REMOVED is refused" || bad "v2 open, flag off (rc=$rc)"
+check "v2 open refusal names the parameter and the dataset" bash -c "grep -q 'ALLOW_OPEN_STIGVARS_NOT_REMOVED=true' '$T/err' && grep -qF '$DATASET_URL2' '$T/err'"
+check "v2 open refusal copies nothing and stages nothing for open" bash -c "test ! -e '$STAGE/$OPEN_DIR' && test \$(grep -c 'aws s3 cp - ' '$FAKE_AWS_LOG') = 0"
+check "v2 open refusal prints no banner" bash -c "! grep -qF '$V2_OPEN_NOTE' '$T/out'"
+export ALLOW_OPEN_STIGVARS_NOT_REMOVED=false
+run_import open "$DATASET_URL2"
+no_allow_flag
+[ "$rc" != 0 ] && grep -q 'REFUSED: open: ' "$T/err" && ok "v2 open with ALLOW_OPEN_STIGVARS_NOT_REMOVED=false is refused" || bad "v2 open, flag false (rc=$rc)"
+export ALLOW_OPEN_STIGVARS_NOT_REMOVED=maybe
+: > "$FAKE_AWS_LOG"
+run_import auth "$DATASET_URL2"
+no_allow_flag
+[ "$rc" != 0 ] && grep -q "unknown ALLOW_OPEN_STIGVARS_NOT_REMOVED 'maybe'" "$T/err" && ok "an unknown ALLOW_OPEN_STIGVARS_NOT_REMOVED value is refused, for any variant" || bad "bad flag value (rc=$rc)"
+check "a bad ALLOW_OPEN_STIGVARS_NOT_REMOVED makes no aws call" test ! -s "$FAKE_AWS_LOG"
+
+reset_world
+make_dataset_v2
+allow_flag
+run_import open "$DATASET_URL2"
+no_allow_flag
+[ "$rc" = 0 ] && ok "v2 open with ALLOW_OPEN_STIGVARS_NOT_REMOVED=true exits 0 (the manifest has no removal object)" || { bad "v2 open, flag on (rc=$rc)"; cat "$T/err"; }
+OM2="$STAGE/$OPEN_DIR/manifest.tsv"
+want_files="$( (jq -r '.variants.open[].dest' "$DATASET2_DIR/manifest.json"; echo manifest.tsv) | sort | tr '\n' ' ')"
+[ "$(stage_files $OPEN_DIR)" = "$want_files" ] && ok "v2 open layout equals the auth layout: nested partitions, no conceptsToRemove.txt" || bad "v2 open layout: $(stage_files $OPEN_DIR)"
+check "v2 open manifest.tsv: variant, layout and partitions lines" bash -c "grep -qxF '# variant=open' '$OM2' && grep -qxF '# layout=partitioned' '$OM2' && grep -qxF '# partitions=3' '$OM2'"
+check "v2 open manifest.tsv has # stigvars_removed=false and # stigvars_override=true" bash -c "grep -qxF '# stigvars_removed=false' '$OM2' && grep -qxF '# stigvars_override=true' '$OM2'"
+check "v2 open manifest.tsv: 9 comment lines, 8 rows counted after the column header" test "$(grep -c '^#' "$OM2")" = 9 -a "$(tsv_rows "$OM2" | wc -l | tr -d ' ')" = 8
+check "v2 open: the open prefix carries the full per-partition columnMeta.javabin" cmp "$STAGE/$OPEN_DIR/phenotypic/phs000000.c1/columnMeta.javabin" "$DATASET2_DIR/partitions/phs000000.c1/columnMeta.javabin"
+check "v2 open: a loud banner is printed" bash -c "grep -qF '$V2_OPEN_NOTE' '$T/out' && grep -q '^\*\*\*\*' '$T/out' && grep -qF 'FULL per-partition columnMeta' '$T/out'"
+check "v2 open staging writes no fence_mapping.json" test ! -e "$STAGE/fence_mapping.json"
+# both: auth without the stigvars lines, open with them
+reset_world
+make_dataset_v2
+allow_flag
+run_import both "$DATASET_URL2"
+no_allow_flag
+[ "$rc" = 0 ] && ok "v2 both with the override: exits 0" || { bad "v2 both, override (rc=$rc)"; cat "$T/err"; }
+check "v2 both: auth manifest.tsv has no stigvars lines, open has both" bash -c "test \$(grep -c stigvars '$STAGE/$AUTH_DIR/manifest.tsv') = 0 && test \$(grep -c stigvars '$STAGE/$OPEN_DIR/manifest.tsv') = 2"
+check "v2 both: auth first, then open (the open banner comes after the auth summary line was possible, the auth manifest first)" bash -c "
+    a=\$(grep -n '/data/$C1/$AUTH_DIR/manifest.tsv' '$FAKE_AWS_LOG' | head -1 | cut -d: -f1)
+    o=\$(grep -n '/data/$C1/$OPEN_DIR/' '$FAKE_AWS_LOG' | head -1 | cut -d: -f1)
+    [ -n \"\$a\" ] && [ -n \"\$o\" ] && [ \"\$a\" -lt \"\$o\" ]"
+check "v2 both: fence_mapping.json is written once, by auth" test "$(grep -c 's3://.*/fence_mapping.json' "$FAKE_AWS_LOG" | tr -d ' ')" = 1
+# Check For Updates accepts what the stage job wrote
+run_cfu
+[ "$rc" = 0 ] && ok "CFU: v2 data staged by the stage job with the override passes" || { bad "CFU on v2 staged with the override (rc=$rc)"; cat "$T/err"; }
+check "CFU: v2 staged data: the three keys are written" bash -c "cd '$REPO' && test -s datasetKey.txt && test -s destigmatizedDatasetKey.txt && test -s genomicDatasetKey.txt"
+# the same without the override line: refused by CFU
+grep -vx '# stigvars_override=true' "$STAGE/$OPEN_DIR/manifest.tsv" > "$T/open.tsv" && cp "$T/open.tsv" "$STAGE/$OPEN_DIR/manifest.tsv"
+run_cfu
+[ "$rc" = 1 ] && grep -q '^ERROR: open dataset is staged with stigmatized variables not removed' "$T/err" && ok "CFU: an open manifest.tsv with # stigvars_removed=false and no override line fails" || { bad "CFU without override (rc=$rc)"; cat "$T/err"; }
+check "CFU: that failure names the deploy key and says nothing was scheduled" bash -c "grep -q 'deploy key $C1' '$T/err' && grep -qx 'Nothing was scheduled.' '$T/err'"
+check "CFU: that failure writes no key files" cfu_no_keys
+# header variants
+cfu_open_header() { # <description> <expected rc> <header lines...>
+    local d="$1" want="$2" l
+    shift 2
+    reset_world
+    cfu_repo "$DATASET_URL2" "$DATASET_URL2"
+    stage_manifest "$C1" javabins_rekeyed
+    stage_manifest "$C1" destigmatized_javabins_rekeyed
+    {
+        for l in "# bdc-hpds-deploy/1" "# variant=open" "# layout=partitioned" "# partitions=3" "$@"; do printf '%s\n' "$l"; done
+        printf 'dest\tbytes\tsha256\tetag\tsrc\n'
+        printf 'metadata.json\t7\t%s\t"e"\tstatic/metadata.json\n' "$(printf '0%.0s' $(seq 1 64))"
+    } > "$FAKE_S3/$STACK/data/$C1/$OPEN_DIR/manifest.tsv"
+    run_cfu
+    [ "$rc" = "$want" ] && ok "CFU: $d (rc $want)" || { bad "CFU: $d (rc=$rc, want $want)"; cat "$T/err"; }
+}
+cfu_open_header "open header with # stigvars_removed=false and # stigvars_override=true passes" 0 "# stigvars_removed=false" "# stigvars_override=true"
+cfu_open_header "open header with # stigvars_override=true before # stigvars_removed=false passes" 0 "# stigvars_override=true" "# stigvars_removed=false"
+cfu_open_header "open header with # stigvars_removed=false and no override fails" 1 "# stigvars_removed=false"
+check "CFU: that failure writes no key files" cfu_no_keys
+cfu_open_header "open header with # stigvars_removed=true passes (a later phase)" 0 "# stigvars_removed=true"
+cfu_open_header "open header with neither line passes" 0
+cfu_open_header "open header with only # stigvars_override=true passes" 0 "# stigvars_override=true"
+cfu_open_header "# stigvars_removed=false as a longer value (=falsey) is not the marker" 0 "# stigvars_removed=falsey"
+# only the open manifest.tsv is read: the same lines in the auth one do not matter
+reset_world
+cfu_repo "$DATASET_URL2" "$DATASET_URL2"
+stage_manifest "$C1" javabins_rekeyed
+stage_manifest "$C1" destigmatized_javabins_rekeyed
+printf '# bdc-hpds-deploy/1\n# stigvars_removed=false\n' > "$FAKE_S3/$STACK/data/$C1/javabins_rekeyed/manifest.tsv"
+run_cfu
+[ "$rc" = 0 ] && ok "CFU: only the open manifest.tsv header is checked" || bad "CFU auth header (rc=$rc)"
+# the check is for per-file open data: a legacy open tar has no header to read
+reset_world
+cfu_repo "$DATASET_URL2" "$DATASET_URL2"
+stage_manifest "$C1" javabins_rekeyed
+stage_tar "$C1" destigmatized_javabins_rekeyed
+run_cfu
+[ "$rc" = 0 ] && ok "CFU: an open legacy tar has no stigvars header and passes" || bad "CFU open tar (rc=$rc)"
+check "CFU: an open legacy tar: the open manifest.tsv is not read" test "$(grep -c "cp s3://$STACK/data/$C1/$OPEN_DIR/manifest.tsv" "$FAKE_AWS_LOG")" = 0
+# no legacy tar: the open manifest.tsv is read, whatever the listing says; the listing and the head both failing does not skip the check
+reset_world
+cfu_repo "$DATASET_URL2" "$DATASET_URL2"
+stage_manifest "$C1" javabins_rekeyed
+stage_manifest "$C1" destigmatized_javabins_rekeyed
+printf '# bdc-hpds-deploy/1\n# stigvars_removed=false\n' > "$FAKE_S3/$STACK/data/$C1/$OPEN_DIR/manifest.tsv"
+export FAKE_LIST_DENIED=1
+run_cfu
+unset FAKE_LIST_DENIED
+[ "$rc" = 1 ] && grep -q '^ERROR: open dataset is staged with stigmatized variables not removed' "$T/err" && ok "CFU: with the listing denied the open manifest.tsv is still read and checked" || bad "CFU list denied, open header (rc=$rc)"
+check "CFU: the open manifest.tsv is read once no legacy tar exists" test "$(grep -c "cp s3://$STACK/data/$C1/$OPEN_DIR/manifest.tsv -" "$FAKE_AWS_LOG")" = 1
+# an unreadable open manifest.tsv fails closed
+reset_world
+cfu_repo "$DATASET_URL2" "$DATASET_URL2"
+stage_manifest "$C1" javabins_rekeyed
+stage_manifest "$C1" destigmatized_javabins_rekeyed
+export FAKE_FAIL_READ="destigmatized_javabins_rekeyed/manifest.tsv"
+run_cfu
+unset FAKE_FAIL_READ
+[ "$rc" = 1 ] && grep -q 'cannot read .*manifest.tsv to check its stigvars header' "$T/err" && ok "CFU: an open manifest.tsv that cannot be read fails closed" || bad "CFU unreadable open manifest.tsv (rc=$rc)"
+
+# ---- the v1 open checks still apply to /1 and are not run for /2
+reset_world
+make_dataset
+jq 'del(.removal)' "$DATASET_DIR/manifest.json" > "$T/m.json" && mv "$T/m.json" "$DATASET_DIR/manifest.json"
+run_import open "$DATASET_URL"
+[ "$rc" != 0 ] && grep -q 'REFUSED' "$T/err" && ok "v1 manifest without a removal object: open is still refused" || bad "v1 open without removal (rc=$rc)"
+allow_flag
+run_import open "$DATASET_URL"
+no_allow_flag
+[ "$rc" != 0 ] && grep -q 'open variant would ship the full columnMeta.javabin' "$T/err" && ok "v1 open without removal is refused even with ALLOW_OPEN_STIGVARS_NOT_REMOVED=true (the flag is v2 only)" || bad "v1 open, flag on (rc=$rc)"
+reset_world
+make_dataset same
+allow_flag
+run_import open "$DATASET_URL"
+no_allow_flag
+[ "$rc" != 0 ] && ok "v1 open with equal columnMeta shas is refused with the flag on" || bad "v1 equal shas, flag on (rc=$rc)"
+reset_world
+make_dataset
+jq '.variants.auth += [{"src":"open/columnMeta.javabin","dest":"extra.javabin","bytes":15,"sha256":null,"etag":null}]' "$DATASET_DIR/manifest.json" > "$T/m.json" && mv "$T/m.json" "$DATASET_DIR/manifest.json"
+run_import auth "$DATASET_URL"
+[ "$rc" != 0 ] && grep -q 'must not use files from open/' "$T/err" && ok "v1 auth with an open/ file is still refused" || bad "v1 auth open/ (rc=$rc)"
+reset_world
+make_dataset
+jq '.variants.auth |= map(select(.dest != "columnMeta.javabin"))' "$DATASET_DIR/manifest.json" > "$T/m.json" && mv "$T/m.json" "$DATASET_DIR/manifest.json"
+run_import auth "$DATASET_URL"
+[ "$rc" != 0 ] && ok "v1 manifest without a columnMeta.javabin dest is still refused" || bad "v1 without columnMeta.javabin (rc=$rc)"
+# a v1 open variant (rule (c) mixed form) is staged with its removal checks, next to a partitioned auth variant
+reset_world
+make_dataset
+make_dataset_v2
+run_import both "$DATASET_URL2" "$DATASET_URL"
+[ "$rc" = 0 ] && ok "mixed form: v2 auth with a v1 open prefix stages (no flag needed, the open data is v1)" || { bad "mixed form (rc=$rc)"; cat "$T/err"; }
+check "mixed form: auth is partitioned, open is the flat v1 layout" bash -c "grep -qxF '# layout=partitioned' '$STAGE/$AUTH_DIR/manifest.tsv' && ! grep -q '^# layout' '$STAGE/$OPEN_DIR/manifest.tsv' && test -f '$STAGE/$OPEN_DIR/columnMeta.javabin' && test -f '$STAGE/$AUTH_DIR/phenotypic/phs000000.c1/columnMeta.javabin'"
+check "mixed form: the open manifest.tsv has the five v1 comment lines and no stigvars lines" test "$(grep -c '^#' "$STAGE/$OPEN_DIR/manifest.tsv")" = 5 -a "$(grep -c stigvars "$STAGE/$OPEN_DIR/manifest.tsv")" = 0
+run_cfu
+[ "$rc" = 0 ] && ok "mixed form: CFU accepts the staged data" || { bad "mixed form CFU (rc=$rc)"; cat "$T/err"; }
+# class and schema must agree
+reset_world
+make_dataset
+make_dataset_v2
+cp "$DATASET2_DIR/manifest.json" "$DATASET_DIR/manifest.json"
+run_import auth "$DATASET_URL"
+[ "$rc" != 0 ] && grep -q 'is schema bdc-hpds-pheno-release/2 but the URL is not a partitioned' "$T/err" && ok "a v2 manifest at a v1 prefix is refused" || bad "v2 manifest, v1 URL (rc=$rc)"
+check "a v2 manifest at a v1 prefix stages nothing" test ! -e "$STAGE/$AUTH_DIR"
+make_dataset
+cp "$DATASET_DIR/manifest.json" "$T/v1manifest.json"
+make_dataset_v2
+cp "$T/v1manifest.json" "$DATASET2_DIR/manifest.json"
+run_import auth "$DATASET_URL2"
+[ "$rc" != 0 ] && grep -q 'partitioned (v2) dataset prefix but its manifest.json is schema bdc-hpds-pheno-release/1' "$T/err" && ok "a v1 manifest at a v2 prefix is refused" || bad "v1 manifest, v2 URL (rc=$rc)"
+check "a v1 manifest at a v2 prefix stages nothing" test ! -e "$STAGE/$AUTH_DIR"
+reset_world
+make_dataset_v2
+mutate_v2 '.schema = "bdc-hpds-pheno-release/3"'
+run_import auth "$DATASET_URL2"
+[ "$rc" != 0 ] && grep -q "has schema 'bdc-hpds-pheno-release/3'" "$T/err" && ok "an unknown schema is refused with the schema named" || bad "schema /3 (rc=$rc)"
+
+# ---- /2 refusals (the deploy-side subset of the validator); every one stages nothing and copies nothing
+ZERO64="$(printf '0%.0s' $(seq 1 64))"
+v2_refuses() { # <what> <variant> <override flag: true|""> <jq filter> [message fragment]
+    local what="$1" v="$2" flag="$3" filter="$4" frag="${5:-not a valid bdc-hpds-pheno-release/2}" sd="$AUTH_DIR"
+    [ "$v" != open ] || sd="$OPEN_DIR"
+    reset_world
+    make_dataset_v2
+    mutate_v2 "$filter"
+    if [ -n "$flag" ]; then allow_flag; else no_allow_flag; fi
+    run_import "$v" "$DATASET_URL2"
+    no_allow_flag
+    if [ "$rc" != 0 ] && grep -q '^REFUSED: ' "$T/err" && grep -qF "$frag" "$T/err" && [ ! -e "$STAGE/$sd/manifest.tsv" ] && [ "$(grep -c 'aws s3 cp - ' "$FAKE_AWS_LOG")" = 0 ]; then
+        ok "v2 refused ($v): $what"
+    else
+        bad "v2 refused ($v): $what (rc=$rc)"
+        head -3 "$T/err"
+    fi
+}
+v2_refuses "layout is not partitioned" auth "" '.layout = "flat"'
+v2_refuses "no layout" auth "" 'del(.layout)'
+v2_refuses "a store dest at the top level" auth "" '.variants.auth[2].dest = "allObservationsStore.javabin"'
+v2_refuses "a columnMeta.javabin dest at the top level" auth "" '.variants.auth[3].dest = "columnMeta.javabin"'
+v2_refuses "a columnMeta.csv entry" auth "" '.variants.auth += [{"src":"partitions/phs000000.c1/columnMeta.csv","dest":"phenotypic/phs000000.c1/columnMeta.csv","bytes":8,"sha256":.files[0].sha256,"etag":"\"x\""}]'
+v2_refuses "an all/ dest" auth "" '.variants.auth[2].dest = "all/phs000000.c1/allObservationsStore.javabin"'
+v2_refuses "a conceptsToRemove.txt entry" auth "" '.variants.auth += [{"src":"static/conceptsToRemove.txt","dest":"conceptsToRemove.txt","bytes":1,"sha256":.files[0].sha256,"etag":"\"x\""}]'
+v2_refuses "an open/ src" auth "" '.variants.auth[3].src = "open/partitions/phs000000.c1/columnMeta.javabin"'
+v2_refuses "a missing encryption_key entry" auth "" '.variants.auth |= map(select(.src != "encryption_key"))'
+v2_refuses "a missing partition file entry" auth "" '.variants.auth |= .[0:7]'
+v2_refuses "a duplicate entry" auth "" '.variants.auth += [.variants.auth[2]]'
+v2_refuses "a null sha256 on a store" auth "" '.partitions[0].files[0].sha256 = null | .variants.auth[2].sha256 = null'
+v2_refuses "a null sha256 on the key" auth "" '.files[0].sha256 = null | .variants.auth[0].sha256 = null'
+v2_refuses "a sha256 that is not hex" auth "" '.partitions[0].files[0].sha256 = "xyz" | .variants.auth[2].sha256 = "xyz"'
+v2_refuses "an uppercase sha256" auth "" '.partitions[0].files[1].sha256 |= ascii_upcase | .variants.auth[3].sha256 |= ascii_upcase'
+v2_refuses "the encryption_key sha256 differs from source.key.sha256" auth "" ".source.key.sha256 = \"$ZERO64\""
+v2_refuses "no source.key.sha256" auth "" 'del(.source.key.sha256)'
+v2_refuses "an entry sha256 differs from its partitions[] entry" auth "" ".variants.auth[2].sha256 = \"$ZERO64\""
+v2_refuses "an entry bytes differs from its partitions[] entry" auth "" '.variants.auth[2].bytes = 999'
+v2_refuses "an entry etag differs from its partitions[] entry" auth "" '.variants.auth[2].etag = "\"other\""'
+v2_refuses "a non-integer bytes" auth "" '.variants.auth[2].bytes = 1.5 | .partitions[0].files[0].bytes = 1.5'
+v2_refuses "an empty etag" auth "" '.variants.auth[2].etag = "" | .partitions[0].files[0].etag = ""'
+v2_refuses "a path traversal dest" auth "" '.variants.auth[2].dest = "phenotypic/../x"'
+v2_refuses "a path traversal src" auth "" '.variants.auth[2].src = "partitions/../x"'
+v2_refuses "an absolute dest" auth "" '.variants.auth[2].dest = "/phenotypic/phs000000.c1/allObservationsStore.javabin"'
+v2_refuses "a partition name with .." auth "" '.partitions[0].name = ".."'
+v2_refuses "a partition name that starts with a dot" auth "" '.partitions[0].name = ".hidden"'
+v2_refuses "a partition name with a slash" auth "" '.partitions[0].name = "a/b"'
+v2_refuses "a partition name longer than 128 characters" auth "" ".partitions[0].name = \"$(printf 'a%.0s' $(seq 1 129))\""
+v2_refuses "a repeated partition name" auth "" '.partitions[1].name = .partitions[0].name'
+v2_refuses "no partitions" auth "" '.partitions = [] | .variants.auth |= .[0:2]'
+v2_refuses "a partition that is not in the variant" auth "" '.partitions += [{"name":"phs999999.c9","files":[]}]'
+v2_refuses "a malformed dataset_id" auth "" '.dataset_id = "x"'
+v2_refuses "open.stigvars_removed is true (a later phase; refused for auth too)" auth "" '.open.stigvars_removed = true'
+v2_refuses "open.stigvars_removed is missing" auth "" 'del(.open.stigvars_removed)'
+v2_refuses "open.stigvars_removed is a string" auth "" '.open.stigvars_removed = "false"'
+v2_refuses "open.stigvars_removed is true for the open variant, flag on" open true '.open.stigvars_removed = true'
+v2_refuses "no open object for the open variant, flag on" open true 'del(.open)'
+v2_refuses "no variants.open for HPDS_VARIANT=open, flag on" open true 'del(.variants.open)'
+v2_refuses "no variants.open and no open object for HPDS_VARIANT=open, flag on" open true 'del(.variants.open) | del(.open)'
+v2_refuses "an open variant missing a partition file, flag on" open true '.variants.open |= .[0:7]'
+v2_refuses "an open variant with a top-level store, flag on" open true '.variants.open[2].dest = "allObservationsStore.javabin"'
+v2_refuses "an open variant with a columnMeta.javabin dest (v1 shape), flag on" open true '.variants.open += [{"src":"partitions/phs000000.c1/columnMeta.javabin","dest":"columnMeta.javabin","bytes":14,"sha256":.variants.open[3].sha256,"etag":.variants.open[3].etag}]'
+# an invalid open variant is refused for auth too (the manifest is checked as a whole) and a valid auth next to a broken open is not staged in a refused run
+v2_refuses "a broken open variant also refuses an auth run (subset D is a manifest check)" auth "" '.variants.open |= .[0:7]'
+v2_refuses "an extra variant key" auth "" '.variants.extra = .variants.auth'
+v2_refuses "an extra variant key next to auth only" auth "" 'del(.variants.open) | del(.open) | .variants.extra = .variants.auth'
+v2_refuses "variants.open without an open object (auth run)" auth "" 'del(.open)'
+v2_refuses "variants.open without an open object (open run, flag on)" open true 'del(.open)'
+v2_refuses "an open object without variants.open (auth run)" auth "" 'del(.variants.open)'
+v2_refuses "no variants.auth (auth run)" auth "" 'del(.variants.auth)'
+v2_refuses "no variants.auth (open run, flag on)" open true 'del(.variants.auth)'
+v2_refuses "variants.auth is null" open true '.variants.auth = null'
+v2_refuses "variants is empty" auth "" '.variants = {}'
+v2_refuses "variants.auth is not an array" auth "" '.variants.auth = {}'
+# open variant only needs the override for open: auth next to a variants.open-less manifest is fine
+reset_world
+make_dataset_v2
+mutate_v2 'del(.variants.open) | del(.open)'
+run_import auth "$DATASET_URL2"
+[ "$rc" = 0 ] && ok "v2 auth is staged from a manifest with no open variant" || { bad "v2 auth, no open variant (rc=$rc)"; cat "$T/err"; }
+no_allow_flag
+run_import_in_repo open
+[ "$rc" != 0 ] && grep -q 'REFUSED' "$T/err" && ok "v2 open on a manifest with no open variant is refused" || bad "v2 open, no open variant (rc=$rc)"
+
+# a v2 prefix without the override: the open refusal comes up front, before anything (auth included) is staged
+reset_world
+make_dataset_v2
+no_allow_flag
+run_import both "$DATASET_URL2"
+[ "$rc" != 0 ] && grep -q 'REFUSED: open: ' "$T/err" && ok "v2 both without the override: the open refusal ends the build non-zero" || bad "v2 both, no override (rc=$rc)"
+check "v2 both without the override: nothing is staged, not even auth, and no copy or source read is made (only the staged-marker lookups)" bash -c "test ! -e '$STAGE' && test \$(grep -c 'aws s3 cp\|sts ' '$FAKE_AWS_LOG') = 0 && test \$(grep -vc 's3api list-objects-v2' '$FAKE_AWS_LOG') = 0"
+check "v2 both without the override: no Next line" test "$(grep -c '^Next:' "$T/out")" = 0
+# an open variant that is already staged is skipped and needs no override, so auth can still be staged on its own run
+reset_world
+make_dataset_v2
+allow_flag
+run_import open "$DATASET_URL2"
+no_allow_flag
+run_import_in_repo both
+[ "$rc" = 0 ] && ok "v2 both without the override, open already staged: auth is staged, open is skipped (rc 0)" || { bad "v2 both, open already staged (rc=$rc)"; cat "$T/err"; }
+check "v2 both without the override, open already staged: both are staged" test -f "$STAGE/$AUTH_DIR/manifest.tsv" -a -f "$STAGE/$OPEN_DIR/manifest.tsv"
+# the up-front refusal applies to a v2 prefix only: a v1 prefix for open needs no flag (mixed form)
+reset_world
+make_dataset
+make_dataset_v2
+no_allow_flag
+run_import both "$DATASET_URL2" "$DATASET_URL"
+[ "$rc" = 0 ] && ok "v2 auth with a v1 open prefix needs no override (rc 0)" || bad "mixed form without the override (rc=$rc)"
+
+# fence_mapping.json repair works on v2 data (restored from the staged metadata.json)
+reset_world
+make_dataset_v2
+run_import auth "$DATASET_URL2"
+rm -f "${STAGE:?}/fence_mapping.json"
+: > "$FAKE_AWS_LOG"
+run_import_in_repo auth
+[ "$rc" = 0 ] && grep -qx 'fence_mapping.json restored from the staged metadata.json' "$T/out" && ok "v2: a missing fence_mapping.json is restored from the staged metadata.json" || bad "v2 fence repair (rc=$rc)"
+check "v2: the restored fence_mapping.json is the staged metadata.json" cmp "$STAGE/fence_mapping.json" "$STAGE/$AUTH_DIR/metadata.json"
+
+# a failure in the middle of a v2 stage leaves no manifest.tsv, the retry completes it
+reset_world
+make_dataset_v2
+export FAKE_FAIL_COPY=phs999999.c1/columnMeta.javabin
+run_import auth "$DATASET_URL2"
+unset FAKE_FAIL_COPY
+[ "$rc" != 0 ] && ok "v2: a failing copy of one partition file fails the build" || bad "v2 failing copy (rc=$rc)"
+check "v2 partial stage: no manifest.tsv, earlier files are there" test ! -e "$STAGE/$AUTH_DIR/manifest.tsv" -a -f "$STAGE/$AUTH_DIR/encryption_key"
+run_import_in_repo auth
+[ "$rc" = 0 ] && test -f "$STAGE/$AUTH_DIR/manifest.tsv" && ok "v2: the retry over a partial stage succeeds" || bad "v2 retry (rc=$rc)"
+reset_world
+make_dataset_v2
+export FAKE_CORRUPT_COPY=phs123456.c1/allObservationsStore.javabin
+run_import auth "$DATASET_URL2"
+unset FAKE_CORRUPT_COPY
+[ "$rc" != 0 ] && grep -q 'manifest says' "$T/err" && ok "v2: a byte-count mismatch after a nested copy fails the build" || bad "v2 byte mismatch (rc=$rc)"
+check "v2 byte mismatch: no manifest.tsv" test ! -e "$STAGE/$AUTH_DIR/manifest.tsv"
+
+# ---- the URL rule matrix (shared block of the stage job and Check For Updates)
+V1A="$DATASET_URL"
+V1B="s3://$SRC_BUCKET/data/hpds/pheno/datasets/2026-11-05T0000Z/"
+V2A="$DATASET_URL2"
+V2B="s3://$SRC_BUCKET/data/hpds/pheno-partitioned/datasets/2026-11-18T0000Z/"
+TARA="s3://example-bucket/legacy/final.tar"
+TARB="s3://example-bucket/legacy/final-destig.tar"
+# run_cfu_keep: run_cfu, keeping its stderr (the stage job overwrites $T/err)
+run_cfu_keep() { run_cfu; cp "$T/err" "$T/err.cfu"; }
+url_rule_matrix() {
+    local verdict="$1" a="$2" o="$3" label="$4"
+    reset_world
+    cfu_repo "$a" "$o"
+    stage_manifest "$C1" javabins_rekeyed
+    stage_manifest "$C1" destigmatized_javabins_rekeyed
+    run_cfu_keep
+    local cfu_rc=$rc
+    : > "$FAKE_AWS_LOG"
+    run_import_in_repo both
+    local imp_rc=$rc
+    if [ "$verdict" = allowed ]; then
+        [ "$cfu_rc" = 0 ] && [ "$imp_rc" = 0 ] && ok "URL rule: $label is allowed (CFU and stage job)" || { bad "URL rule: $label allowed (CFU rc=$cfu_rc, stage rc=$imp_rc)"; cat "$T/err.cfu" "$T/err"; }
+    else
+        [ "$cfu_rc" != 0 ] && grep -q 'must be identical for a dataset prefix; allowed: ' "$T/err.cfu" && grep -qF "($a)" "$T/err.cfu" && grep -qF "($o)" "$T/err.cfu" && ok "URL rule: $label is refused naming both URLs and the allowed forms (CFU)" || bad "URL rule: $label refused (CFU rc=$cfu_rc)"
+        [ "$imp_rc" != 0 ] && grep -q 'must be identical for a dataset prefix; allowed: ' "$T/err" && grep -qF "($a)" "$T/err" && grep -qF "($o)" "$T/err" && ok "URL rule: $label is refused naming both URLs and the allowed forms (stage job)" || bad "URL rule: $label refused (stage rc=$imp_rc)"
+        [ ! -s "$FAKE_AWS_LOG" ] && ok "URL rule: $label: the stage job refuses before any aws call" || bad "URL rule: $label: the stage job made aws calls"
+        cfu_no_keys && ok "URL rule: $label: CFU writes no key files" || bad "URL rule: $label: CFU wrote key files"
+    fi
+}
+url_rule_matrix allowed "$V1A" "$V1A" "same v1 prefix twice (a)"
+url_rule_matrix allowed "$V2A" "$V2A" "same v2 prefix twice (b)"
+url_rule_matrix allowed "$V2A" "$V1A" "v2 auth with v1 open (c)"
+url_rule_matrix allowed "$V2B" "$V1B" "another v2 auth with another v1 open (c)"
+url_rule_matrix allowed "$TARA" "$TARB" "two different tars (no check)"
+url_rule_matrix allowed "$TARA" "$TARA" "the same tar twice (no check)"
+url_rule_matrix refused "$V1A" "$V2A" "v1 auth with v2 open"
+url_rule_matrix refused "$V2A" "$V2B" "two different v2 prefixes"
+url_rule_matrix refused "$V2A" "$TARA" "v2 auth with a tar"
+url_rule_matrix refused "$TARA" "$V2A" "a tar with v2 open"
+url_rule_matrix refused "$V1A" "$V1B" "two different v1 prefixes"
+url_rule_matrix refused "$V1A" "$TARA" "v1 auth with a tar"
+url_rule_matrix refused "$TARA" "$V1A" "a tar with v1 open"
+url_rule_matrix refused "$V1A" "$V2B" "v1 auth with another v2 open"
+BOTH_MARKERS="${V1A}${V2A#s3://}"
+reset_world
+cfu_repo "$BOTH_MARKERS" "$BOTH_MARKERS"
+run_cfu
+[ "$rc" != 0 ] && grep -q 'names both a v1 and a v2 dataset prefix' "$T/err" && ok "URL rule: one URL that names both a v1 and a v2 prefix is refused (CFU)" || bad "both markers, CFU (rc=$rc)"
+run_import_in_repo both
+[ "$rc" != 0 ] && grep -q 'names both a v1 and a v2 dataset prefix' "$T/err" && ok "URL rule: one URL that names both a v1 and a v2 prefix is refused (stage job)" || bad "both markers, stage (rc=$rc)"
+check "the stage job and CFU print the same v2 rule text" bash -c "grep -F 'allowed: the same v1 prefix' '$T/shared.import' | head -1 | cmp -s - <(grep -F 'allowed: the same v1 prefix' '$T/shared.cfu' | head -1)"
+
+# ---- descriptions and parameter
+check "stage job: the ALLOW_OPEN_STIGVARS_NOT_REMOVED parameter says dev only, refuse by default, and what it writes" python3 -I - "$IMPORT_XML" << 'PY'
+import sys, xml.etree.ElementTree as E
+r = E.parse(sys.argv[1]).getroot()
+b = [e for e in r.findall(".//hudson.model.BooleanParameterDefinition") if e.findtext("name") == "ALLOW_OPEN_STIGVARS_NOT_REMOVED"][0]
+d = " ".join(b.findtext("description").split())
+assert b.findtext("defaultValue") == "false"
+for w in ("Dev stacks only", "Default false", "refuses it", "stigvars_removed=false", "stigvars_override=true", "banner"):
+    assert w in d, w
+PY
+check "stage description: names v2, the guardrail, the extra header lines, the URL pairs and the rollback" bash -c "for w in 'bdc-hpds-pheno-release/2' 'ALLOW_OPEN_STIGVARS_NOT_REMOVED (default false)' 'REFUSES to stage it' '# layout=partitioned' '# partitions=N' 'the same v2 prefix for both lines' 'a v2 prefix as source_dataset_s3_url with a v1 prefix' 'Rollback from v2' 'pheno-partitioned/datasets'; do grep -qF -- \"\$w\" '$T/import.desc' || { echo missing: \$w; exit 1; }; done"
+check "CFU description: names the URL rule and the open header check" bash -c "for w in 'v2 (partitioned) prefix' '# stigvars_removed=false' '# stigvars_override=true' 'ALLOW_OPEN_STIGVARS_NOT_REMOVED'; do grep -qF -- \"\$w\" '$T/cfu.desc' || { echo missing: \$w; exit 1; }; done"
+check "stage job: v2 adds no job step: the Groovy deploy step is the only SystemGroovy step (no new script to approve)" python3 -I - "$IMPORT_XML" << 'PY'
+import sys, xml.etree.ElementTree as E
+r = E.parse(sys.argv[1]).getroot()
+assert len(r.findall(".//builders/hudson.plugins.groovy.SystemGroovy")) == 1
+PY
+check "stage job: no personal names, task ids or notes in the v2 description or shell step" bash -c "! grep -qiE 'thomas|umbrella|forgejo|claude|/Users/' '$T/import.desc' '$T/import.sh' '$T/cfu.desc' '$T/cfu.sh'"
+check "stage job: fixtures and shell step use no real accession (only phs000000, phs999999, phs123456)" bash -c "! grep -ohE 'phs[0-9]{6}' '$T/import.sh' '$T/cfu.sh' | grep -vE '^phs(000000|999999|123456)\$'"
+
+# ---- optional: how the per-file loop scales (V2_SCALE_TEST=1 bash import-hpds.test.sh): 789 partitions = 1,580 files per variant
+if [ "${V2_SCALE_TEST:-}" = 1 ]; then
+    reset_world
+    make_dataset_v2 789
+    t0=$(date +%s)
+    run_import auth "$DATASET_URL2"
+    t1=$(date +%s)
+    echo "scale: 789 partitions, auth only, fake aws: rc=$rc, $((t1 - t0)) s, $(grep -c 'aws ' "$FAKE_AWS_LOG") aws calls, $(tsv_rows "$STAGE/$AUTH_DIR/manifest.tsv" | wc -l | tr -d ' ') rows"
+fi
 
 if command -v shellcheck > /dev/null 2>&1; then
     check "shellcheck: stage shell step is clean" shellcheck -s bash "$T/import.sh"

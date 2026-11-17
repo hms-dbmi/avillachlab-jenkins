@@ -23,18 +23,40 @@ build-spec.json, then run this job).
 
 Source URL:
 - ends with .tar: legacy path (assume curated-datasets-s3-role, download, open: RemoveConceptFromMetadata in docker, re-tar, upload).
-- dataset prefix (ends with /, has manifest.json schema bdc-hpds-pheno-release/1): per-file staging. Each file of the variant is read
+- dataset prefix (ends with /, has manifest.json schema bdc-hpds-pheno-release/1 or /2): per-file staging. Each file of the variant is read
   from the source with curated-datasets-s3-role (an AWS CLI profile in a private temporary config file assumes it; the CLI renews the
   session, no credential passes through the shell and the profile is used for the source reads only) and streamed through this
   Jenkins host into the stack bucket with the instance role (SSE-S3, no docker, no Bash_Functions). Before anything is written the
   job checks that the role can be assumed (sts get-caller-identity) and refuses otherwise. A failure on either side of a copy fails the build. Byte check of every copy against the manifest, the auth
   variant&apos;s metadata.json also copied to fence_mapping.json, manifest.tsv written last. Refuses: unknown variant, bad manifest, open variant with the full
   columnMeta (stored sha or, when present, the gunzipped content sha of full and open is equal), auth files from open/. A run that died before manifest.tsv can be retried.
+Partitioned datasets (release contract v2): a dataset prefix whose URL contains /data/hpds/pheno-partitioned/datasets/ and whose
+manifest.json has schema bdc-hpds-pheno-release/2 and layout partitioned holds one HPDS store per consent partition. A URL of one kind
+with a manifest of the other schema is refused. The v1 checks do not apply to a /2 manifest (it has no removal object and no
+columnMeta.javabin destination); the checks of the deploy side of the contract do: the exact destination set (encryption_key,
+metadata.json and phenotypic/PARTITION/allObservationsStore.javabin and phenotypic/PARTITION/columnMeta.javabin for every partition,
+each once, in every variant), partition names of at most 128 characters of [A-Za-z0-9._-] starting with a letter or digit, the path rule
+for src and dest, a sha256 (64 hex, never null) and an integer byte count for every file, each variant entry equal to its files[] or
+partitions[] entry, the encryption_key digest equal to source.key.sha256, and, when an open object exists, open.stigvars_removed=false.
+The files are staged one after the other (about 1,580 copies per variant for 789 partitions), each followed by a byte check against
+the manifest. The manifest.tsv of a /2 variant carries the extra header lines &quot;# layout=partitioned&quot; and &quot;# partitions=N&quot;, its rows are
+sorted by dest and have a real sha256.
+
+ALLOW_OPEN_STIGVARS_NOT_REMOVED (default false): the open variant of a /2 dataset is served with the full per-partition columnMeta, i.e.
+with the stigmatized variables NOT removed (open.stigvars_removed=false). With the default the job REFUSES to stage it. With true (set
+it on a dev deploy Jenkins only) the job prints a banner and writes &quot;# stigvars_removed=false&quot; and
+&quot;# stigvars_override=true&quot; into the manifest.tsv of the open variant; Check For Updates fails on a staged open variant that has the
+first line without the second. The flag has no effect on /1 datasets and legacy tars.
+
+URL pairs in build-spec.json (the same rule in Check For Updates): the same v1 dataset prefix (/data/hpds/pheno/datasets/) for both
+lines, the same v2 prefix for both lines, or a v2 prefix as source_dataset_s3_url with a v1 prefix as source_destigmatized_dataset_s3_url
+(auth partitioned, open flat). Everything else that has a dataset prefix in it is refused, including a prefix with a .tar. Two .tar URLs
+are not checked. Rollback from v2: put the v1 prefix back in both lines (or only in the open line to roll back open alone).
 
 IAM for the dataset-prefix path:
 - the source bucket (bdc-etl-data-d0d6191) is in another account than this Jenkins: the instance role cannot read it. Dataset prefixes
   are read through curated_datasets_s3_role (arn:aws:iam::515157839325:role/curated-datasets-s3-role by default, the same role as the
-  legacy .tar path): s3:GetObject on data/hpds/pheno/datasets/* of the source bucket. The instance role needs sts:AssumeRole on it,
+  legacy .tar path): s3:GetObject on data/hpds/pheno/datasets/* and data/hpds/pheno-partitioned/datasets/* of the source bucket. The instance role needs sts:AssumeRole on it,
   and the trust policy of curated-datasets-s3-role in account 515157839325 must allow the deploy-account instance role.
 - the source credentials are obtained by the CLI from the instance metadata (credential_source=Ec2InstanceMetadata), so the instance
   metadata service must be reachable from the Jenkins container, as it already is for every aws call.
@@ -95,6 +117,11 @@ stack from build-spec.json.&quot; or &quot;staging deploy: not requested&quot;.<
           <description>After the requested variants are staged, start HPDS Data - Deploy to Staging Stack (which takes the locks, resolves the staging stack and deploys HPDS auth, HPDS open and PSAMA to it) with the current deploy keys. Needs both variants staged for their current deploy keys and data/&lt;auth key&gt;/fence_mapping.json. Never targets the live stack. Default false: stage only.</description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
+        <hudson.model.BooleanParameterDefinition>
+          <name>ALLOW_OPEN_STIGVARS_NOT_REMOVED</name>
+          <description>Dev stacks only. Allows the open variant of a partitioned (v2) dataset whose manifest says open.stigvars_removed=false (the open HPDS then serves the full per-partition columnMeta; stigmatized variables are NOT removed) to be staged. Default false: the job refuses it. With true: loud banner and the lines # stigvars_removed=false and # stigvars_override=true in the open manifest.tsv. No effect on v1 datasets and legacy tars.</description>
+          <defaultValue>false</defaultValue>
+        </hudson.model.BooleanParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -141,7 +168,11 @@ rm -f staging_deploy.properties
 # DEPLOY_TO_STAGING_STACK=true: once both variants are staged and the checks pass, write staging_deploy.properties (the three
 # deploy keys); the SystemGroovy step after this one then starts the job HPDS Data - Deploy to Staging Stack with them. That job
 # takes the locks, resolves the staging stack and deploys. This step looks up no stack.
-# Contract: bdc-hpds-pheno-release/1 (manifest.json) and bdc-hpds-deploy/1 (manifest.tsv).
+# A dataset prefix is released as bdc-hpds-pheno-release/1 (flat) or bdc-hpds-pheno-release/2 (partitioned, one store per consent
+# partition under phenotypic/&lt;partition&gt;/); the schema of its manifest.json selects the path.
+# ALLOW_OPEN_STIGVARS_NOT_REMOVED=true: lets the open variant of a v2 dataset whose manifest says open.stigvars_removed=false be
+# staged (dev only; loud banner and the two stigvars lines in the open manifest.tsv). Default false = refuse.
+# Contract: bdc-hpds-pheno-release/1 or /2 (manifest.json) and bdc-hpds-deploy/1 (manifest.tsv).
 
 refuse() {
     echo &quot;REFUSED: $*&quot; &gt;&amp;2
@@ -161,11 +192,18 @@ case &quot;${DEPLOY_TO_STAGING_STACK:-false}&quot; in
     *) refuse &quot;unknown DEPLOY_TO_STAGING_STACK &apos;${DEPLOY_TO_STAGING_STACK}&apos; (expected true or false)&quot; ;;
 esac
 
+case &quot;${ALLOW_OPEN_STIGVARS_NOT_REMOVED:-false}&quot; in
+    true) allow_open_stigvars_not_removed=true ;;
+    false) allow_open_stigvars_not_removed=false ;;
+    *) refuse &quot;unknown ALLOW_OPEN_STIGVARS_NOT_REMOVED &apos;${ALLOW_OPEN_STIGVARS_NOT_REMOVED}&apos; (expected true or false)&quot; ;;
+esac
+
 [ -n &quot;${stack_s3_bucket}&quot; ] || refuse &quot;stack_s3_bucket is not set&quot;
 [ -f build-spec.json ] || refuse &quot;build-spec.json not found in the release-control checkout&quot;
 
 # ---- shared with the other HPDS job (Check For Updates / HPDS Data - Stage to Stack Bucket): keep this block identical ----
 dataset_marker=&quot;/data/hpds/pheno/datasets/&quot;
+dataset_marker_v2=&quot;/data/hpds/pheno-partitioned/datasets/&quot;
 
 # ListBucket on data/* is granted while HeadObject on a missing key may answer 403, so list first.
 key_exists() {
@@ -206,6 +244,7 @@ spec_url() {
     jq -r --arg f &quot;$1&quot; &apos;.[$f] // &quot;&quot;&apos; build-spec.json | tr -d &apos;[:space:]&apos;
 }
 
+# A v1 prefix contains the v1 marker, a v2 (partitioned) prefix the v2 marker; the v1 marker does not match a v2 prefix.
 is_dataset_prefix() {
     case &quot;$1&quot; in
         *&quot;${dataset_marker}&quot;*) return 0 ;;
@@ -213,16 +252,38 @@ is_dataset_prefix() {
     return 1
 }
 
-# Dataset prefixes carry both variants in one dataset: the two URLs must be the same.
+is_dataset_prefix_v2() {
+    case &quot;$1&quot; in
+        *&quot;${dataset_marker_v2}&quot;*) return 0 ;;
+    esac
+    return 1
+}
+
+# Dataset prefixes carry both variants in one dataset. Allowed pairs (auth URL, open URL), when either is a v1 or v2 prefix:
+# the same v1 prefix twice, the same v2 prefix twice, or a v2 prefix for auth with a v1 prefix for open. Anything else is refused.
+# Neither a v1 nor a v2 prefix (legacy .tar URLs): no check.
 require_identical_dataset_urls() {
-    local auth_url open_url
+    local auth_url open_url u allowed=false
     auth_url=$(spec_url source_dataset_s3_url)
     open_url=$(spec_url source_destigmatized_dataset_s3_url)
-    if is_dataset_prefix &quot;${auth_url}&quot; || is_dataset_prefix &quot;${open_url}&quot;; then
-        if [ &quot;${auth_url}&quot; != &quot;${open_url}&quot; ]; then
-            echo &quot;ERROR: source_dataset_s3_url (${auth_url}) and source_destigmatized_dataset_s3_url (${open_url}) must be identical for a dataset prefix&quot; &gt;&amp;2
+    for u in &quot;${auth_url}&quot; &quot;${open_url}&quot;; do
+        if is_dataset_prefix &quot;${u}&quot; &amp;&amp; is_dataset_prefix_v2 &quot;${u}&quot;; then
+            echo &quot;ERROR: ${u} names both a v1 and a v2 dataset prefix&quot; &gt;&amp;2
             exit 1
         fi
+    done
+    if ! is_dataset_prefix &quot;${auth_url}&quot; &amp;&amp; ! is_dataset_prefix_v2 &quot;${auth_url}&quot; \
+        &amp;&amp; ! is_dataset_prefix &quot;${open_url}&quot; &amp;&amp; ! is_dataset_prefix_v2 &quot;${open_url}&quot;; then
+        return 0
+    fi
+    if [ &quot;${auth_url}&quot; = &quot;${open_url}&quot; ]; then
+        allowed=true
+    elif is_dataset_prefix_v2 &quot;${auth_url}&quot; &amp;&amp; is_dataset_prefix &quot;${open_url}&quot;; then
+        allowed=true
+    fi
+    if [ &quot;${allowed}&quot; != true ]; then
+        echo &quot;ERROR: source_dataset_s3_url (${auth_url}) and source_destigmatized_dataset_s3_url (${open_url}) must be identical for a dataset prefix; allowed: the same v1 prefix (${dataset_marker}) twice, the same v2 prefix (${dataset_marker_v2}) twice, or a v2 prefix as source_dataset_s3_url with a v1 prefix as source_destigmatized_dataset_s3_url&quot; &gt;&amp;2
+        exit 1
     fi
 }
 
@@ -334,21 +395,8 @@ stream_copy() {
     ) || refuse &quot;copy of ${src} to ${dest} failed&quot;
 }
 
-### Per-file staging from a dataset prefix. No docker. Reads of the source bucket use curated-datasets-s3-role (src_aws), writes to
-### the stack bucket the instance role. IAM needed (see the job description):
-#   curated-datasets-s3-role, source bucket: s3:GetObject on data/hpds/pheno/datasets/*; its trust policy allows the instance role
-#   instance role, stack bucket:             s3:ListBucket + s3:GetObject + s3:PutObject on data/*, and sts:AssumeRole on the source role
-stage_dataset() {
-    local work=dataset_work dataset_id manifest_sha e_src e_dest e_bytes e_sha e_etag head_json got_bytes expected_rows written_rows
-    rm -rf &quot;${work}&quot;
-    mkdir -p &quot;${work}&quot;
-
-    check_source_access
-    src_aws s3 cp &quot;${source_url}manifest.json&quot; &quot;${work}/manifest.json&quot; --only-show-errors &lt; /dev/null \
-        || refuse &quot;cannot read ${source_url}manifest.json (not a released dataset prefix?)&quot;
-    # jq 1.6 -e exits 0 on empty input, so the checks below need a non-empty file
-    [ -s &quot;${work}/manifest.json&quot; ] || refuse &quot;${source_url}manifest.json is empty&quot;
-
+# The checks of a bdc-hpds-pheno-release/1 manifest (flat dataset) for the current variant.
+validate_manifest_v1() {
     jq -e --arg v &quot;${variant}&quot; &apos;
         def okpath: type == &quot;string&quot; and test(&quot;^[A-Za-z0-9._/-]+$&quot;)
             and (startswith(&quot;/&quot;) | not) and (endswith(&quot;/&quot;) | not)
@@ -379,20 +427,130 @@ stage_dataset() {
         jq -e &apos;all(.variants.auth[]; (.src | startswith(&quot;open/&quot;)) | not)&apos; &quot;${work}/manifest.json&quot; &gt; /dev/null \
             || refuse &quot;auth variant must not use files from open/&quot;
     fi
+}
+
+# The deploy-side checks of a bdc-hpds-pheno-release/2 manifest (partitioned dataset) for the current variant. They replace the v1
+# checks above: no removal.* and no columnMeta.javabin destination exist in a v2 manifest. The open variant of a v2 dataset carries the
+# full per-partition columnMeta, so it is staged only with the override (see require_open_override).
+validate_manifest_v2() {
+    jq -e --arg v &quot;${variant}&quot; &apos;
+        def okpath: type == &quot;string&quot; and test(&quot;^[A-Za-z0-9._/-]+$&quot;)
+            and (startswith(&quot;/&quot;) | not) and (endswith(&quot;/&quot;) | not)
+            and (test(&quot;//&quot;) | not) and (test(&quot;(^|/)\\.{1,2}(/|$)&quot;) | not);
+        def hex64: type == &quot;string&quot; and test(&quot;^[0-9a-f]{64}$&quot;);
+        def okname: type == &quot;string&quot; and test(&quot;^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$&quot;);
+        def okfile: (.bytes | type == &quot;number&quot; and . &gt;= 0 and . == floor) and (.sha256 | hex64);
+        .schema == &quot;bdc-hpds-pheno-release/2&quot;
+        and .layout == &quot;partitioned&quot;
+        and (.dataset_id | type == &quot;string&quot; and test(&quot;^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{4}Z$&quot;))
+        and (.partitions | type == &quot;array&quot; and length &gt; 0)
+        and ([.partitions[].name] as $n | all($n[]; okname) and ($n | length) == ($n | unique | length))
+        and (.files | type == &quot;array&quot;)
+        and all(.files[]; okfile)
+        and all(.partitions[].files[]; okfile)
+        and ([.files[] | select(.src == &quot;encryption_key&quot;)] as $k
+             | ($k | length) == 1 and $k[0].sha256 == .source.key.sha256)
+        and ((has(&quot;open&quot;) | not) or (.open | type == &quot;object&quot; and .stigvars_removed == false))
+        and (if $v == &quot;open&quot; then (.open | type == &quot;object&quot;) else true end)
+        and (.variants | type == &quot;object&quot;)
+        and ((.variants | keys) == [&quot;auth&quot;] or (.variants | keys) == [&quot;auth&quot;, &quot;open&quot;])
+        and (has(&quot;open&quot;) == (.variants | has(&quot;open&quot;)))
+        and (.variants[$v] | type == &quot;array&quot; and length &gt; 0)
+        and ([.partitions[].name] as $n
+             | ([{src: &quot;encryption_key&quot;, dest: &quot;encryption_key&quot;}, {src: &quot;static/metadata.json&quot;, dest: &quot;metadata.json&quot;}]
+                + [$n[] as $p | (&quot;allObservationsStore.javabin&quot;, &quot;columnMeta.javabin&quot;) as $f
+                   | {src: (&quot;partitions/&quot; + $p + &quot;/&quot; + $f), dest: (&quot;phenotypic/&quot; + $p + &quot;/&quot; + $f)}]
+                | sort_by(.dest)) as $want
+             | (reduce (.files[], (.partitions[] | .name as $p | .files[] | . + {src: (&quot;partitions/&quot; + $p + &quot;/&quot; + .name)})) as $e ({}; .[$e.src] = $e)) as $idx
+             | all(([.variants.auth] + (if (.variants | has(&quot;open&quot;)) then [.variants.open] else [] end))[];
+                   type == &quot;array&quot;
+                   and ([.[] | {src: .src, dest: .dest}] | sort_by(.dest)) == $want
+                   and all(.[];
+                       (.src | okpath) and (.dest | okpath)
+                       and (.etag | type == &quot;string&quot; and test(&quot;^[!-~]+$&quot;))
+                       and ($idx[.src] as $f | $f != null and .bytes == $f.bytes and .sha256 == $f.sha256 and .etag == $f.etag))))
+    &apos; &quot;${work}/manifest.json&quot; &gt; /dev/null || refuse &quot;manifest.json is not a valid bdc-hpds-pheno-release/2 (partitioned) manifest with a usable &apos;${variant}&apos; variant (the open variant also needs open.stigvars_removed=false)&quot;
+    require_open_override
+}
+
+# v2 open variant: its manifest says open.stigvars_removed=false, i.e. the full per-partition columnMeta is served by the open HPDS.
+# Refused unless ALLOW_OPEN_STIGVARS_NOT_REMOVED=true (set on a dev deploy Jenkins only). With it: a loud banner and the two
+# stigvars lines in the open manifest.tsv.
+refuse_open_without_override() {
+    [ &quot;${allow_open_stigvars_not_removed}&quot; = true ] || refuse &quot;open: the dataset at ${source_url} serves the open variant with the stigmatized variables NOT removed (open.stigvars_removed=false). Nothing was staged for open. To stage it on a dev stack only, run this job with ALLOW_OPEN_STIGVARS_NOT_REMOVED=true&quot;
+}
+
+require_open_override() {
+    [ &quot;${variant}&quot; = open ] || return 0
+    refuse_open_without_override
+    stigvars_override=true
+    echo &quot;************************************************************************&quot;
+    echo &quot;* OPEN: STIGMATIZED VARIABLES NOT REMOVED (dev only)&quot;
+    echo &quot;* ALLOW_OPEN_STIGVARS_NOT_REMOVED=true: the open variant from ${source_url}&quot;
+    echo &quot;* carries the FULL per-partition columnMeta. Never use this on a production stack.&quot;
+    echo &quot;************************************************************************&quot;
+}
+
+### Per-file staging from a dataset prefix. No docker. Reads of the source bucket use curated-datasets-s3-role (src_aws), writes to
+### the stack bucket the instance role. IAM needed (see the job description):
+#   curated-datasets-s3-role, source bucket: s3:GetObject on data/hpds/pheno/datasets/* and data/hpds/pheno-partitioned/datasets/*; its trust policy allows the instance role
+#   instance role, stack bucket:             s3:ListBucket + s3:GetObject + s3:PutObject on data/*, and sts:AssumeRole on the source role
+stage_dataset() {
+    local work=dataset_work dataset_id manifest_sha e_src e_dest e_bytes e_sha e_etag head_json got_bytes expected_rows written_rows
+    local schema layout=flat partitions=&quot;&quot; stigvars_override=false
+    rm -rf &quot;${work}&quot;
+    mkdir -p &quot;${work}&quot;
+
+    check_source_access
+    src_aws s3 cp &quot;${source_url}manifest.json&quot; &quot;${work}/manifest.json&quot; --only-show-errors &lt; /dev/null \
+        || refuse &quot;cannot read ${source_url}manifest.json (not a released dataset prefix?)&quot;
+    # jq 1.6 -e exits 0 on empty input, so the checks below need a non-empty file
+    [ -s &quot;${work}/manifest.json&quot; ] || refuse &quot;${source_url}manifest.json is empty&quot;
+
+    # the schema selects the path; an unreadable manifest gives an empty schema and is refused below
+    schema=&quot;$(jq -r &apos;.schema | strings&apos; &quot;${work}/manifest.json&quot; 2&gt; /dev/null)&quot; || schema=&quot;&quot;
+    case &quot;${schema}&quot; in
+        bdc-hpds-pheno-release/1)
+            ! is_dataset_prefix_v2 &quot;${source_url}&quot; || refuse &quot;${variant}: ${source_url} is a partitioned (v2) dataset prefix but its manifest.json is schema bdc-hpds-pheno-release/1&quot;
+            validate_manifest_v1
+            ;;
+        bdc-hpds-pheno-release/2)
+            is_dataset_prefix_v2 &quot;${source_url}&quot; || refuse &quot;${variant}: manifest.json of ${source_url} is schema bdc-hpds-pheno-release/2 but the URL is not a partitioned (v2) dataset prefix (it must contain ${dataset_marker_v2})&quot;
+            layout=partitioned
+            validate_manifest_v2
+            ;;
+        *)
+            refuse &quot;manifest.json of ${source_url} has schema &apos;${schema}&apos;, not bdc-hpds-pheno-release/1 or bdc-hpds-pheno-release/2&quot;
+            ;;
+    esac
 
     dataset_id=&quot;$(jq -r &apos;.dataset_id&apos; &quot;${work}/manifest.json&quot;)&quot;
     manifest_sha=&quot;$(sha256_of &quot;${work}/manifest.json&quot;)&quot;
 
+    if [ &quot;${layout}&quot; = partitioned ]; then
+        # distinct &lt;p&gt; of the phenotypic/&lt;p&gt;/... destinations
+        partitions=&quot;$(jq -r --arg v &quot;${variant}&quot; &apos;[.variants[$v][].dest | select(startswith(&quot;phenotypic/&quot;)) | split(&quot;/&quot;)[1]] | unique | length&apos; &quot;${work}/manifest.json&quot;)&quot;
+    fi
+
     {
         echo &quot;# bdc-hpds-deploy/1&quot;
         echo &quot;# variant=${variant}&quot;
+        if [ &quot;${layout}&quot; = partitioned ]; then
+            echo &quot;# layout=partitioned&quot;
+            echo &quot;# partitions=${partitions}&quot;
+        fi
         echo &quot;# dataset_id=${dataset_id}&quot;
         echo &quot;# source=${source_url}&quot;
         echo &quot;# manifest_sha256=${manifest_sha}&quot;
+        if [ &quot;${stigvars_override}&quot; = true ]; then
+            echo &quot;# stigvars_removed=false&quot;
+            echo &quot;# stigvars_override=true&quot;
+        fi
         printf &apos;dest\tbytes\tsha256\tetag\tsrc\n&apos;
     } &gt; &quot;${work}/manifest.tsv&quot;
 
-    jq -r --arg v &quot;${variant}&quot; &apos;.variants[$v][] | [.src, .dest, (.bytes | tostring), (.sha256 // &quot;-&quot;), (.etag // &quot;-&quot;)] | @tsv&apos; \
+    # v2 rows are sorted by dest (jq sorts by code point, independent of the locale); v1 rows keep the manifest order
+    jq -r --arg v &quot;${variant}&quot; --arg layout &quot;${layout}&quot; &apos;.variants[$v] | (if $layout == &quot;partitioned&quot; then sort_by(.dest) else . end)[] | [.src, .dest, (.bytes | tostring), (.sha256 // &quot;-&quot;), (.etag // &quot;-&quot;)] | @tsv&apos; \
         &quot;${work}/manifest.json&quot; &gt; &quot;${work}/entries.tsv&quot;
 
     while IFS=$&apos;\t&apos; read -r e_src e_dest e_bytes e_sha e_etag; do
@@ -415,7 +573,8 @@ stage_dataset() {
 
     # Never publish a manifest.tsv that lists fewer files than the variant has.
     expected_rows=&quot;$(jq -r --arg v &quot;${variant}&quot; &apos;.variants[$v] | length&apos; &quot;${work}/manifest.json&quot;)&quot;
-    written_rows=&quot;$(tail -n +7 &quot;${work}/manifest.tsv&quot; | wc -l | tr -d &apos; &apos;)&quot;
+    # rows = the lines after the column header (every header line starts with &apos;#&apos;, the column header is the first line that does not)
+    written_rows=&quot;$(awk &apos;!/^#/ { n++ } END { print n - 1 }&apos; &quot;${work}/manifest.tsv&quot;)&quot;
     [ &quot;${written_rows}&quot; = &quot;${expected_rows}&quot; ] || refuse &quot;manifest.tsv has ${written_rows} data rows, the ${variant} variant has ${expected_rows} entries; not uploading it&quot;
 
     # manifest.tsv last: its presence marks the stage prefix complete and immutable.
@@ -537,6 +696,10 @@ for variant in ${variants}; do
     variant_setup &quot;${variant}&quot;
     if ! is_staged &quot;${deploy_key_value}&quot; &quot;${stage_prefix}&quot; &quot;${legacy_name}&quot;; then
         validate_source
+        # a v2 prefix always serves the open variant with the stigmatized variables not removed: refuse before anything (auth included) is staged
+        if [ &quot;${variant}&quot; = open ] &amp;&amp; is_dataset_prefix_v2 &quot;${source_url}&quot;; then
+            refuse_open_without_override
+        fi
     fi
 done
 
