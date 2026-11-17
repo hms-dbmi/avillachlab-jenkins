@@ -1261,9 +1261,7 @@ check "CFU groovy: no removed parameters left" test "$(grep -cE 'isDestigmatized
 # The shell step only writes staging_deploy.properties (the three deploy keys), after every check passed; the SystemGroovy step after
 # it starts HPDS Data - Deploy to Staging Stack. The stage job looks up no stack: on the dataset path it sources no Bash_Functions,
 # calls no get_stack and reads no stacks.json, whatever the flag.
-# the deploy step is the second SystemGroovy step; the first one only sets the build description (see further down)
-python3 -I "$HERE/extract-shell.py" "$IMPORT_XML" --groovy --index 1 > "$T/import.groovy" || { echo "cannot extract import groovy"; exit 1; }
-python3 -I "$HERE/extract-shell.py" "$IMPORT_XML" --groovy --index 0 > "$T/import.groovy.description" || { echo "cannot extract import description groovy"; exit 1; }
+python3 -I "$HERE/extract-shell.py" "$IMPORT_XML" --groovy --index 0 > "$T/import.groovy" || { echo "cannot extract import groovy"; exit 1; }
 export SOURCED_LOG="$T/sourced.log"
 export GET_STACK_CALLS="$T/get_stack.calls"
 PROPS="$T/ws/staging_deploy.properties"
@@ -1616,11 +1614,11 @@ PY
 check "shell step: the success line is not in the shell step" test "$(grep -c 'Deployed to the staging stack only' "$T/import.sh")" = 0
 
 # ================================================================ Stage job: the deploy step (static checks of the SystemGroovy source)
-check "stage job: builders are the shell step, a SystemGroovy build-description step and the SystemGroovy deploy step" python3 -I - "$IMPORT_XML" << 'PY'
+check "stage job: builders are the shell step, then one SystemGroovy deploy step" python3 -I - "$IMPORT_XML" << 'PY'
 import sys, xml.etree.ElementTree as E
 r = E.parse(sys.argv[1]).getroot()
 tags = [e.tag for e in r.find("builders")]
-assert tags == ["hudson.tasks.Shell", "hudson.plugins.groovy.SystemGroovy", "hudson.plugins.groovy.SystemGroovy"], tags
+assert tags == ["hudson.tasks.Shell", "hudson.plugins.groovy.SystemGroovy"], tags
 PY
 check "deploy step: schedules exactly one job, HPDS Data - Deploy to Staging Stack, with exactly the three keys" python3 -I - "$T/import.groovy" << 'PY'
 import re, sys
@@ -1941,7 +1939,6 @@ mutate_v2() {
 }
 allow_flag() { export ALLOW_OPEN_STIGVARS_NOT_REMOVED=true; }
 no_allow_flag() { unset ALLOW_OPEN_STIGVARS_NOT_REMOVED; }
-override_file() { echo "$T/ws/stigvars_override.txt"; }
 # tsv_rows FILE: the rows of a manifest.tsv, i.e. the lines after the column header (every header line starts with #)
 tsv_rows() { grep -v '^#' "$1" | tail -n +2; }
 tsv_header_has() { grep -qxF -- "$2" <(grep '^#' "$1"); }
@@ -1976,7 +1973,7 @@ check "v2: every stream got exactly --expected-size bytes, and every v2 copy was
 check "v2: streams are consistent with --expected-size" streams_consistent
 check "v2: source reads ran as the source role, writes as the instance role, nothing leaked" test "$(count_without "$SRC_READ" "$SRC_ID")" = 0 -a "$(count_without "$DEST_WRITE" "$INST_ID")" = 0 -a "$(grep -c '^ident=leak' "$FAKE_AWS_IDENTITY_LOG")" = 0
 check "v2: the byte check (head-object) ran for every file and fence_mapping.json" test "$(grep -c 's3api head-object' "$FAKE_AWS_LOG")" = 9
-check "v2 auth leaves no build description note" test ! -e "$(override_file)"
+check "v2 auth prints no banner and writes no stigvars lines" bash -c "! grep -qF '$V2_OPEN_NOTE' '$T/out' && ! grep -q stigvars '$M2'"
 run_import_in_repo auth
 check "v2: a second run skips the staged variant" grep -q 'already staged, skipping' "$T/out"
 
@@ -2017,7 +2014,7 @@ run_import open "$DATASET_URL2"
 [ "$rc" != 0 ] && grep -q 'REFUSED: open: ' "$T/err" && ok "v2 open without ALLOW_OPEN_STIGVARS_NOT_REMOVED is refused" || bad "v2 open, flag off (rc=$rc)"
 check "v2 open refusal names the parameter and the dataset" bash -c "grep -q 'ALLOW_OPEN_STIGVARS_NOT_REMOVED=true' '$T/err' && grep -qF '$DATASET_URL2' '$T/err'"
 check "v2 open refusal copies nothing and stages nothing for open" bash -c "test ! -e '$STAGE/$OPEN_DIR' && test \$(grep -c 'aws s3 cp - ' '$FAKE_AWS_LOG') = 0"
-check "v2 open refusal leaves no description note and no banner" bash -c "test ! -e '$(override_file)' && ! grep -qF '$V2_OPEN_NOTE' '$T/out'"
+check "v2 open refusal prints no banner" bash -c "! grep -qF '$V2_OPEN_NOTE' '$T/out'"
 export ALLOW_OPEN_STIGVARS_NOT_REMOVED=false
 run_import open "$DATASET_URL2"
 no_allow_flag
@@ -2043,14 +2040,7 @@ check "v2 open manifest.tsv has # stigvars_removed=false and # stigvars_override
 check "v2 open manifest.tsv: 9 comment lines, 8 rows counted after the column header" test "$(grep -c '^#' "$OM2")" = 9 -a "$(tsv_rows "$OM2" | wc -l | tr -d ' ')" = 8
 check "v2 open: the open prefix carries the full per-partition columnMeta.javabin" cmp "$STAGE/$OPEN_DIR/phenotypic/phs000000.c1/columnMeta.javabin" "$DATASET2_DIR/partitions/phs000000.c1/columnMeta.javabin"
 check "v2 open: a loud banner is printed" bash -c "grep -qF '$V2_OPEN_NOTE' '$T/out' && grep -q '^\*\*\*\*' '$T/out' && grep -qF 'FULL per-partition columnMeta' '$T/out'"
-check "v2 open: the build description note is left in the workspace" test "$(cat "$(override_file)")" = "$V2_OPEN_NOTE: open variant of $DATASET_URL2 staged with ALLOW_OPEN_STIGVARS_NOT_REMOVED=true"
 check "v2 open staging writes no fence_mapping.json" test ! -e "$STAGE/fence_mapping.json"
-# the note of an earlier build is removed at the start of the next one
-reset_world
-make_dataset
-WS_SEED=stigvars_override.txt run_import auth "$DATASET_URL"
-check "a stigvars_override.txt left by an earlier build is removed at the start" test ! -e "$(override_file)"
-
 # both: auth without the stigvars lines, open with them
 reset_world
 make_dataset_v2
@@ -2342,26 +2332,22 @@ run_import_in_repo both
 [ "$rc" != 0 ] && grep -q 'names both a v1 and a v2 dataset prefix' "$T/err" && ok "URL rule: one URL that names both a v1 and a v2 prefix is refused (stage job)" || bad "both markers, stage (rc=$rc)"
 check "the stage job and CFU print the same v2 rule text" bash -c "grep -F 'allowed: the same v1 prefix' '$T/shared.import' | head -1 | cmp -s - <(grep -F 'allowed: the same v1 prefix' '$T/shared.cfu' | head -1)"
 
-# ---- descriptions, parameter and build description step
+# ---- descriptions and parameter
 check "stage job: the ALLOW_OPEN_STIGVARS_NOT_REMOVED parameter says dev only, refuse by default, and what it writes" python3 -I - "$IMPORT_XML" << 'PY'
 import sys, xml.etree.ElementTree as E
 r = E.parse(sys.argv[1]).getroot()
 b = [e for e in r.findall(".//hudson.model.BooleanParameterDefinition") if e.findtext("name") == "ALLOW_OPEN_STIGVARS_NOT_REMOVED"][0]
 d = " ".join(b.findtext("description").split())
 assert b.findtext("defaultValue") == "false"
-for w in ("Dev stacks only", "Default false", "refuses it", "stigvars_removed=false", "stigvars_override=true", "build description", "banner"):
+for w in ("Dev stacks only", "Default false", "refuses it", "stigvars_removed=false", "stigvars_override=true", "banner"):
     assert w in d, w
 PY
 check "stage description: names v2, the guardrail, the extra header lines, the URL pairs and the rollback" bash -c "for w in 'bdc-hpds-pheno-release/2' 'ALLOW_OPEN_STIGVARS_NOT_REMOVED (default false)' 'REFUSES to stage it' '# layout=partitioned' '# partitions=N' 'the same v2 prefix for both lines' 'a v2 prefix as source_dataset_s3_url with a v1 prefix' 'Rollback from v2' 'pheno-partitioned/datasets'; do grep -qF -- \"\$w\" '$T/import.desc' || { echo missing: \$w; exit 1; }; done"
 check "CFU description: names the URL rule and the open header check" bash -c "for w in 'v2 (partitioned) prefix' '# stigvars_removed=false' '# stigvars_override=true' 'ALLOW_OPEN_STIGVARS_NOT_REMOVED'; do grep -qF -- \"\$w\" '$T/cfu.desc' || { echo missing: \$w; exit 1; }; done"
-check "build description step: the first SystemGroovy step reads stigvars_override.txt of this workspace and sets the build description, nothing else" bash -c "grep -q 'build.workspace?.child(\"stigvars_override.txt\")' '$T/import.groovy.description' && grep -q 'build.setDescription(' '$T/import.groovy.description' && ! grep -qE 'new File|/var/jenkins_home|scheduleBuild2|getItem|Jenkins.instance' '$T/import.groovy.description' && test \$(grep -c 'setDescription' '$T/import.groovy.description') = 1 && test \$(grep -cF \"\$(printf '%s{' '\$')\" '$T/import.groovy.description') = 0"
-check "build description step: the shell step writes the file the Groovy step reads" bash -c "grep -q 'stigvars_override.txt' '$T/import.sh' && test \$(grep -c 'stigvars_override.txt' '$T/import.sh') -ge 2"
-check "build description step and deploy step are both non-sandboxed system Groovy" python3 -I - "$IMPORT_XML" << 'PY'
+check "stage job: v2 adds no job step: the Groovy deploy step is the only SystemGroovy step (no new script to approve)" python3 -I - "$IMPORT_XML" << 'PY'
 import sys, xml.etree.ElementTree as E
 r = E.parse(sys.argv[1]).getroot()
-steps = r.findall(".//builders/hudson.plugins.groovy.SystemGroovy")
-assert len(steps) == 2
-assert [s.findtext("source/script/sandbox") for s in steps] == ["false", "false"]
+assert len(r.findall(".//builders/hudson.plugins.groovy.SystemGroovy")) == 1
 PY
 check "stage job: no personal names, task ids or notes in the v2 description or shell step" bash -c "! grep -qiE 'thomas|umbrella|forgejo|claude|/Users/' '$T/import.desc' '$T/import.sh' '$T/cfu.desc' '$T/cfu.sh'"
 check "stage job: fixtures and shell step use no real accession (only phs000000, phs999999, phs123456)" bash -c "! grep -ohE 'phs[0-9]{6}' '$T/import.sh' '$T/cfu.sh' | grep -vE '^phs(000000|999999|123456)\$'"

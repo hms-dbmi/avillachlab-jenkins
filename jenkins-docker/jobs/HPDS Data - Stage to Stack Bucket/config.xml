@@ -44,10 +44,9 @@ sorted by dest and have a real sha256.
 
 ALLOW_OPEN_STIGVARS_NOT_REMOVED (default false): the open variant of a /2 dataset is served with the full per-partition columnMeta, i.e.
 with the stigmatized variables NOT removed (open.stigvars_removed=false). With the default the job REFUSES to stage it. With true (set
-it on a dev deploy Jenkins only) the job prints a banner, puts it in the build description and writes &quot;# stigvars_removed=false&quot; and
+it on a dev deploy Jenkins only) the job prints a banner and writes &quot;# stigvars_removed=false&quot; and
 &quot;# stigvars_override=true&quot; into the manifest.tsv of the open variant; Check For Updates fails on a staged open variant that has the
-first line without the second. The flag has no effect on /1 datasets and legacy tars. The build description comes from a small system
-Groovy step that runs on every build: approve it under Manage Jenkins, In-process Script Approval, with the deploy step.
+first line without the second. The flag has no effect on /1 datasets and legacy tars.
 
 URL pairs in build-spec.json (the same rule in Check For Updates): the same v1 dataset prefix (/data/hpds/pheno/datasets/) for both
 lines, the same v2 prefix for both lines, or a v2 prefix as source_dataset_s3_url with a v1 prefix as source_destigmatized_dataset_s3_url
@@ -120,7 +119,7 @@ stack from build-spec.json.&quot; or &quot;staging deploy: not requested&quot;.<
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
           <name>ALLOW_OPEN_STIGVARS_NOT_REMOVED</name>
-          <description>Dev stacks only. Allows the open variant of a partitioned (v2) dataset whose manifest says open.stigvars_removed=false (the open HPDS then serves the full per-partition columnMeta; stigmatized variables are NOT removed) to be staged. Default false: the job refuses it. With true: loud banner, build description, and the lines # stigvars_removed=false and # stigvars_override=true in the open manifest.tsv. No effect on v1 datasets and legacy tars.</description>
+          <description>Dev stacks only. Allows the open variant of a partitioned (v2) dataset whose manifest says open.stigvars_removed=false (the open HPDS then serves the full per-partition columnMeta; stigmatized variables are NOT removed) to be staged. Default false: the job refuses it. With true: loud banner and the lines # stigvars_removed=false and # stigvars_override=true in the open manifest.tsv. No effect on v1 datasets and legacy tars.</description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
       </parameterDefinitions>
@@ -157,7 +156,7 @@ stack from build-spec.json.&quot; or &quot;staging deploy: not requested&quot;.<
 set -e
 
 # A properties file from an earlier build must never reach the deploy step.
-rm -f staging_deploy.properties stigvars_override.txt
+rm -f staging_deploy.properties
 
 # Stages the HPDS data named in build-spec.json (release-control checkout in the workspace) into the stack bucket.
 # HPDS_VARIANT = both (auth, then open), auth or open. Run by hand; Check For Updates only checks that this was done.
@@ -172,7 +171,7 @@ rm -f staging_deploy.properties stigvars_override.txt
 # A dataset prefix is released as bdc-hpds-pheno-release/1 (flat) or bdc-hpds-pheno-release/2 (partitioned, one store per consent
 # partition under phenotypic/&lt;partition&gt;/); the schema of its manifest.json selects the path.
 # ALLOW_OPEN_STIGVARS_NOT_REMOVED=true: lets the open variant of a v2 dataset whose manifest says open.stigvars_removed=false be
-# staged (dev only; loud banner, build description, and the two stigvars lines in the open manifest.tsv). Default false = refuse.
+# staged (dev only; loud banner and the two stigvars lines in the open manifest.tsv). Default false = refuse.
 # Contract: bdc-hpds-pheno-release/1 or /2 (manifest.json) and bdc-hpds-deploy/1 (manifest.tsv).
 
 refuse() {
@@ -472,8 +471,8 @@ validate_manifest_v2() {
 }
 
 # v2 open variant: its manifest says open.stigvars_removed=false, i.e. the full per-partition columnMeta is served by the open HPDS.
-# Refused unless ALLOW_OPEN_STIGVARS_NOT_REMOVED=true (set on a dev deploy Jenkins only). With it: a loud banner, a note for the
-# build description and the two stigvars lines in the open manifest.tsv.
+# Refused unless ALLOW_OPEN_STIGVARS_NOT_REMOVED=true (set on a dev deploy Jenkins only). With it: a loud banner and the two
+# stigvars lines in the open manifest.tsv.
 require_open_override() {
     [ &quot;${variant}&quot; = open ] || return 0
     if [ &quot;${allow_open_stigvars_not_removed}&quot; != true ]; then
@@ -485,7 +484,6 @@ require_open_override() {
     echo &quot;* ALLOW_OPEN_STIGVARS_NOT_REMOVED=true: the open variant from ${source_url}&quot;
     echo &quot;* carries the FULL per-partition columnMeta. Never use this on a production stack.&quot;
     echo &quot;************************************************************************&quot;
-    printf &apos;OPEN: STIGMATIZED VARIABLES NOT REMOVED (dev only): open variant of %s staged with ALLOW_OPEN_STIGVARS_NOT_REMOVED=true\n&apos; &quot;${source_url}&quot; &gt; stigvars_override.txt
 }
 
 ### Per-file staging from a dataset prefix. No docker. Reads of the source bucket use curated-datasets-s3-role (src_aws), writes to
@@ -757,25 +755,6 @@ fi
 </command>
       <configuredLocalRules/>
     </hudson.tasks.Shell>
-    <hudson.plugins.groovy.SystemGroovy plugin="groovy@457.v99900cb_85593">
-      <source class="hudson.plugins.groovy.StringSystemScriptSource">
-        <script plugin="script-security@1362.v67dc1f0e1b_b_3">
-          <script>import jenkins.*
-import jenkins.model.*
-import hudson.*
-import hudson.model.*
-
-// The shell step leaves stigvars_override.txt only when it staged the open variant of a partitioned dataset with the stigmatized
-// variables not removed (ALLOW_OPEN_STIGVARS_NOT_REMOVED=true). Its line becomes the build description.
-def noteFile = build.workspace?.child(&quot;stigvars_override.txt&quot;)
-if (noteFile != null &amp;&amp; noteFile.exists()) {
-    build.setDescription(noteFile.readToString().trim())
-}
-</script>
-          <sandbox>false</sandbox>
-        </script>
-      </source>
-    </hudson.plugins.groovy.SystemGroovy>
     <hudson.plugins.groovy.SystemGroovy plugin="groovy@457.v99900cb_85593">
       <source class="hudson.plugins.groovy.StringSystemScriptSource">
         <script plugin="script-security@1362.v67dc1f0e1b_b_3">
