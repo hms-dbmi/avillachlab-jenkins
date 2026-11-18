@@ -121,6 +121,11 @@ case "${pos[0]}/${pos[1]}" in
         [ -z "${FAKE_CONC_LOG:-}" ] || [ "$from" != "-" ] || echo end >> "$FAKE_CONC_LOG"
         ;;
     s3api/head-object)
+        # FAKE_FAIL_HEAD: the AWS CLI's general error status (255) for the keys that match
+        if [ -n "${FAKE_FAIL_HEAD:-}" ] && [[ "$key" == *"$FAKE_FAIL_HEAD"* ]]; then
+            echo "fake aws: injected head-object failure for $key" >&2
+            exit 255
+        fi
         f="$FAKE_S3/$bucket/$key"
         [ -f "$f" ] || { echo "An error occurred (404) when calling the HeadObject operation: Not Found" >&2; exit 254; }
         printf '{"ContentLength": %s, "ETag": "\\"fake\\""}\n' "$(wc -c < "$f" | tr -d ' ')"
@@ -246,7 +251,7 @@ reset_world() {
     : > "$FAKE_AWS_LOG"
     : > "$FAKE_AWS_IDENTITY_LOG"
     : > "$FAKE_DOCKER_LOG"
-    unset ALLOW_OPEN_STIGVARS_NOT_REMOVED AWS_PROFILE AWS_CONFIG_FILE FAKE_FAIL_COPY FAKE_FAIL_READ FAKE_FAIL_SOURCE_IDENTITY FAKE_NOOP_COPY FAKE_CORRUPT_COPY FAKE_LIST_DENIED FAKE_AWS_EAT_STDIN FAKE_SLOW_COPY FAKE_SLOW_SECS FAKE_JITTER FAKE_CONC_LOG COPY_PARALLEL WS_SEED DEPLOY_TO_STAGING_STACK curated_datasets_s3_role IMPORT_BASH_OPTS
+    unset ALLOW_OPEN_STIGVARS_NOT_REMOVED AWS_PROFILE AWS_CONFIG_FILE FAKE_FAIL_COPY FAKE_FAIL_READ FAKE_FAIL_SOURCE_IDENTITY FAKE_NOOP_COPY FAKE_CORRUPT_COPY FAKE_LIST_DENIED FAKE_AWS_EAT_STDIN FAKE_FAIL_HEAD FAKE_SLOW_COPY FAKE_SLOW_SECS FAKE_JITTER FAKE_CONC_LOG COPY_PARALLEL WS_SEED DEPLOY_TO_STAGING_STACK curated_datasets_s3_role IMPORT_BASH_OPTS
     # The Jenkins instance role: what every call that is not a source read must run as.
     export AWS_ACCESS_KEY_ID=AKIAINSTANCE AWS_SECRET_ACCESS_KEY=INSTANCESECRET AWS_SESSION_TOKEN=INSTANCETOKEN
 }
@@ -1809,7 +1814,7 @@ run_cfu
 check "CFU: auth not staged: no fence ERROR" test "$(grep -c 'fence_mapping' "$T/err")" = 0
 
 # ================================================================ job definitions
-check "Stage job: parameters are the HPDS_VARIANT choice both|auth|open (both is the default), the boolean DEPLOY_TO_STAGING_STACK (default false), the boolean ALLOW_OPEN_STIGVARS_NOT_REMOVED (default false) and the string COPY_PARALLEL (default 16)" python3 -I - "$IMPORT_XML" << 'PY'
+check "Stage job: parameters are the HPDS_VARIANT choice both|auth|open (both is the default), the boolean DEPLOY_TO_STAGING_STACK (default false), the boolean ALLOW_OPEN_STIGVARS_NOT_REMOVED (default false) and the string COPY_PARALLEL (default 8)" python3 -I - "$IMPORT_XML" << 'PY'
 import sys, xml.etree.ElementTree as E
 r = E.parse(sys.argv[1]).getroot()
 names = [e.findtext("name") for e in r.findall(".//parameterDefinitions/*")]
@@ -1821,7 +1826,7 @@ bs = r.findall(".//hudson.model.BooleanParameterDefinition")
 assert [b.findtext("name") for b in bs] == ["DEPLOY_TO_STAGING_STACK", "ALLOW_OPEN_STIGVARS_NOT_REMOVED"]
 assert all(b.findtext("defaultValue") == "false" for b in bs)
 cp = r.find(".//hudson.model.StringParameterDefinition")
-assert cp.findtext("name") == "COPY_PARALLEL" and cp.findtext("defaultValue") == "16"
+assert cp.findtext("name") == "COPY_PARALLEL" and cp.findtext("defaultValue") == "8"
 PY
 check "Stage job: source_s3_url and destination_bucket_hash are gone from the job" test "$(grep -cE 'source_s3_url|destination_bucket_hash' "$IMPORT_XML")" = 0
 check "Stage job: release-control checkout is still configured" bash -c "grep -q '<url>\${release_control_git_repo}</url>' '$IMPORT_XML' && grep -q '<name>\${release_control_git_hash}</name>' '$IMPORT_XML'"
@@ -2450,15 +2455,15 @@ unset FAKE_JITTER
 tree_digest > "$T/tree.p16"
 check "COPY_PARALLEL=16 with random copy times: the staged objects are identical to those of COPY_PARALLEL=1" cmp "$T/tree.p1" "$T/tree.p16"
 check "COPY_PARALLEL=16 with random copy times: manifest.tsv is byte-identical to that of COPY_PARALLEL=1" cmp "$T/manifest.p1" "$STAGE/$AUTH_DIR/manifest.tsv"
-# the default (no COPY_PARALLEL, or an empty one): 16
+# the default (no COPY_PARALLEL, or an empty one): 8
 unset COPY_PARALLEL
 rm -rf "$FAKE_S3/$STACK"
 run_import_in_repo auth
-check "COPY_PARALLEL unset: 16 copies at a time, same manifest.tsv" bash -c "test $rc = 0 && grep -q '(COPY_PARALLEL=16)\$' '$T/out' && cmp '$T/manifest.p1' '$STAGE/$AUTH_DIR/manifest.tsv'"
+check "COPY_PARALLEL unset: 8 copies at a time, same manifest.tsv" bash -c "test $rc = 0 && grep -q '(COPY_PARALLEL=8)\$' '$T/out' && cmp '$T/manifest.p1' '$STAGE/$AUTH_DIR/manifest.tsv'"
 export COPY_PARALLEL=""
 rm -rf "$FAKE_S3/$STACK"
 run_import_in_repo auth
-check "COPY_PARALLEL empty: the default, 16" bash -c "test $rc = 0 && grep -q '(COPY_PARALLEL=16)\$' '$T/out'"
+check "COPY_PARALLEL empty: the default, 8" bash -c "test $rc = 0 && grep -q '(COPY_PARALLEL=8)\$' '$T/out'"
 unset COPY_PARALLEL
 
 # ---- v1 (flat): both variants; the manifest order is kept (it is not sorted), whatever order the copies end in
@@ -2544,6 +2549,24 @@ unset FAKE_FAIL_COPY COPY_PARALLEL
 [ "$rc" != 0 ] && grep -q 'REFUSED: [0-9]* of 26 copies failed (phenotypic/' "$T/err" && ok "COPY_PARALLEL=8: several failing copies are counted and listed" || bad "COPY_PARALLEL=8 several failures (rc=$rc)"
 check "COPY_PARALLEL=8 several failures: nothing is published" test ! -e "$STAGE/$AUTH_DIR/manifest.tsv"
 
+# a worker whose head-object ends with 255 (the AWS CLI's general error status): GNU xargs would stop at once and the build would
+# end, removing the source profile, while the other workers still copy; the workers that are running must finish first
+reset_world
+make_dataset_v2 12
+export COPY_PARALLEL=4 FAKE_SLOW_COPY=phenotypic FAKE_SLOW_SECS=1 FAKE_CONC_LOG="$T/conc.log" FAKE_FAIL_HEAD=metadata.json
+: > "$FAKE_CONC_LOG"
+run_import auth "$DATASET_URL2"
+conc_starts="$(grep -c '^start' "$FAKE_CONC_LOG")"
+conc_ends="$(grep -c '^end' "$FAKE_CONC_LOG")"
+unset FAKE_FAIL_HEAD FAKE_SLOW_COPY FAKE_SLOW_SECS FAKE_CONC_LOG COPY_PARALLEL
+[ "$rc" != 0 ] && ok "COPY_PARALLEL=4: a head-object failing with 255 in one worker fails the build" || bad "COPY_PARALLEL=4 head-object 255 (rc=$rc)"
+check "COPY_PARALLEL=4 head-object 255: the failure is counted and the entry named" grep -qF "REFUSED: 1 of 26 copies failed (metadata.json); no manifest.tsv written" "$T/err"
+check "COPY_PARALLEL=4 head-object 255: the copies that were running had ended when the build ended (every write that started also ended, more than one)" test "$conc_starts" -ge 2 -a "$conc_starts" = "$conc_ends"
+check "COPY_PARALLEL=4 head-object 255: the worker ends with status 1, xargs never sees 255 (it would abort without waiting for the running workers)" bash -c "! grep -q 'exited with status 255' '$T/err'"
+check "COPY_PARALLEL=4 head-object 255: nothing is published" bash -c "test ! -e '$STAGE/$AUTH_DIR/manifest.tsv' && test ! -e '$STAGE/fence_mapping.json'"
+check "COPY_PARALLEL=4 head-object 255: the temporary profile file is gone" tmp_is_empty
+check "COPY_PARALLEL=4 head-object 255: no later copy started after the failure (fewer than 24 partition files staged)" test "$(find "$STAGE" -path '*phenotypic*' -type f 2> /dev/null | wc -l | tr -d ' ')" -lt 24
+
 # ---- a byte mismatch on one entry is refused
 reset_world
 make_dataset_v2 12
@@ -2610,7 +2633,7 @@ run_import both "$DATASET_URL"
 unset COPY_PARALLEL
 [ "$rc" != 0 ] && grep -q "unknown COPY_PARALLEL '65'" "$T/err" && ok "COPY_PARALLEL=65 is refused before any variant is looked at" || bad "COPY_PARALLEL=65 both (rc=$rc)"
 # the job text
-check "COPY_PARALLEL is described in the job description" bash -c "grep -qF 'COPY_PARALLEL (default 16, 1 to 64)' '$T/import.desc' && grep -qF 'byte-identical to the one of a run with 1' '$T/import.desc' && grep -qF 'The legacy .tar path ignores it' '$T/import.desc' && ! grep -qF 'one after the other (about 1,580' '$T/import.desc'"
+check "COPY_PARALLEL is described in the job description" bash -c "grep -qF 'COPY_PARALLEL (default 8, 1 to 64)' '$T/import.desc' && grep -qF 'byte-identical to the one of a run with 1' '$T/import.desc' && grep -qF 'The legacy .tar path ignores it' '$T/import.desc' && ! grep -qF 'one after the other (about 1,580' '$T/import.desc'"
 check "the stage job XML is well-formed" python3 -I -c 'import sys, xml.etree.ElementTree as E; E.parse(sys.argv[1])' "$IMPORT_XML"
 
 # ---- optional: how the per-file loop scales (V2_SCALE_TEST=1 bash import-hpds.test.sh): 789 partitions = 1,580 files per variant
