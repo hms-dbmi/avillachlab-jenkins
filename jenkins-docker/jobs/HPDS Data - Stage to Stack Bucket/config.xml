@@ -38,9 +38,18 @@ metadata.json and phenotypic/PARTITION/allObservationsStore.javabin and phenotyp
 each once, in every variant), partition names of at most 128 characters of [A-Za-z0-9._-] starting with a letter or digit, the path rule
 for src and dest, a sha256 (64 hex, never null) and an integer byte count for every file, each variant entry equal to its files[] or
 partitions[] entry, the encryption_key digest equal to source.key.sha256, and, when an open object exists, open.stigvars_removed=false.
-The files are staged one after the other (about 1,580 copies per variant for 789 partitions), each followed by a byte check against
-the manifest. The manifest.tsv of a /2 variant carries the extra header lines &quot;# layout=partitioned&quot; and &quot;# partitions=N&quot;, its rows are
+The files of a variant are staged COPY_PARALLEL at a time (about 1,580 copies per variant for 789 partitions), each followed by a
+byte check against the manifest. The manifest.tsv of a /2 variant carries the extra header lines &quot;# layout=partitioned&quot; and &quot;# partitions=N&quot;, its rows are
 sorted by dest and have a real sha256.
+
+COPY_PARALLEL (default 8, 1 to 64): how many files of a dataset prefix are copied at the same time, each by its own pair of AWS CLI
+processes. During a large stream the upload side buffers up to about 10 x 8 MB and the download side about 256 MB, so a pair can reach a
+few hundred MB: at the default 8 up to about 3 GB of memory in the worst case (every worker on a large file), at 64 more than 20 GB;
+raise it only with the memory of this Jenkins host in mind. 1 copies one file after the other, in manifest order. Above 1, a failed copy or a byte
+mismatch fails the variant after the copies that are already running have ended (no new copy starts), the refusal names the files, and
+no manifest.tsv is written; the rows of manifest.tsv are in the same order whatever the value (v2 sorted by dest, v1 in manifest
+order), so the file is byte-identical to the one of a run with 1. Each file prints one line when its copy starts; the build ends its
+copy phase with a line that gives the number of files, the bytes, the seconds and the parallelism. The legacy .tar path ignores it.
 
 ALLOW_OPEN_STIGVARS_NOT_REMOVED (default false): the open variant of a /2 dataset is served with the full per-partition columnMeta, i.e.
 with the stigmatized variables NOT removed (open.stigvars_removed=false). With the default the job REFUSES to stage it. With true (set
@@ -62,7 +71,7 @@ IAM for the dataset-prefix path:
   metadata service must be reachable from the Jenkins container, as it already is for every aws call.
 - the instance role writes and lists the stack bucket (stack_s3_bucket): s3:ListBucket (prefix data/*), s3:GetObject and s3:PutObject
   on data/* (SSE-S3, no KMS). The source role is never used for the stack bucket.
-- the data streams through the Jenkins host (download from the source, upload to the stack bucket, one file at a time): allow time
+- the data streams through the Jenkins host (download from the source, upload to the stack bucket, COPY_PARALLEL files at a time): allow time
   and bandwidth for the large files, allObservationsStore.javabin is tens of GB.
 The legacy .tar path keeps using curated-datasets-s3-role and sources the scripts in the Bash_Functions job workspace
 (assume_role, reset_role, get_stack); Check For Updates no longer runs Bash_Functions first, so if that workspace is missing,
@@ -122,6 +131,12 @@ stack from build-spec.json.&quot; or &quot;staging deploy: not requested&quot;.<
           <description>Dev stacks only. Allows the open variant of a partitioned (v2) dataset whose manifest says open.stigvars_removed=false (the open HPDS then serves the full per-partition columnMeta; stigmatized variables are NOT removed) to be staged. Default false: the job refuses it. With true: loud banner and the lines # stigvars_removed=false and # stigvars_override=true in the open manifest.tsv. No effect on v1 datasets and legacy tars.</description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
+        <hudson.model.StringParameterDefinition>
+          <name>COPY_PARALLEL</name>
+          <description>How many files of a dataset prefix are copied at the same time (integer, 1 to 64, default 8). 1 copies one file after the other, as before. Each file needs its own pair of AWS CLI processes on this Jenkins host; during a large stream a pair can use a few hundred MB (about 10 x 8 MB for the upload buffer, about 256 MB for the download), so 8 can take up to about 3 GB. A failed copy fails the variant whatever the value; manifest.tsv is the same for every value. Legacy .tar URLs ignore it.</description>
+          <defaultValue>8</defaultValue>
+          <trim>true</trim>
+        </hudson.model.StringParameterDefinition>
       </parameterDefinitions>
     </hudson.model.ParametersDefinitionProperty>
   </properties>
@@ -170,6 +185,8 @@ rm -f staging_deploy.properties
 # takes the locks, resolves the staging stack and deploys. This step looks up no stack.
 # A dataset prefix is released as bdc-hpds-pheno-release/1 (flat) or bdc-hpds-pheno-release/2 (partitioned, one store per consent
 # partition under phenotypic/&lt;partition&gt;/); the schema of its manifest.json selects the path.
+# COPY_PARALLEL (default 8, 1 to 64): files copied at the same time per variant; 1 = one after the other. The manifest.tsv rows are
+# always assembled in entry order and nothing is published unless every copy and byte check succeeded.
 # ALLOW_OPEN_STIGVARS_NOT_REMOVED=true: lets the open variant of a v2 dataset whose manifest says open.stigvars_removed=false be
 # staged (dev only; loud banner and the two stigvars lines in the open manifest.tsv). Default false = refuse.
 # Contract: bdc-hpds-pheno-release/1 or /2 (manifest.json) and bdc-hpds-deploy/1 (manifest.tsv).
@@ -196,6 +213,12 @@ case &quot;${ALLOW_OPEN_STIGVARS_NOT_REMOVED:-false}&quot; in
     true) allow_open_stigvars_not_removed=true ;;
     false) allow_open_stigvars_not_removed=false ;;
     *) refuse &quot;unknown ALLOW_OPEN_STIGVARS_NOT_REMOVED &apos;${ALLOW_OPEN_STIGVARS_NOT_REMOVED}&apos; (expected true or false)&quot; ;;
+esac
+
+# COPY_PARALLEL: how many files of a dataset prefix are copied at the same time (1 = one after the other, as before)
+case &quot;${COPY_PARALLEL:-8}&quot; in
+    [1-9] | [1-5][0-9] | 6[0-4]) copy_parallel=&quot;${COPY_PARALLEL:-8}&quot; ;;
+    *) refuse &quot;unknown COPY_PARALLEL &apos;${COPY_PARALLEL}&apos; (expected an integer from 1 to 64)&quot; ;;
 esac
 
 [ -n &quot;${stack_s3_bucket}&quot; ] || refuse &quot;stack_s3_bucket is not set&quot;
@@ -395,6 +418,92 @@ stream_copy() {
     ) || refuse &quot;copy of ${src} to ${dest} failed&quot;
 }
 
+# copy_entry &lt;src&gt; &lt;dest&gt; &lt;bytes&gt; &lt;sha256&gt; &lt;etag&gt; &lt;row file&gt;: stage one file of the variant, check its size in the stack bucket against
+# the manifest and write its manifest.tsv row to &lt;row file&gt;. Every aws call reads /dev/null or the stream pipe: the entries are read
+# from a file by the caller and a CLI that read them would cut the copy short.
+copy_entry() {
+    local e_src=&quot;$1&quot; e_dest=&quot;$2&quot; e_bytes=&quot;$3&quot; e_sha=&quot;$4&quot; e_etag=&quot;$5&quot; row_file=&quot;$6&quot; head_json got_bytes
+    echo &quot;staging ${e_src} -&gt; ${e_dest} (${e_bytes} bytes)&quot;
+    stream_copy &quot;${source_url}${e_src}&quot; &quot;s3://${stack_s3_bucket}/${stage_key_prefix}${e_dest}&quot; &quot;${e_bytes}&quot;
+    head_json=&quot;$(aws s3api head-object --bucket &quot;${stack_s3_bucket}&quot; --key &quot;${stage_key_prefix}${e_dest}&quot; &lt; /dev/null)&quot;
+    got_bytes=&quot;$(printf &apos;%s&apos; &quot;${head_json}&quot; | jq -r &apos;.ContentLength&apos;)&quot;
+    [ &quot;${got_bytes}&quot; = &quot;${e_bytes}&quot; ] || refuse &quot;${e_dest}: staged ${got_bytes} bytes, manifest says ${e_bytes}&quot;
+    printf &apos;%s\t%s\t%s\t%s\t%s\n&apos; &quot;${e_dest}&quot; &quot;${e_bytes}&quot; &quot;${e_sha}&quot; &quot;${e_etag}&quot; &quot;${e_src}&quot; &gt;&gt; &quot;${row_file}&quot;
+}
+
+# fence_mapping.json belongs to the auth variant (PSAMA reads the auth key&apos;s); the open variant must not replace it.
+# copy_fence &lt;src of metadata.json&gt; &lt;bytes&gt;
+copy_fence() {
+    local f_src=&quot;$1&quot; f_bytes=&quot;$2&quot; fence_json fence_bytes
+    stream_copy &quot;${source_url}${f_src}&quot; &quot;s3://${stack_s3_bucket}/data/${deploy_key_value}/fence_mapping.json&quot; &quot;${f_bytes}&quot;
+    fence_json=&quot;$(aws s3api head-object --bucket &quot;${stack_s3_bucket}&quot; --key &quot;data/${deploy_key_value}/fence_mapping.json&quot; &lt; /dev/null)&quot;
+    fence_bytes=&quot;$(printf &apos;%s&apos; &quot;${fence_json}&quot; | jq -r &apos;.ContentLength&apos;)&quot;
+    [ &quot;${fence_bytes}&quot; = &quot;${f_bytes}&quot; ] || refuse &quot;fence_mapping.json: staged ${fence_bytes} bytes, metadata.json has ${f_bytes}&quot;
+}
+
+# Parallel copies (COPY_PARALLEL &gt; 1): xargs starts one `bash -c &apos;copy_worker N&apos;` per entry, at most COPY_PARALLEL at a time. The worker
+# copies line N of the entries file. Its messages are collected in ${copy_dir}/N.err and printed in one piece when it ends, so lines of
+# different entries do not run into each other; its manifest.tsv row goes to ${copy_dir}/N.row and the caller assembles the rows in
+# entry order. A failed worker leaves ${copy_dir}/N.failed (the dest) and ${copy_dir}/failed, which keeps the others from starting.
+copy_worker_end() {
+    local rc=$?
+    [ ! -s &quot;${copy_dir}/${w_n}.err&quot; ] || cat &quot;${copy_dir}/${w_n}.err&quot; &gt;&amp;3
+    if [ &quot;${rc}&quot; != 0 ]; then
+        printf &apos;%s\n&apos; &quot;${w_dest}&quot; &gt; &quot;${copy_dir}/${w_n}.failed&quot;
+        : &gt; &quot;${copy_dir}/failed&quot;
+    fi
+    # GNU xargs stops at once, without waiting for the other workers, when a command exits 255 (the AWS CLI's general error
+    # status), and the end of the build would then remove the source profile under the copies still running.
+    [ &quot;${rc}&quot; != 255 ] || rc=1
+    exit &quot;${rc}&quot;
+}
+
+copy_worker() {
+    local line w_src w_bytes w_sha w_etag
+    w_n=&quot;$1&quot;
+    w_dest=&quot;&quot;
+    trap copy_worker_end EXIT
+    exec 3&gt;&amp;2 2&gt; &quot;${copy_dir}/${w_n}.err&quot;
+    [ ! -e &quot;${copy_dir}/failed&quot; ] || return 0
+    line=&quot;$(sed -n &quot;${w_n}p&quot; &quot;${entries_file}&quot;)&quot;
+    IFS=$&apos;\t&apos; read -r w_src w_dest w_bytes w_sha w_etag &lt;&lt;&lt; &quot;${line}&quot;
+    copy_entry &quot;${w_src}&quot; &quot;${w_dest}&quot; &quot;${w_bytes}&quot; &quot;${w_sha}&quot; &quot;${w_etag}&quot; &quot;${copy_dir}/${w_n}.row&quot;
+}
+
+# copy_entries_parallel: stage every line of ${entries_file}, then add the rows to ${work}/manifest.tsv in the order of that file
+# (never in the order the copies finished), after the fence mapping copy. Nothing is added to manifest.tsv unless every copy worked.
+copy_entries_parallel() {
+    local total rc=0 n failed_names=&quot;&quot; failed_count=0 fence_line
+    total=&quot;$(wc -l &lt; &quot;${entries_file}&quot; | tr -d &apos; &apos;)&quot;
+    copy_dir=&quot;${work}/copy&quot;
+    rm -rf &quot;${copy_dir}&quot;
+    mkdir -p &quot;${copy_dir}&quot;
+    (
+        export -f refuse src_aws stream_copy copy_entry copy_worker copy_worker_end
+        export copy_dir entries_file source_url stage_key_prefix stack_s3_bucket src_cfg
+        # shellcheck disable=SC2016  # $1 is for the bash -c of the worker
+        seq 1 &quot;${total}&quot; | xargs -n 1 -P &quot;${copy_parallel}&quot; bash -c &apos;set -e; copy_worker &quot;$1&quot;&apos; _
+    ) || rc=$?
+    for n in $(seq 1 &quot;${total}&quot;); do
+        if [ -s &quot;${copy_dir}/${n}.failed&quot; ]; then
+            failed_count=$((failed_count + 1))
+            failed_names=&quot;${failed_names} $(cat &quot;${copy_dir}/${n}.failed&quot;)&quot;
+        fi
+    done
+    [ &quot;${failed_count}&quot; = 0 ] || refuse &quot;${failed_count} of ${total} copies failed (${failed_names# }); no manifest.tsv written&quot;
+    [ &quot;${rc}&quot; = 0 ] || refuse &quot;the copy workers ended with status ${rc}; no manifest.tsv written&quot;
+    for n in $(seq 1 &quot;${total}&quot;); do
+        [ -s &quot;${copy_dir}/${n}.row&quot; ] || refuse &quot;entry ${n} of ${total} has no manifest row; no manifest.tsv written&quot;
+    done
+    fence_line=&quot;$(awk -F &apos;\t&apos; &apos;$2 == &quot;metadata.json&quot; { print $1 &quot;\t&quot; $3; exit }&apos; &quot;${entries_file}&quot;)&quot;
+    if [ &quot;${variant}&quot; = auth ] &amp;&amp; [ -n &quot;${fence_line}&quot; ]; then
+        copy_fence &quot;${fence_line%%$&apos;\t&apos;*}&quot; &quot;${fence_line#*$&apos;\t&apos;}&quot;
+    fi
+    for n in $(seq 1 &quot;${total}&quot;); do
+        cat &quot;${copy_dir}/${n}.row&quot; &gt;&gt; &quot;${work}/manifest.tsv&quot;
+    done
+}
+
 # The checks of a bdc-hpds-pheno-release/1 manifest (flat dataset) for the current variant.
 validate_manifest_v1() {
     jq -e --arg v &quot;${variant}&quot; &apos;
@@ -496,7 +605,7 @@ require_open_override() {
 #   curated-datasets-s3-role, source bucket: s3:GetObject on data/hpds/pheno/datasets/* and data/hpds/pheno-partitioned/datasets/*; its trust policy allows the instance role
 #   instance role, stack bucket:             s3:ListBucket + s3:GetObject + s3:PutObject on data/*, and sts:AssumeRole on the source role
 stage_dataset() {
-    local work=dataset_work dataset_id manifest_sha e_src e_dest e_bytes e_sha e_etag head_json got_bytes expected_rows written_rows
+    local work=dataset_work dataset_id manifest_sha e_src e_dest e_bytes e_sha e_etag expected_rows written_rows copy_start copy_total_bytes
     local schema layout=flat partitions=&quot;&quot; stigvars_override=false
     rm -rf &quot;${work}&quot;
     mkdir -p &quot;${work}&quot;
@@ -553,23 +662,21 @@ stage_dataset() {
     jq -r --arg v &quot;${variant}&quot; --arg layout &quot;${layout}&quot; &apos;.variants[$v] | (if $layout == &quot;partitioned&quot; then sort_by(.dest) else . end)[] | [.src, .dest, (.bytes | tostring), (.sha256 // &quot;-&quot;), (.etag // &quot;-&quot;)] | @tsv&apos; \
         &quot;${work}/manifest.json&quot; &gt; &quot;${work}/entries.tsv&quot;
 
-    while IFS=$&apos;\t&apos; read -r e_src e_dest e_bytes e_sha e_etag; do
-        echo &quot;staging ${e_src} -&gt; ${e_dest} (${e_bytes} bytes)&quot;
-        # Every aws call in this loop reads /dev/null or the stream pipe: the loop reads entries.tsv on stdin and a CLI that read it
-        # would end the loop early.
-        stream_copy &quot;${source_url}${e_src}&quot; &quot;s3://${stack_s3_bucket}/${stage_key_prefix}${e_dest}&quot; &quot;${e_bytes}&quot;
-        head_json=&quot;$(aws s3api head-object --bucket &quot;${stack_s3_bucket}&quot; --key &quot;${stage_key_prefix}${e_dest}&quot; &lt; /dev/null)&quot;
-        got_bytes=&quot;$(printf &apos;%s&apos; &quot;${head_json}&quot; | jq -r &apos;.ContentLength&apos;)&quot;
-        [ &quot;${got_bytes}&quot; = &quot;${e_bytes}&quot; ] || refuse &quot;${e_dest}: staged ${got_bytes} bytes, manifest says ${e_bytes}&quot;
-        printf &apos;%s\t%s\t%s\t%s\t%s\n&apos; &quot;${e_dest}&quot; &quot;${e_bytes}&quot; &quot;${e_sha}&quot; &quot;${e_etag}&quot; &quot;${e_src}&quot; &gt;&gt; &quot;${work}/manifest.tsv&quot;
-        # fence_mapping.json belongs to the auth variant (PSAMA reads the auth key&apos;s); the open variant must not replace it.
-        if [ &quot;${e_dest}&quot; = &quot;metadata.json&quot; ] &amp;&amp; [ &quot;${variant}&quot; = auth ]; then
-            stream_copy &quot;${source_url}${e_src}&quot; &quot;s3://${stack_s3_bucket}/data/${deploy_key_value}/fence_mapping.json&quot; &quot;${e_bytes}&quot;
-            fence_json=&quot;$(aws s3api head-object --bucket &quot;${stack_s3_bucket}&quot; --key &quot;data/${deploy_key_value}/fence_mapping.json&quot; &lt; /dev/null)&quot;
-            fence_bytes=&quot;$(printf &apos;%s&apos; &quot;${fence_json}&quot; | jq -r &apos;.ContentLength&apos;)&quot;
-            [ &quot;${fence_bytes}&quot; = &quot;${e_bytes}&quot; ] || refuse &quot;fence_mapping.json: staged ${fence_bytes} bytes, metadata.json has ${e_bytes}&quot;
-        fi
-    done &lt; &quot;${work}/entries.tsv&quot;
+    entries_file=&quot;${work}/entries.tsv&quot;
+    copy_start=&quot;${SECONDS}&quot;
+    if [ &quot;${copy_parallel}&quot; = 1 ]; then
+        # one after the other: the loop reads entries.tsv on stdin, which is why every aws call in copy_entry reads /dev/null or the pipe
+        while IFS=$&apos;\t&apos; read -r e_src e_dest e_bytes e_sha e_etag; do
+            copy_entry &quot;${e_src}&quot; &quot;${e_dest}&quot; &quot;${e_bytes}&quot; &quot;${e_sha}&quot; &quot;${e_etag}&quot; &quot;${work}/manifest.tsv&quot;
+            if [ &quot;${e_dest}&quot; = &quot;metadata.json&quot; ] &amp;&amp; [ &quot;${variant}&quot; = auth ]; then
+                copy_fence &quot;${e_src}&quot; &quot;${e_bytes}&quot;
+            fi
+        done &lt; &quot;${entries_file}&quot;
+    else
+        copy_entries_parallel
+    fi
+    copy_total_bytes=&quot;$(awk -F &apos;\t&apos; &apos;{ n += $3 } END { printf &quot;%.0f&quot;, n }&apos; &quot;${entries_file}&quot;)&quot;
+    echo &quot;Copied $(wc -l &lt; &quot;${entries_file}&quot; | tr -d &apos; &apos;) files, ${copy_total_bytes} bytes, in $((SECONDS - copy_start)) s (COPY_PARALLEL=${copy_parallel})&quot;
 
     # Never publish a manifest.tsv that lists fewer files than the variant has.
     expected_rows=&quot;$(jq -r --arg v &quot;${variant}&quot; &apos;.variants[$v] | length&apos; &quot;${work}/manifest.json&quot;)&quot;

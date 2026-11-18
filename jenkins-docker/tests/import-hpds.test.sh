@@ -103,6 +103,12 @@ case "${pos[0]}/${pos[1]}" in
         if [ "$from" = "-" ]; then
             src="$(mktemp "${FAKE_AWS_LOG}.stream.XXXXXX")"
             cat > "$src"
+            # FAKE_CONC_LOG: one line when a stream write starts and one when it ends (how many run at the same time)
+            [ -z "${FAKE_CONC_LOG:-}" ] || echo start >> "$FAKE_CONC_LOG"
+            # FAKE_SLOW_COPY: writes whose destination matches take FAKE_SLOW_SECS (default 0.3) s; FAKE_JITTER: every write takes a random 0 to 0.29 s.
+            # Both make copies end in another order than they started in.
+            if [ -n "${FAKE_SLOW_COPY:-}" ] && [[ "$to" == *"$FAKE_SLOW_COPY"* ]]; then sleep "${FAKE_SLOW_SECS:-0.3}"; fi
+            [ -z "${FAKE_JITTER:-}" ] || sleep "0.$((RANDOM % 3))$((RANDOM % 10))"
             echo "stream to=$to bytes=$(wc -c < "$src" | tr -d ' ') expected=${expected:-none}" >> "$FAKE_AWS_IDENTITY_LOG"
         fi
         mkdir -p "$(dirname "$dst")"
@@ -112,8 +118,14 @@ case "${pos[0]}/${pos[1]}" in
             cp "$src" "$dst"
         fi
         [ "$from" != "-" ] || rm -f "$src"
+        [ -z "${FAKE_CONC_LOG:-}" ] || [ "$from" != "-" ] || echo end >> "$FAKE_CONC_LOG"
         ;;
     s3api/head-object)
+        # FAKE_FAIL_HEAD: the AWS CLI's general error status (255) for the keys that match
+        if [ -n "${FAKE_FAIL_HEAD:-}" ] && [[ "$key" == *"$FAKE_FAIL_HEAD"* ]]; then
+            echo "fake aws: injected head-object failure for $key" >&2
+            exit 255
+        fi
         f="$FAKE_S3/$bucket/$key"
         [ -f "$f" ] || { echo "An error occurred (404) when calling the HeadObject operation: Not Found" >&2; exit 254; }
         printf '{"ContentLength": %s, "ETag": "\\"fake\\""}\n' "$(wc -c < "$f" | tr -d ' ')"
@@ -239,7 +251,7 @@ reset_world() {
     : > "$FAKE_AWS_LOG"
     : > "$FAKE_AWS_IDENTITY_LOG"
     : > "$FAKE_DOCKER_LOG"
-    unset ALLOW_OPEN_STIGVARS_NOT_REMOVED AWS_PROFILE AWS_CONFIG_FILE FAKE_FAIL_COPY FAKE_FAIL_READ FAKE_FAIL_SOURCE_IDENTITY FAKE_NOOP_COPY FAKE_CORRUPT_COPY FAKE_LIST_DENIED FAKE_AWS_EAT_STDIN WS_SEED DEPLOY_TO_STAGING_STACK curated_datasets_s3_role IMPORT_BASH_OPTS
+    unset ALLOW_OPEN_STIGVARS_NOT_REMOVED AWS_PROFILE AWS_CONFIG_FILE FAKE_FAIL_COPY FAKE_FAIL_READ FAKE_FAIL_SOURCE_IDENTITY FAKE_NOOP_COPY FAKE_CORRUPT_COPY FAKE_LIST_DENIED FAKE_AWS_EAT_STDIN FAKE_FAIL_HEAD FAKE_SLOW_COPY FAKE_SLOW_SECS FAKE_JITTER FAKE_CONC_LOG COPY_PARALLEL WS_SEED DEPLOY_TO_STAGING_STACK curated_datasets_s3_role IMPORT_BASH_OPTS
     # The Jenkins instance role: what every call that is not a source read must run as.
     export AWS_ACCESS_KEY_ID=AKIAINSTANCE AWS_SECRET_ACCESS_KEY=INSTANCESECRET AWS_SESSION_TOKEN=INSTANCETOKEN
 }
@@ -657,11 +669,11 @@ reset_world
 make_dataset
 sed 's|< /dev/null||g' "$T/import.sh" > "$T/import-noredirect.sh"
 check "guard test: redirects were really removed" test "$(grep -c '< /dev/null' "$T/import-noredirect.sh")" = 0
-export FAKE_AWS_EAT_STDIN=1
+export FAKE_AWS_EAT_STDIN=1 COPY_PARALLEL=1
 IMPORT_SCRIPT="$T/import-noredirect.sh"
 run_import auth "$DATASET_URL"
 IMPORT_SCRIPT="$T/import.sh"
-unset FAKE_AWS_EAT_STDIN
+unset FAKE_AWS_EAT_STDIN COPY_PARALLEL
 [ "$rc" != 0 ] && grep -q 'data rows' "$T/err" && ok "short manifest.tsv is refused before upload" || bad "short manifest.tsv guard (rc=$rc)"
 check "short manifest.tsv was not uploaded" test ! -e "$STAGE/javabins_rekeyed/manifest.tsv"
 
@@ -787,9 +799,9 @@ check "source role refusal: no secret in stdout or stderr" test "$(cat "$T/out" 
 # a source read that dies in the middle of the stream: the destination side of the pipe still ends cleanly, the build must fail anyway
 reset_world
 make_dataset
-export FAKE_FAIL_READ=columnMeta.javabin
+export FAKE_FAIL_READ=columnMeta.javabin COPY_PARALLEL=1
 run_import both "$DATASET_URL"
-unset FAKE_FAIL_READ
+unset FAKE_FAIL_READ COPY_PARALLEL
 [ "$rc" != 0 ] && ok "a source read failing mid-stream ends the build non-zero" || bad "mid-stream read failure rc"
 check "mid-stream read failure: the copy is reported as failed (pipefail, not only the later byte check)" grep -q "REFUSED: copy of s3://$SRC_BUCKET/data/hpds/pheno/datasets/$DATASET_ID/columnMeta.javabin to s3://$STACK/data/$C1/$AUTH_DIR/columnMeta.javabin failed" "$T/err"
 check "mid-stream read failure: no manifest.tsv, and later files are not copied" bash -c "test ! -e '$STAGE/$AUTH_DIR/manifest.tsv' && test ! -e '$STAGE/$AUTH_DIR/encryption_key' && test ! -e '$STAGE/fence_mapping.json'"
@@ -1802,17 +1814,19 @@ run_cfu
 check "CFU: auth not staged: no fence ERROR" test "$(grep -c 'fence_mapping' "$T/err")" = 0
 
 # ================================================================ job definitions
-check "Stage job: parameters are the HPDS_VARIANT choice both|auth|open (both is the default), the boolean DEPLOY_TO_STAGING_STACK (default false) and the boolean ALLOW_OPEN_STIGVARS_NOT_REMOVED (default false)" python3 -I - "$IMPORT_XML" << 'PY'
+check "Stage job: parameters are the HPDS_VARIANT choice both|auth|open (both is the default), the boolean DEPLOY_TO_STAGING_STACK (default false), the boolean ALLOW_OPEN_STIGVARS_NOT_REMOVED (default false) and the string COPY_PARALLEL (default 8)" python3 -I - "$IMPORT_XML" << 'PY'
 import sys, xml.etree.ElementTree as E
 r = E.parse(sys.argv[1]).getroot()
 names = [e.findtext("name") for e in r.findall(".//parameterDefinitions/*")]
-assert names == ["HPDS_VARIANT", "DEPLOY_TO_STAGING_STACK", "ALLOW_OPEN_STIGVARS_NOT_REMOVED"], names
+assert names == ["HPDS_VARIANT", "DEPLOY_TO_STAGING_STACK", "ALLOW_OPEN_STIGVARS_NOT_REMOVED", "COPY_PARALLEL"], names
 c = r.find(".//hudson.model.ChoiceParameterDefinition")
 assert c.findtext("name") == "HPDS_VARIANT"
 assert [s.text for s in c.iter("string")] == ["both", "auth", "open"]
 bs = r.findall(".//hudson.model.BooleanParameterDefinition")
 assert [b.findtext("name") for b in bs] == ["DEPLOY_TO_STAGING_STACK", "ALLOW_OPEN_STIGVARS_NOT_REMOVED"]
 assert all(b.findtext("defaultValue") == "false" for b in bs)
+cp = r.find(".//hudson.model.StringParameterDefinition")
+assert cp.findtext("name") == "COPY_PARALLEL" and cp.findtext("defaultValue") == "8"
 PY
 check "Stage job: source_s3_url and destination_bucket_hash are gone from the job" test "$(grep -cE 'source_s3_url|destination_bucket_hash' "$IMPORT_XML")" = 0
 check "Stage job: release-control checkout is still configured" bash -c "grep -q '<url>\${release_control_git_repo}</url>' '$IMPORT_XML' && grep -q '<name>\${release_control_git_hash}</name>' '$IMPORT_XML'"
@@ -1991,11 +2005,11 @@ check "v2 12 partitions: no row is a header line and no header line is a row" te
 reset_world
 make_dataset_v2
 sed 's|< /dev/null||g' "$T/import.sh" > "$T/import-noredirect.sh"
-export FAKE_AWS_EAT_STDIN=1
+export FAKE_AWS_EAT_STDIN=1 COPY_PARALLEL=1
 IMPORT_SCRIPT="$T/import-noredirect.sh"
 run_import auth "$DATASET_URL2"
 IMPORT_SCRIPT="$T/import.sh"
-unset FAKE_AWS_EAT_STDIN
+unset FAKE_AWS_EAT_STDIN COPY_PARALLEL
 [ "$rc" != 0 ] && grep -q 'data rows' "$T/err" && ok "v2: a short manifest.tsv is refused before upload" || bad "v2 short manifest.tsv guard (rc=$rc)"
 check "v2: the short manifest.tsv was not uploaded" test ! -e "$STAGE/$AUTH_DIR/manifest.tsv"
 # a v2 stdin-eating aws does not end the loop either
@@ -2389,6 +2403,238 @@ assert len(r.findall(".//builders/hudson.plugins.groovy.SystemGroovy")) == 1
 PY
 check "stage job: no personal names, task ids or notes in the v2 description or shell step" bash -c "! grep -qiE 'thomas|umbrella|forgejo|claude|/Users/' '$T/import.desc' '$T/import.sh' '$T/cfu.desc' '$T/cfu.sh'"
 check "stage job: fixtures and shell step use no real accession (only phs000000, phs999999, phs123456)" bash -c "! grep -ohE 'phs[0-9]{6}' '$T/import.sh' '$T/cfu.sh' | grep -vE '^phs(000000|999999|123456)\$'"
+
+# ================================================================ COPY_PARALLEL (the files of a variant are copied at the same time)
+# tree_digest: every object of the fake stack bucket with its content digest (what was staged, byte for byte)
+tree_digest() { (cd "$FAKE_S3/$STACK" && find . -type f | LC_ALL=C sort | while IFS= read -r f; do printf '%s %s\n' "$f" "$(sha "$f")"; done); }
+# max_running FILE: the largest number of writes that were running at the same time (FAKE_CONC_LOG: start/end lines)
+max_running() { awk '/^start/ { c++; if (c > m) m = c } /^end/ { c-- } END { print m + 0 }' "$1"; }
+# stream_end_order: the destinations in the order their streams ended (the fence mapping copy is left out)
+stream_end_order() { grep '^stream to=' "$FAKE_AWS_IDENTITY_LOG" | grep -v fence_mapping.json | sed 's|^stream to=s3://[^/]*/data/[^/]*/[^/]*/||; s| .*||'; }
+
+# ---- v2: COPY_PARALLEL=1 and 32 stage the same objects and the same manifest.tsv, whatever order the copies end in
+reset_world
+make_dataset_v2 12
+export COPY_PARALLEL=1
+run_import auth "$DATASET_URL2"
+[ "$rc" = 0 ] && ok "COPY_PARALLEL=1, v2 12 partitions: auth staging exits 0" || { bad "COPY_PARALLEL=1 v2 (rc=$rc)"; cat "$T/err"; }
+tree_digest > "$T/tree.p1"
+cp "$STAGE/$AUTH_DIR/manifest.tsv" "$T/manifest.p1"
+check "COPY_PARALLEL=1: the summary line gives files, bytes, seconds and the parallelism" grep -q '^Copied 26 files, [0-9]* bytes, in [0-9]* s (COPY_PARALLEL=1)$' "$T/out"
+rm -rf "$FAKE_S3/$STACK"
+export COPY_PARALLEL=32 FAKE_SLOW_COPY=encryption_key FAKE_SLOW_SECS=3
+: > "$FAKE_AWS_IDENTITY_LOG"
+: > "$FAKE_AWS_LOG"
+run_import_in_repo auth
+unset FAKE_SLOW_COPY FAKE_SLOW_SECS
+[ "$rc" = 0 ] && ok "COPY_PARALLEL=32, v2 12 partitions: auth staging exits 0" || { bad "COPY_PARALLEL=32 v2 (rc=$rc)"; cat "$T/err"; }
+tree_digest > "$T/tree.p8"
+check "COPY_PARALLEL 1 vs 32 (v2): the staged objects are identical (names and bytes, fence_mapping.json included)" cmp "$T/tree.p1" "$T/tree.p8"
+check "COPY_PARALLEL 1 vs 32 (v2): the manifest.tsv files are byte-identical" cmp "$T/manifest.p1" "$STAGE/$AUTH_DIR/manifest.tsv"
+check "COPY_PARALLEL=32 (v2): the staging tree has 26 files + manifest.tsv + fence_mapping.json" test "$(wc -l < "$T/tree.p8" | tr -d ' ')" = 28
+check "COPY_PARALLEL=32 (v2): the rows are sorted by dest" bash -c "grep -v '^#' '$STAGE/$AUTH_DIR/manifest.tsv' | tail -n +2 | cut -f1 | LC_ALL=C sort -c"
+check "COPY_PARALLEL=32 (v2): encryption_key is the first row although its copy ended last (rows follow the entries, not the completion order)" test "$(tsv_rows "$STAGE/$AUTH_DIR/manifest.tsv" | head -1 | cut -f1)" = encryption_key -a "$(stream_end_order | tail -1)" = encryption_key
+check "COPY_PARALLEL=32 (v2): the copies did not end in manifest order" test "$(stream_end_order | head -3 | tr '\n' ' ')" != "$(tsv_rows "$STAGE/$AUTH_DIR/manifest.tsv" | head -3 | cut -f1 | tr '\n' ' ')"
+check "COPY_PARALLEL=32 (v2): fence_mapping.json is the static metadata.json" cmp "$STAGE/fence_mapping.json" "$DATASET2_DIR/static/metadata.json"
+check "COPY_PARALLEL=32 (v2): every file was byte checked (26 + fence_mapping.json head-object calls)" test "$(grep -c 's3api head-object' "$FAKE_AWS_LOG")" = 27
+check "COPY_PARALLEL=32 (v2): source reads ran as the source role (private profile file), writes as the instance role, nothing leaked" test "$(count_without "$SRC_READ" "$SRC_ID")" = 0 -a "$(count_without "$DEST_WRITE" "$INST_ID")" = 0 -a "$(grep -c '^ident=leak' "$FAKE_AWS_IDENTITY_LOG")" = 0 -a "$(grep -c 'cfg=bad' "$FAKE_AWS_IDENTITY_LOG")" = 0
+check "COPY_PARALLEL=32 (v2): every stream got --expected-size equal to its bytes" streams_consistent
+check "COPY_PARALLEL=32 (v2): manifest.tsv is the last object written" bash -c "grep -E 'aws s3 cp (-|dataset_work/manifest.tsv) s3://' '$FAKE_AWS_LOG' | tail -1 | grep -q '/$AUTH_DIR/manifest.tsv'"
+check "COPY_PARALLEL=32 (v2): the temporary profile file is gone" tmp_is_empty
+# the log: one whole line per entry, and the summary
+check "COPY_PARALLEL=32 (v2): one 'staging' line per entry (26), none twice, none cut" bash -c "test \$(grep -c '^staging .* -> .* ([0-9]* bytes)\$' '$T/out') = 26 && test -z \"\$(grep '^staging ' '$T/out' | sort | uniq -d)\" && test \$(grep -c '^staging ' '$T/out') = 26"
+check "COPY_PARALLEL=32 (v2): every line of the build output is a whole known line" bash -c "! grep -vE '^(staging .* -> .* \([0-9]+ bytes\)|auth: staging .*|auth: staged .*|Copied 26 files, [0-9]+ bytes, in [0-9]+ s \(COPY_PARALLEL=32\)|Staged auth from .*|Next: .*)\$' '$T/out'"
+check "COPY_PARALLEL=32 (v2): the summary names the files and the bytes of the variant" grep -qE "^Copied 26 files, $(jq '[.variants.auth[].bytes] | add' "$DATASET2_DIR/manifest.json") bytes, in [0-9]+ s \(COPY_PARALLEL=32\)\$" "$T/out"
+check "COPY_PARALLEL=32 (v2): the summary comes before the Staged line" bash -c "test \$(grep -n '^Copied ' '$T/out' | cut -d: -f1) -lt \$(grep -n '^Staged auth' '$T/out' | cut -d: -f1)"
+# random copy times instead of one slow file
+rm -rf "$FAKE_S3/$STACK"
+export COPY_PARALLEL=16 FAKE_JITTER=1
+run_import_in_repo auth
+unset FAKE_JITTER
+[ "$rc" = 0 ] && ok "COPY_PARALLEL=16 with random copy times: auth staging exits 0" || { bad "COPY_PARALLEL=16 jitter (rc=$rc)"; cat "$T/err"; }
+tree_digest > "$T/tree.p16"
+check "COPY_PARALLEL=16 with random copy times: the staged objects are identical to those of COPY_PARALLEL=1" cmp "$T/tree.p1" "$T/tree.p16"
+check "COPY_PARALLEL=16 with random copy times: manifest.tsv is byte-identical to that of COPY_PARALLEL=1" cmp "$T/manifest.p1" "$STAGE/$AUTH_DIR/manifest.tsv"
+# the default (no COPY_PARALLEL, or an empty one): 8
+unset COPY_PARALLEL
+rm -rf "$FAKE_S3/$STACK"
+run_import_in_repo auth
+check "COPY_PARALLEL unset: 8 copies at a time, same manifest.tsv" bash -c "test $rc = 0 && grep -q '(COPY_PARALLEL=8)\$' '$T/out' && cmp '$T/manifest.p1' '$STAGE/$AUTH_DIR/manifest.tsv'"
+export COPY_PARALLEL=""
+rm -rf "$FAKE_S3/$STACK"
+run_import_in_repo auth
+check "COPY_PARALLEL empty: the default, 8" bash -c "test $rc = 0 && grep -q '(COPY_PARALLEL=8)\$' '$T/out'"
+unset COPY_PARALLEL
+
+# ---- v1 (flat): both variants; the manifest order is kept (it is not sorted), whatever order the copies end in
+reset_world
+make_dataset
+export COPY_PARALLEL=1
+run_import both "$DATASET_URL"
+[ "$rc" = 0 ] && ok "COPY_PARALLEL=1, v1: both variants stage" || { bad "COPY_PARALLEL=1 v1 (rc=$rc)"; cat "$T/err"; }
+tree_digest > "$T/tree.v1p1"
+cp "$STAGE/$AUTH_DIR/manifest.tsv" "$T/manifest.v1p1.auth"
+cp "$STAGE/$OPEN_DIR/manifest.tsv" "$T/manifest.v1p1.open"
+rm -rf "$FAKE_S3/$STACK"
+export COPY_PARALLEL=8 FAKE_SLOW_COPY=allObservationsStore.javabin
+: > "$FAKE_AWS_LOG"
+run_import_in_repo both
+unset FAKE_SLOW_COPY COPY_PARALLEL
+[ "$rc" = 0 ] && ok "COPY_PARALLEL=8, v1: both variants stage" || { bad "COPY_PARALLEL=8 v1 (rc=$rc)"; cat "$T/err"; }
+tree_digest > "$T/tree.v1p8"
+check "COPY_PARALLEL 1 vs 8 (v1): the staged objects are identical" cmp "$T/tree.v1p1" "$T/tree.v1p8"
+check "COPY_PARALLEL 1 vs 8 (v1): the auth manifest.tsv files are byte-identical" cmp "$T/manifest.v1p1.auth" "$STAGE/$AUTH_DIR/manifest.tsv"
+check "COPY_PARALLEL 1 vs 8 (v1): the open manifest.tsv files are byte-identical" cmp "$T/manifest.v1p1.open" "$STAGE/$OPEN_DIR/manifest.tsv"
+check "COPY_PARALLEL=8 (v1): the auth rows keep the manifest order (not sorted by dest)" test "$(tsv_rows "$STAGE/$AUTH_DIR/manifest.tsv" | cut -f1 | tr '\n' ' ')" = "$(jq -r '.variants.auth[].dest' "$DATASET_DIR/manifest.json" | tr '\n' ' ')"
+check "COPY_PARALLEL=8 (v1): the open rows keep the manifest order too" test "$(tsv_rows "$STAGE/$OPEN_DIR/manifest.tsv" | cut -f1 | tr '\n' ' ')" = "$(jq -r '.variants.open[].dest' "$DATASET_DIR/manifest.json" | tr '\n' ' ')"
+check "COPY_PARALLEL=8 (v1): fence_mapping.json is written once, by auth" test "$(grep -c 's3://.*/fence_mapping.json' "$FAKE_AWS_LOG" | tr -d ' ')" = 1
+check "COPY_PARALLEL=8 (v1): one summary line per variant" test "$(grep -c '^Copied [0-9]* files, [0-9]* bytes, in [0-9]* s (COPY_PARALLEL=8)$' "$T/out")" = 2
+
+# ---- bounded parallelism: never more copies at the same time than COPY_PARALLEL, and really more than one
+reset_world
+make_dataset_v2 12
+export FAKE_SLOW_COPY=phenotypic FAKE_CONC_LOG="$T/conc.log" COPY_PARALLEL=4
+: > "$FAKE_CONC_LOG"
+run_import auth "$DATASET_URL2"
+[ "$rc" = 0 ] && ok "COPY_PARALLEL=4 with slow copies: exits 0" || { bad "COPY_PARALLEL=4 slow (rc=$rc)"; cat "$T/err"; }
+m="$(max_running "$FAKE_CONC_LOG")"
+[ "$m" -le 4 ] && [ "$m" -ge 2 ] && ok "COPY_PARALLEL=4: at most 4 copies at the same time (saw $m), and more than one" || bad "COPY_PARALLEL=4 concurrency (saw $m)"
+export COPY_PARALLEL=1
+: > "$FAKE_CONC_LOG"
+rm -rf "$FAKE_S3/$STACK"
+run_import_in_repo auth
+check "COPY_PARALLEL=1: one copy at a time" test "$rc" = 0 -a "$(max_running "$FAKE_CONC_LOG")" = 1
+check "COPY_PARALLEL=1: the staging lines are in manifest order" test "$(grep '^staging ' "$T/out" | sed 's/^staging .* -> \(.*\) (.*/\1/' | tr '\n' ' ')" = "$(tsv_rows "$STAGE/$AUTH_DIR/manifest.tsv" | cut -f1 | tr '\n' ' ')"
+unset FAKE_SLOW_COPY FAKE_CONC_LOG COPY_PARALLEL
+
+# ---- a failed copy among many fails the variant and publishes nothing
+reset_world
+make_dataset_v2 12
+allow_flag
+export COPY_PARALLEL=8 FAKE_FAIL_COPY=phenotypic/phs000000.c5/columnMeta.javabin
+run_import both "$DATASET_URL2"
+unset FAKE_FAIL_COPY COPY_PARALLEL
+no_allow_flag
+[ "$rc" != 0 ] && ok "COPY_PARALLEL=8: one failing copy among 26 fails the build" || bad "COPY_PARALLEL=8 failing copy (rc=$rc)"
+check "COPY_PARALLEL=8 failing copy: the refusal names the file" grep -q "REFUSED: copy of s3://$SRC_BUCKET/data/hpds/pheno-partitioned/datasets/$DATASET_ID2/partitions/phs000000.c5/columnMeta.javabin to s3://$STACK/data/$C1/$AUTH_DIR/phenotypic/phs000000.c5/columnMeta.javabin failed" "$T/err"
+check "COPY_PARALLEL=8 failing copy: the build says how many copies failed and which" grep -qF "REFUSED: 1 of 26 copies failed (phenotypic/phs000000.c5/columnMeta.javabin); no manifest.tsv written" "$T/err"
+check "COPY_PARALLEL=8 failing copy: no manifest.tsv, no fence_mapping.json, open not started" bash -c "test ! -e '$STAGE/$AUTH_DIR/manifest.tsv' && test ! -e '$STAGE/fence_mapping.json' && test ! -e '$STAGE/$OPEN_DIR'"
+check "COPY_PARALLEL=8 failing copy: the injected error text is shown" grep -q 'injected copy failure' "$T/err"
+check "COPY_PARALLEL=8 failing copy: the work directory holds no manifest.tsv rows (only the header)" test "$(grep -vc '^#' "$T/ws/dataset_work/manifest.tsv")" = 1
+check "COPY_PARALLEL=8 failing copy: the temporary profile file is gone" tmp_is_empty
+check "COPY_PARALLEL=8 failing copy: the output lines are whole lines" bash -c "! grep -vE '^(staging .* -> .* \([0-9]+ bytes\)|auth: staging .*)\$' '$T/out'"
+# after the first failure no new copy starts
+reset_world
+make_dataset_v2 12
+export COPY_PARALLEL=2 FAKE_SLOW_COPY=phenotypic FAKE_FAIL_COPY=/encryption_key
+run_import auth "$DATASET_URL2"
+unset FAKE_FAIL_COPY FAKE_SLOW_COPY COPY_PARALLEL
+[ "$rc" != 0 ] && ok "COPY_PARALLEL=2: the first entry failing fails the build" || bad "COPY_PARALLEL=2 first failing (rc=$rc)"
+check "COPY_PARALLEL=2: after the failure no further copy was started (fewer than 24 partition files staged)" test "$(find "$STAGE" -path '*phenotypic*' -type f 2> /dev/null | wc -l | tr -d ' ')" -lt 24
+check "COPY_PARALLEL=2: nothing is published" test ! -e "$STAGE/$AUTH_DIR/manifest.tsv"
+# a source read that dies in the middle of the stream, in parallel
+reset_world
+make_dataset_v2 12
+export COPY_PARALLEL=8 FAKE_FAIL_READ=phs999999.c1/columnMeta.javabin
+run_import auth "$DATASET_URL2"
+unset FAKE_FAIL_READ COPY_PARALLEL
+[ "$rc" != 0 ] && grep -q 'REFUSED: copy of .*phs999999.c1/columnMeta.javabin.* failed' "$T/err" && ok "COPY_PARALLEL=8: a source read failing mid-stream is a failed copy, named" || bad "COPY_PARALLEL=8 read failure (rc=$rc)"
+check "COPY_PARALLEL=8 mid-stream read failure: nothing is published" bash -c "test ! -e '$STAGE/$AUTH_DIR/manifest.tsv' && test ! -e '$STAGE/fence_mapping.json'"
+# several failures: they are counted and listed
+reset_world
+make_dataset_v2 12
+export COPY_PARALLEL=8 FAKE_FAIL_COPY=columnMeta.javabin
+run_import auth "$DATASET_URL2"
+unset FAKE_FAIL_COPY COPY_PARALLEL
+[ "$rc" != 0 ] && grep -q 'REFUSED: [0-9]* of 26 copies failed (phenotypic/' "$T/err" && ok "COPY_PARALLEL=8: several failing copies are counted and listed" || bad "COPY_PARALLEL=8 several failures (rc=$rc)"
+check "COPY_PARALLEL=8 several failures: nothing is published" test ! -e "$STAGE/$AUTH_DIR/manifest.tsv"
+
+# a worker whose head-object ends with 255 (the AWS CLI's general error status): GNU xargs would stop at once and the build would
+# end, removing the source profile, while the other workers still copy; the workers that are running must finish first
+reset_world
+make_dataset_v2 12
+export COPY_PARALLEL=4 FAKE_SLOW_COPY=phenotypic FAKE_SLOW_SECS=1 FAKE_CONC_LOG="$T/conc.log" FAKE_FAIL_HEAD=metadata.json
+: > "$FAKE_CONC_LOG"
+run_import auth "$DATASET_URL2"
+conc_starts="$(grep -c '^start' "$FAKE_CONC_LOG")"
+conc_ends="$(grep -c '^end' "$FAKE_CONC_LOG")"
+unset FAKE_FAIL_HEAD FAKE_SLOW_COPY FAKE_SLOW_SECS FAKE_CONC_LOG COPY_PARALLEL
+[ "$rc" != 0 ] && ok "COPY_PARALLEL=4: a head-object failing with 255 in one worker fails the build" || bad "COPY_PARALLEL=4 head-object 255 (rc=$rc)"
+check "COPY_PARALLEL=4 head-object 255: the failure is counted and the entry named" grep -qF "REFUSED: 1 of 26 copies failed (metadata.json); no manifest.tsv written" "$T/err"
+check "COPY_PARALLEL=4 head-object 255: the copies that were running had ended when the build ended (every write that started also ended, more than one)" test "$conc_starts" -ge 2 -a "$conc_starts" = "$conc_ends"
+check "COPY_PARALLEL=4 head-object 255: the worker ends with status 1, xargs never sees 255 (it would abort without waiting for the running workers)" bash -c "! grep -q 'exited with status 255' '$T/err'"
+check "COPY_PARALLEL=4 head-object 255: nothing is published" bash -c "test ! -e '$STAGE/$AUTH_DIR/manifest.tsv' && test ! -e '$STAGE/fence_mapping.json'"
+check "COPY_PARALLEL=4 head-object 255: the temporary profile file is gone" tmp_is_empty
+check "COPY_PARALLEL=4 head-object 255: no later copy started after the failure (fewer than 24 partition files staged)" test "$(find "$STAGE" -path '*phenotypic*' -type f 2> /dev/null | wc -l | tr -d ' ')" -lt 24
+
+# ---- a byte mismatch on one entry is refused
+reset_world
+make_dataset_v2 12
+export COPY_PARALLEL=8 FAKE_CORRUPT_COPY=phenotypic/phs999999.c1/allObservationsStore.javabin
+run_import auth "$DATASET_URL2"
+unset FAKE_CORRUPT_COPY COPY_PARALLEL
+[ "$rc" != 0 ] && ok "COPY_PARALLEL=8: a byte mismatch on one entry fails the build" || bad "COPY_PARALLEL=8 byte mismatch (rc=$rc)"
+check "COPY_PARALLEL=8 byte mismatch: the refusal names the entry and both sizes" grep -q "REFUSED: phenotypic/phs999999.c1/allObservationsStore.javabin: staged 3 bytes, manifest says 16" "$T/err"
+check "COPY_PARALLEL=8 byte mismatch: the failure is counted, no manifest.tsv and no fence_mapping.json" bash -c "grep -q 'REFUSED: 1 of 26 copies failed (phenotypic/phs999999.c1/allObservationsStore.javabin)' '$T/err' && test ! -e '$STAGE/$AUTH_DIR/manifest.tsv' && test ! -e '$STAGE/fence_mapping.json'"
+# the fence mapping copy runs after the parallel set: a mismatch there is refused and nothing is published
+reset_world
+make_dataset_v2
+export COPY_PARALLEL=8 FAKE_CORRUPT_COPY=fence_mapping.json
+run_import auth "$DATASET_URL2"
+unset FAKE_CORRUPT_COPY COPY_PARALLEL
+[ "$rc" != 0 ] && grep -q 'REFUSED: fence_mapping.json: staged 3 bytes' "$T/err" && ok "COPY_PARALLEL=8: a bad fence_mapping.json copy is refused" || bad "COPY_PARALLEL=8 fence mismatch (rc=$rc)"
+check "COPY_PARALLEL=8 bad fence_mapping.json: no manifest.tsv" test ! -e "$STAGE/$AUTH_DIR/manifest.tsv"
+
+# ---- the open variant (no fence mapping) in parallel
+reset_world
+make_dataset_v2 4
+allow_flag
+export COPY_PARALLEL=8
+run_import open "$DATASET_URL2"
+no_allow_flag
+unset COPY_PARALLEL
+[ "$rc" = 0 ] && ok "COPY_PARALLEL=8: the v2 open variant stages" || { bad "COPY_PARALLEL=8 v2 open (rc=$rc)"; cat "$T/err"; }
+check "COPY_PARALLEL=8: the open variant writes no fence_mapping.json and has its 2 stigvars lines" bash -c "test ! -e '$STAGE/fence_mapping.json' && test \$(grep -c stigvars '$STAGE/$OPEN_DIR/manifest.tsv') = 2"
+
+# ---- the workers never read the entries list, whatever their aws does with stdin
+reset_world
+make_dataset_v2 12
+export COPY_PARALLEL=8 FAKE_AWS_EAT_STDIN=1
+IMPORT_SCRIPT="$T/import-noredirect.sh"
+run_import auth "$DATASET_URL2"
+IMPORT_SCRIPT="$T/import.sh"
+unset FAKE_AWS_EAT_STDIN COPY_PARALLEL
+[ "$rc" = 0 ] && ok "COPY_PARALLEL=8: workers do not depend on the redirects of their aws calls (they never read the entries)" || { bad "COPY_PARALLEL=8 stdin (rc=$rc)"; cat "$T/err"; }
+check "COPY_PARALLEL=8 stdin: all 26 rows are in manifest.tsv" test "$(tsv_rows "$STAGE/$AUTH_DIR/manifest.tsv" | wc -l | tr -d ' ')" = 26
+
+# ---- COPY_PARALLEL validation
+for v in 0 65 100 -1 abc 08 1.5 " 4" "4 " "1;2" 016; do
+    reset_world
+    make_dataset_v2 3
+    export COPY_PARALLEL="$v"
+    run_import auth "$DATASET_URL2"
+    unset COPY_PARALLEL
+    [ "$rc" != 0 ] && grep -qF "REFUSED: unknown COPY_PARALLEL '$v' (expected an integer from 1 to 64)" "$T/err" && ok "COPY_PARALLEL='$v' is refused" || bad "COPY_PARALLEL='$v' (rc=$rc)"
+    check "COPY_PARALLEL='$v': nothing was called or staged" test ! -s "$FAKE_AWS_LOG" -a ! -e "$STAGE"
+done
+for v in 1 2 9 10 16 33 63 64; do
+    reset_world
+    make_dataset_v2 3
+    export COPY_PARALLEL="$v"
+    run_import auth "$DATASET_URL2"
+    unset COPY_PARALLEL
+    [ "$rc" = 0 ] && grep -q "(COPY_PARALLEL=$v)\$" "$T/out" && ok "COPY_PARALLEL=$v is accepted" || { bad "COPY_PARALLEL=$v (rc=$rc)"; cat "$T/err"; }
+done
+# a bad value is refused before any variant is looked at
+reset_world
+make_dataset
+export COPY_PARALLEL=65
+run_import both "$DATASET_URL"
+unset COPY_PARALLEL
+[ "$rc" != 0 ] && grep -q "unknown COPY_PARALLEL '65'" "$T/err" && ok "COPY_PARALLEL=65 is refused before any variant is looked at" || bad "COPY_PARALLEL=65 both (rc=$rc)"
+# the job text
+check "COPY_PARALLEL is described in the job description" bash -c "grep -qF 'COPY_PARALLEL (default 8, 1 to 64)' '$T/import.desc' && grep -qF 'byte-identical to the one of a run with 1' '$T/import.desc' && grep -qF 'The legacy .tar path ignores it' '$T/import.desc' && ! grep -qF 'one after the other (about 1,580' '$T/import.desc'"
+check "the stage job XML is well-formed" python3 -I -c 'import sys, xml.etree.ElementTree as E; E.parse(sys.argv[1])' "$IMPORT_XML"
 
 # ---- optional: how the per-file loop scales (V2_SCALE_TEST=1 bash import-hpds.test.sh): 789 partitions = 1,580 files per variant
 if [ "${V2_SCALE_TEST:-}" = 1 ]; then
