@@ -18,9 +18,13 @@ When both variants are staged: Bash_Functions and PIC-SURE Pipeline run, then De
 Partitioned data (release contract v2): the data is staged and checked the same way, whatever its layout. The URL rule for datasets
 applies to build-spec.json: the same v1 dataset prefix for both source lines, the same v2 (partitioned) prefix for both, or a v2 prefix
 as source_dataset_s3_url with a v1 prefix as source_destigmatized_dataset_s3_url; every other combination that has a dataset prefix in
-it fails. The open manifest.tsv of the staged data is also read: a header line &quot;# stigvars_removed=false&quot; without the line
-&quot;# stigvars_override=true&quot; fails the build before anything is scheduled (the stage job writes both only when it was run with
-ALLOW_OPEN_STIGVARS_NOT_REMOVED=true, on a dev Jenkins).</description>
+it fails. The open manifest.tsv of the staged data is also read before anything is scheduled. A partitioned one
+(a &quot;# layout=partitioned&quot; header line) is accepted with exactly &quot;# stigvars_removed=true&quot; and no &quot;# stigvars_override&quot; line (the
+stigmatized variables were removed), or with &quot;# stigvars_removed=false&quot; and &quot;# stigvars_override=true&quot; (the stage job writes both only
+when it was run with ALLOW_OPEN_STIGVARS_NOT_REMOVED=true, on a dev Jenkins); a missing stigvars line, another value, a repeated line, or
+true together with an override line fails the build. In any layout, one of these header lines (stigvars_removed, stigvars_override, layout,
+partitions) after the column header, or with a carriage return, fails the build. A flat one (no layout line) fails only on &quot;# stigvars_removed=false&quot; without
+&quot;# stigvars_override=true&quot;.</description>
   <keepDependencies>false</keepDependencies>
   <properties/>
   <scm class="hudson.plugins.git.GitSCM" plugin="git@5.6.0">
@@ -207,9 +211,13 @@ if ! key_exists &quot;data/${auth_key}/fence_mapping.json&quot;; then
     exit 1
 fi
 
-# The open variant of a partitioned dataset can be staged with the stigmatized variables not removed, on a dev stack only (the stage
-# job&apos;s ALLOW_OPEN_STIGVARS_NOT_REMOVED). Its manifest.tsv header says so: &quot;# stigvars_removed=false&quot;, and the override that allowed it
-# is recorded as &quot;# stigvars_override=true&quot;. Without the override line nothing is scheduled. Open data staged as a legacy tar has no header and is not read; any other open data is read, and unreadable means fail.
+# The open variant of a partitioned dataset is staged either with the stigmatized variables removed (&quot;# stigvars_removed=true&quot; and no
+# override line) or, on a dev stack only (the stage job&apos;s ALLOW_OPEN_STIGVARS_NOT_REMOVED), with them not removed: &quot;# stigvars_removed=false&quot;
+# and the override that allowed it recorded as &quot;# stigvars_override=true&quot;. A partitioned open manifest.tsv (# layout=partitioned) is
+# accepted with exactly one of those two headers and refused otherwise (no stigvars line, another value, a repeated line, true with an
+# override line); any layout other than partitioned is refused. A flat open manifest.tsv (no # layout= line) is refused only for
+# &quot;# stigvars_removed=false&quot; without the override line. Nothing is scheduled when it is refused.
+# Open data staged as a legacy tar has no header and is not read; any other open data is read, and unreadable means fail.
 open_manifest_key=&quot;data/${open_key}/destigmatized_javabins_rekeyed/manifest.tsv&quot;
 if ! key_exists &quot;data/${open_key}/destigmatized_javabins_rekeyed.tar&quot;; then
     if ! open_manifest=$(aws s3 cp &quot;s3://${stack_s3_bucket}/${open_manifest_key}&quot; - --only-show-errors &lt; /dev/null); then
@@ -217,11 +225,49 @@ if ! key_exists &quot;data/${open_key}/destigmatized_javabins_rekeyed.tar&quot;;
         echo &quot;Nothing was scheduled.&quot; &gt;&amp;2
         exit 1
     fi
-    if printf &apos;%s\n&apos; &quot;${open_manifest}&quot; | grep -qx &apos;# stigvars_removed=false&apos; \
-        &amp;&amp; ! printf &apos;%s\n&apos; &quot;${open_manifest}&quot; | grep -qx &apos;# stigvars_override=true&apos;; then
-        echo &quot;ERROR: open dataset is staged with stigmatized variables not removed (# stigvars_removed=false) and without the override (# stigvars_override=true): deploy key ${open_key} (${open_manifest_key}); restage it under a new deploy key with HPDS Data - Stage to Stack Bucket and ALLOW_OPEN_STIGVARS_NOT_REMOVED=true, or put an open dataset with the variables removed in build-spec.json&quot; &gt;&amp;2
+    # the header: the lines up to the column header (the first line that does not start with #); the lines after it are the rows
+    open_header=$(printf &apos;%s\n&apos; &quot;${open_manifest}&quot; | awk &apos;/^#/ { print; next } { exit }&apos;)
+    open_rows=$(printf &apos;%s\n&apos; &quot;${open_manifest}&quot; | awk &apos;body { print; next } !/^#/ { body = 1 }&apos;)
+    header_count() { printf &apos;%s\n&apos; &quot;${open_header}&quot; | grep -c &quot;$1&quot; || true; }
+    # a header line after the column header, or a carriage return in one of these header lines, would let an appended or edited line
+    # turn a refused manifest.tsv into an accepted one: refused, whatever the layout
+    header_names=&apos;^# ?(stigvars_removed|stigvars_override|layout|partitions)&apos;
+    if printf &apos;%s\n&apos; &quot;${open_rows}&quot; | grep -Eq &quot;${header_names}&quot; \
+        || printf &apos;%s\n&apos; &quot;${open_header}&quot; | grep -E &quot;${header_names}&quot; | grep -q $&apos;\r&apos;; then
+        echo &quot;ERROR: open manifest.tsv has a # stigvars_removed, # stigvars_override, # layout or # partitions line after the column header, or a carriage return in one: deploy key ${open_key} (${open_manifest_key}); these lines must be in the header, before the column header, with no carriage return&quot; &gt;&amp;2
         echo &quot;Nothing was scheduled.&quot; &gt;&amp;2
         exit 1
+    fi
+    layout_lines=$(header_count &apos;^# layout&apos;)
+    if [ &quot;${layout_lines}&quot; = 0 ]; then
+        # flat
+        if printf &apos;%s\n&apos; &quot;${open_manifest}&quot; | grep -qx &apos;# stigvars_removed=false&apos; \
+            &amp;&amp; ! printf &apos;%s\n&apos; &quot;${open_manifest}&quot; | grep -qx &apos;# stigvars_override=true&apos;; then
+            echo &quot;ERROR: open dataset is staged with stigmatized variables not removed (# stigvars_removed=false) and without the override (# stigvars_override=true): deploy key ${open_key} (${open_manifest_key}); restage it under a new deploy key with HPDS Data - Stage to Stack Bucket and ALLOW_OPEN_STIGVARS_NOT_REMOVED=true, or put an open dataset with the variables removed in build-spec.json&quot; &gt;&amp;2
+            echo &quot;Nothing was scheduled.&quot; &gt;&amp;2
+            exit 1
+        fi
+    else
+        # partitioned: exactly &quot;# stigvars_removed=true&quot; with no override line, or &quot;# stigvars_removed=false&quot; with &quot;# stigvars_override=true&quot;
+        removed_lines=$(header_count &apos;^# stigvars_removed&apos;)
+        override_lines=$(header_count &apos;^# stigvars_override&apos;)
+        header_ok=false
+        if [ &quot;${layout_lines}&quot; = 1 ] &amp;&amp; [ &quot;$(header_count &apos;^# layout=partitioned$&apos;)&quot; = 1 ] &amp;&amp; [ &quot;${removed_lines}&quot; = 1 ]; then
+            if [ &quot;$(header_count &apos;^# stigvars_removed=true$&apos;)&quot; = 1 ] &amp;&amp; [ &quot;${override_lines}&quot; = 0 ]; then
+                header_ok=true
+            elif [ &quot;$(header_count &apos;^# stigvars_removed=false$&apos;)&quot; = 1 ] &amp;&amp; [ &quot;${override_lines}&quot; = 1 ] &amp;&amp; [ &quot;$(header_count &apos;^# stigvars_override=true$&apos;)&quot; = 1 ]; then
+                header_ok=true
+            fi
+        fi
+        if [ &quot;${header_ok}&quot; != true ]; then
+            if [ &quot;${layout_lines}&quot; = 1 ] &amp;&amp; [ &quot;${removed_lines}&quot; = 1 ] &amp;&amp; [ &quot;${override_lines}&quot; = 0 ] &amp;&amp; [ &quot;$(header_count &apos;^# stigvars_removed=false$&apos;)&quot; = 1 ]; then
+                echo &quot;ERROR: open dataset is staged with stigmatized variables not removed (# stigvars_removed=false) and without the override (# stigvars_override=true): deploy key ${open_key} (${open_manifest_key}); restage it under a new deploy key with HPDS Data - Stage to Stack Bucket and ALLOW_OPEN_STIGVARS_NOT_REMOVED=true, or put an open dataset with the variables removed in build-spec.json&quot; &gt;&amp;2
+            else
+                echo &quot;ERROR: partitioned open dataset has an invalid stigvars header: deploy key ${open_key} (${open_manifest_key}); it must have exactly one # layout=partitioned line and either exactly # stigvars_removed=true with no # stigvars_override line, or # stigvars_removed=false with # stigvars_override=true (stage it with HPDS Data - Stage to Stack Bucket under a new deploy key; the override is for dev stacks only)&quot; &gt;&amp;2
+            fi
+            echo &quot;Nothing was scheduled.&quot; &gt;&amp;2
+            exit 1
+        fi
     fi
 fi
 
