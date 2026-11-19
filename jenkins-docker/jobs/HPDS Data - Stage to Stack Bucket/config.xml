@@ -38,6 +38,14 @@ metadata.json and phenotypic/PARTITION/allObservationsStore.javabin and phenotyp
 each once, in every variant), partition names of at most 128 characters of [A-Za-z0-9._-] starting with a letter or digit, the path rule
 for src and dest, a sha256 (64 hex, never null) and an integer byte count for every file, each variant entry equal to its files[] or
 partitions[] entry, the encryption_key digest equal to source.key.sha256, and, when an open object exists, open.stigvars_removed=false.
+Partition kind and the global partition: every partition has a kind, study or global (absent reads as study), and a partition is named
+global exactly when its kind is global. The auth variant never lists a global partition (no partitions/global/ src, no phenotypic/global/
+dest), so an auth stage never copies one; the open variant lists it (its two entries) when the manifest has one. source.globals is split,
+global or both (absent reads as split) and source.global_partition is exactly mode, present and outcome (absent reads as skip, false,
+none): outcome loaded needs mode load and present true, skipped needs skip and present true, notSelected needs load and present true,
+none needs present false with mode skip, load or refuse. A global partition is in the manifest exactly when the outcome is loaded,
+globals global needs loaded, and a manifest with a global partition needs an open variant. A manifest written before these fields
+existed is still accepted.
 The files of a variant are staged COPY_PARALLEL at a time (about 1,580 copies per variant for 789 partitions), each followed by a
 byte check against the manifest. The manifest.tsv of a /2 variant carries the extra header lines &quot;# layout=partitioned&quot; and &quot;# partitions=N&quot;, its rows are
 sorted by dest and have a real sha256.
@@ -549,11 +557,32 @@ validate_manifest_v2() {
         def hex64: type == &quot;string&quot; and test(&quot;^[0-9a-f]{64}$&quot;);
         def okname: type == &quot;string&quot; and test(&quot;^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$&quot;);
         def okfile: (.bytes | type == &quot;number&quot; and . &gt;= 0 and . == floor) and (.sha256 | hex64);
+        def kind: if has(&quot;kind&quot;) then .kind else &quot;study&quot; end;
+        def want($names): [{src: &quot;encryption_key&quot;, dest: &quot;encryption_key&quot;}, {src: &quot;static/metadata.json&quot;, dest: &quot;metadata.json&quot;}]
+            + [$names[] as $p | (&quot;allObservationsStore.javabin&quot;, &quot;columnMeta.javabin&quot;) as $f
+               | {src: (&quot;partitions/&quot; + $p + &quot;/&quot; + $f), dest: (&quot;phenotypic/&quot; + $p + &quot;/&quot; + $f)}]
+            | sort_by(.dest);
         .schema == &quot;bdc-hpds-pheno-release/2&quot;
         and .layout == &quot;partitioned&quot;
         and (.dataset_id | type == &quot;string&quot; and test(&quot;^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{4}Z$&quot;))
         and (.partitions | type == &quot;array&quot; and length &gt; 0)
         and ([.partitions[].name] as $n | all($n[]; okname) and ($n | length) == ($n | unique | length))
+        and all(.partitions[]; (kind == &quot;study&quot; or kind == &quot;global&quot;) and ((kind == &quot;global&quot;) == (.name == &quot;global&quot;)))
+        and (.source | if has(&quot;globals&quot;) then .globals else &quot;split&quot; end) as $globals
+        | (.source | if has(&quot;global_partition&quot;) then .global_partition else {mode: &quot;skip&quot;, present: false, outcome: &quot;none&quot;} end) as $gp
+        | ([.partitions[] | select(kind == &quot;global&quot;)] | length) as $nglobal
+        | ($globals == &quot;split&quot; or $globals == &quot;global&quot; or $globals == &quot;both&quot;)
+        and ($gp | type == &quot;object&quot; and (keys == [&quot;mode&quot;, &quot;outcome&quot;, &quot;present&quot;])
+             and (.present | type == &quot;boolean&quot;)
+             and (if .outcome == &quot;loaded&quot; then .mode == &quot;load&quot; and .present
+                  elif .outcome == &quot;skipped&quot; then .mode == &quot;skip&quot; and .present
+                  elif .outcome == &quot;notSelected&quot; then .mode == &quot;load&quot; and .present
+                  elif .outcome == &quot;none&quot; then (.mode == &quot;skip&quot; or .mode == &quot;load&quot; or .mode == &quot;refuse&quot;) and (.present | not)
+                  else false end))
+        and (($nglobal &gt; 0) == ($gp.outcome == &quot;loaded&quot;))
+        and ($globals != &quot;global&quot; or $gp.outcome == &quot;loaded&quot;)
+        and ($nglobal == 0 or (.variants | has(&quot;open&quot;)))
+        and (.variants.auth | all(.[]; ((.src | tostring | startswith(&quot;partitions/global/&quot;)) or (.dest | tostring | startswith(&quot;phenotypic/global/&quot;))) | not))
         and (.files | type == &quot;array&quot;)
         and all(.files[]; okfile)
         and all(.partitions[].files[]; okfile)
@@ -565,20 +594,16 @@ validate_manifest_v2() {
         and ((.variants | keys) == [&quot;auth&quot;] or (.variants | keys) == [&quot;auth&quot;, &quot;open&quot;])
         and (has(&quot;open&quot;) == (.variants | has(&quot;open&quot;)))
         and (.variants[$v] | type == &quot;array&quot; and length &gt; 0)
-        and ([.partitions[].name] as $n
-             | ([{src: &quot;encryption_key&quot;, dest: &quot;encryption_key&quot;}, {src: &quot;static/metadata.json&quot;, dest: &quot;metadata.json&quot;}]
-                + [$n[] as $p | (&quot;allObservationsStore.javabin&quot;, &quot;columnMeta.javabin&quot;) as $f
-                   | {src: (&quot;partitions/&quot; + $p + &quot;/&quot; + $f), dest: (&quot;phenotypic/&quot; + $p + &quot;/&quot; + $f)}]
-                | sort_by(.dest)) as $want
+        and ([.partitions[].name] as $n | [.partitions[] | select(kind == &quot;study&quot;) | .name] as $sn
              | (reduce (.files[], (.partitions[] | .name as $p | .files[] | . + {src: (&quot;partitions/&quot; + $p + &quot;/&quot; + .name)})) as $e ({}; .[$e.src] = $e)) as $idx
-             | all(([.variants.auth] + (if (.variants | has(&quot;open&quot;)) then [.variants.open] else [] end))[];
-                   type == &quot;array&quot;
-                   and ([.[] | {src: .src, dest: .dest}] | sort_by(.dest)) == $want
-                   and all(.[];
+             | all(([{e: .variants.auth, w: want($sn)}] + (if (.variants | has(&quot;open&quot;)) then [{e: .variants.open, w: want($n)}] else [] end))[];
+                   (.e | type == &quot;array&quot;)
+                   and ([.e[] | {src: .src, dest: .dest}] | sort_by(.dest)) == .w
+                   and all(.e[];
                        (.src | okpath) and (.dest | okpath)
                        and (.etag | type == &quot;string&quot; and test(&quot;^[!-~]+$&quot;))
                        and ($idx[.src] as $f | $f != null and .bytes == $f.bytes and .sha256 == $f.sha256 and .etag == $f.etag))))
-    &apos; &quot;${work}/manifest.json&quot; &gt; /dev/null || refuse &quot;manifest.json is not a valid bdc-hpds-pheno-release/2 (partitioned) manifest with a usable &apos;${variant}&apos; variant (the open variant also needs open.stigvars_removed=false)&quot;
+    &apos; &quot;${work}/manifest.json&quot; &gt; /dev/null || refuse &quot;manifest.json is not a valid bdc-hpds-pheno-release/2 (partitioned) manifest with a usable &apos;${variant}&apos; variant (the open variant also needs open.stigvars_removed=false; partition kind and the global partition follow their rules, the auth variant never lists global)&quot;
     require_open_override
 }
 

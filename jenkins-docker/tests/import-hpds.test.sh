@@ -1945,6 +1945,31 @@ m = {
 with open(os.path.join(d, "manifest.json"), "w") as fh:
     json.dump(m, fh)
 PY
+    [ -z "${V2_GLOBAL:-}" ] || add_global_v2
+}
+
+# add_global_v2: turn the fixture into one with a global partition that only the open variant lists (a manifest of the current shape:
+# kind on every partition, source.globals=both, source.global_partition loaded). The fixture without it is a manifest written before
+# kind, source.globals and source.global_partition existed.
+add_global_v2() {
+    local d="$DATASET2_DIR" f rel files="[]"
+    mkdir -p "$d/partitions/global"
+    for f in allObservationsStore.javabin columnMeta.javabin columnMeta.csv; do
+        printf 'G-%s' "$f" > "$d/partitions/global/$f"
+        rel="partitions/global/$f"
+        files="$(jq -c --arg n "$f" --arg b "$(wc -c < "$d/$rel" | tr -d ' ')" --arg s "$(sha "$d/$rel")" --arg e "\"etag-$rel\"" \
+            '. + [{name: $n, bytes: ($b | tonumber), sha256: $s, etag: $e}]' <<< "$files")"
+    done
+    jq --argjson f "$files" '
+        ($f | map({key: .name, value: .}) | from_entries) as $byname
+        | .partitions |= map(.kind //= "study")
+        | .partitions += [{name: "global", kind: "global", rows: 1, observations: 1, concepts: 1, files: $f}]
+        | .partitions |= sort_by(.name)
+        | .totals.partitions += 1 | .totals.rows += 1 | .totals.observations += 1
+        | .variants.open += [("allObservationsStore.javabin", "columnMeta.javabin") as $n
+            | $byname[$n] + {src: ("partitions/global/" + $n), dest: ("phenotypic/global/" + $n)} | del(.name)]
+        | .source.globals = "both"
+        | .source.global_partition = {mode: "load", present: true, outcome: "loaded"}' "$d/manifest.json" > "$T/m2.json" && mv "$T/m2.json" "$d/manifest.json"
 }
 
 # mutate_v2 <jq filter>: edit the fixture's manifest.json
@@ -2269,6 +2294,108 @@ v2_refuses "no variants.auth (open run, flag on)" open true 'del(.variants.auth)
 v2_refuses "variants.auth is null" open true '.variants.auth = null'
 v2_refuses "variants is empty" auth "" '.variants = {}'
 v2_refuses "variants.auth is not an array" auth "" '.variants.auth = {}'
+
+# ---- partition kind and the global partition (rule 12): a manifest written before kind, source.globals and source.global_partition
+# existed (the plain fixture) reads as kind study, globals split, no global partition and stays valid.
+# V2_GLOBAL=1 builds a fixture with a global partition that only the open variant lists.
+GP='(.partitions[] | select(.name == "global"))'
+SP='(.partitions[] | select(.name == "phs000000.c1"))'
+# jq prefix of a manifest of the current shape without a global partition
+CUR='.partitions |= map(.kind = "study") | .source.globals = "both" |'
+v2_accepts() { # <what> <variant> <override flag: true|""> <jq filter> [dir of the staged variant to inspect]
+    local what="$1" v="$2" flag="$3" filter="$4" sd="$AUTH_DIR"
+    [ "$v" != open ] || sd="$OPEN_DIR"
+    reset_world
+    make_dataset_v2
+    mutate_v2 "$filter"
+    if [ -n "$flag" ]; then allow_flag; else no_allow_flag; fi
+    run_import "$v" "$DATASET_URL2"
+    no_allow_flag
+    if [ "$rc" = 0 ] && [ -e "$STAGE/$sd/manifest.tsv" ]; then ok "v2 accepted ($v): $what"; else bad "v2 accepted ($v): $what (rc=$rc)"; head -3 "$T/err"; fi
+}
+check "older manifest fixture: no kind, no source.globals, no source.global_partition" jq -e '([.partitions[] | has("kind")] | any | not) and (.source | has("globals") or has("global_partition") | not)' "$DATASET2_DIR/manifest.json"
+v2_accepts "a manifest without kind, source.globals and source.global_partition (older v2)" auth "" '.'
+v2_accepts "kind study on every partition, globals split, skip/false/none" auth "" '.partitions |= map(.kind = "study") | .source.globals = "split" | .source.global_partition = {mode: "skip", present: false, outcome: "none"}'
+v2_accepts "globals both, skipped (skip, present, no global partition)" auth "" "$CUR .source.global_partition = {mode: \"skip\", present: true, outcome: \"skipped\"}"
+v2_accepts "notSelected (load, present, no global partition)" auth "" "$CUR .source.global_partition = {mode: \"load\", present: true, outcome: \"notSelected\"}"
+v2_accepts "none with mode load" auth "" "$CUR .source.global_partition = {mode: \"load\", present: false, outcome: \"none\"}"
+v2_accepts "none with mode refuse (no global input)" auth "" "$CUR .source.global_partition = {mode: \"refuse\", present: false, outcome: \"none\"}"
+v2_accepts "the open stage of a manifest with kind study on every partition" open true '.partitions |= map(.kind = "study")'
+
+reset_world
+V2_GLOBAL=1 make_dataset_v2
+check "global fixture: the global partition is in the open variant only" jq -e '([.variants.auth[] | select(.src | startswith("partitions/global/"))] | length) == 0 and ([.variants.open[] | select(.dest | startswith("phenotypic/global/"))] | length) == 2' "$DATASET2_DIR/manifest.json"
+run_import auth "$DATASET_URL2"
+[ "$rc" = 0 ] && ok "global fixture: the auth stage is accepted" || { bad "global fixture, auth (rc=$rc)"; cat "$T/err"; }
+check "global fixture: the auth stage copies no phenotypic/global/ entry and counts 3 partitions" bash -c "test ! -e '$STAGE/$AUTH_DIR/phenotypic/global' && ! grep -q 'global' '$STAGE/$AUTH_DIR/manifest.tsv' && grep -qxF '# partitions=3' '$STAGE/$AUTH_DIR/manifest.tsv' && ! grep -q 'partitions/global' '$FAKE_AWS_LOG'"
+allow_flag
+run_import open "$DATASET_URL2"
+no_allow_flag
+[ "$rc" = 0 ] && ok "global fixture: the open stage is accepted" || { bad "global fixture, open (rc=$rc)"; cat "$T/err"; }
+check "global fixture: the open stage copies phenotypic/global/{store,columnMeta}.javabin and counts 4 partitions" bash -c "test -f '$STAGE/$OPEN_DIR/phenotypic/global/allObservationsStore.javabin' && test -f '$STAGE/$OPEN_DIR/phenotypic/global/columnMeta.javabin' && test \$(find '$STAGE/$OPEN_DIR/phenotypic/global' -type f | wc -l | tr -d ' ') = 2 && grep -qxF '# partitions=4' '$STAGE/$OPEN_DIR/manifest.tsv' && ! grep -q columnMeta.csv '$STAGE/$OPEN_DIR/manifest.tsv'"
+reset_world
+V2_GLOBAL=1 make_dataset_v2
+allow_flag
+run_import both "$DATASET_URL2"
+no_allow_flag
+[ "$rc" = 0 ] && ok "global fixture: both stages, auth without and open with the global partition" || { bad "global fixture, both (rc=$rc)"; cat "$T/err"; }
+check "global fixture: both: auth has no global file, open has global" bash -c "test ! -e '$STAGE/$AUTH_DIR/phenotypic/global' && test -f '$STAGE/$OPEN_DIR/phenotypic/global/columnMeta.javabin'"
+
+# kind and name
+V2_GLOBAL=1 v2_refuses "a partition named global with kind study" auth "" "$GP.kind = \"study\""
+V2_GLOBAL=1 v2_refuses "a partition named global without kind (reads as study)" auth "" "del($GP.kind)"
+V2_GLOBAL=1 v2_refuses "a partition named global with kind null" auth "" "$GP.kind = null"
+v2_refuses "a study partition with kind global" auth "" "$SP.kind = \"global\""
+v2_refuses "a kind that is neither study nor global" auth "" "$SP.kind = \"other\""
+v2_refuses "kind null on a study partition" auth "" "$SP.kind = null"
+v2_refuses "a partition named global without kind, listed in both variants (older manifest)" auth "" '.partitions += [{"name":"global","files":[]}]'
+# auth never lists the global partition
+V2_GLOBAL=1 v2_refuses "the auth variant lists the global partition (both entries)" auth "" '.variants.auth += [.variants.open[] | select(.dest | startswith("phenotypic/global/"))]'
+V2_GLOBAL=1 v2_refuses "the auth variant lists one global entry" auth "" '.variants.auth += [.variants.open[] | select(.dest | startswith("phenotypic/global/"))][0:1]'
+V2_GLOBAL=1 v2_refuses "the auth variant lists the global partition (open run, flag on)" open true '.variants.auth = .variants.open'
+V2_GLOBAL=1 v2_refuses "the auth variant lists a phenotypic/global/ dest" auth "" '.variants.auth[2].dest = "phenotypic/global/allObservationsStore.javabin"'
+V2_GLOBAL=1 v2_refuses "the auth variant takes a partitions/global/ src" auth "" '.variants.auth[2].src = "partitions/global/allObservationsStore.javabin"'
+V2_GLOBAL=1 v2_refuses "the open variant lacks the global entries" open true '.variants.open |= map(select(.dest | startswith("phenotypic/global/") | not))'
+# source.globals
+v2_refuses "source.globals is not split, global or both" auth "" '.source.globals = "all"'
+v2_refuses "source.globals is empty" auth "" '.source.globals = ""'
+v2_refuses "source.globals is null" auth "" '.source.globals = null'
+# source.global_partition
+v2_refuses "source.global_partition is null" auth "" '.source.global_partition = null'
+v2_refuses "source.global_partition is not an object" auth "" '.source.global_partition = "none"'
+v2_refuses "source.global_partition without mode" auth "" '.source.global_partition = {present: false, outcome: "none"}'
+v2_refuses "source.global_partition without outcome" auth "" '.source.global_partition = {mode: "skip", present: false}'
+v2_refuses "source.global_partition without present" auth "" '.source.global_partition = {mode: "skip", outcome: "none"}'
+v2_refuses "source.global_partition with another key" auth "" '.source.global_partition = {mode: "skip", present: false, outcome: "none", extra: 1}'
+v2_refuses "source.global_partition.mode is not skip, load or refuse" auth "" '.source.global_partition = {mode: "x", present: false, outcome: "none"}'
+v2_refuses "source.global_partition.present is not a boolean" auth "" '.source.global_partition = {mode: "skip", present: "false", outcome: "none"}'
+v2_refuses "source.global_partition.outcome is not none, skipped, loaded or notSelected" auth "" '.source.global_partition = {mode: "skip", present: false, outcome: "x"}'
+v2_refuses "none with present true" auth "" '.source.global_partition = {mode: "skip", present: true, outcome: "none"}'
+v2_refuses "skipped with mode load" auth "" '.source.global_partition = {mode: "load", present: true, outcome: "skipped"}'
+v2_refuses "skipped with present false" auth "" '.source.global_partition = {mode: "skip", present: false, outcome: "skipped"}'
+v2_refuses "notSelected with mode skip" auth "" '.source.global_partition = {mode: "skip", present: true, outcome: "notSelected"}'
+v2_refuses "notSelected with present false" auth "" '.source.global_partition = {mode: "load", present: false, outcome: "notSelected"}'
+V2_GLOBAL=1 v2_refuses "loaded with mode skip" auth "" '.source.global_partition = {mode: "skip", present: true, outcome: "loaded"}'
+V2_GLOBAL=1 v2_refuses "loaded with present false" auth "" '.source.global_partition = {mode: "load", present: false, outcome: "loaded"}'
+# mode refuse is only valid with present false and outcome none
+v2_refuses "mode refuse with outcome skipped" auth "" '.source.global_partition = {mode: "refuse", present: true, outcome: "skipped"}'
+v2_refuses "mode refuse with outcome notSelected" auth "" '.source.global_partition = {mode: "refuse", present: true, outcome: "notSelected"}'
+v2_refuses "mode refuse with present true and outcome none" auth "" '.source.global_partition = {mode: "refuse", present: true, outcome: "none"}'
+v2_refuses "mode refuse with outcome skipped and present false" auth "" '.source.global_partition = {mode: "refuse", present: false, outcome: "skipped"}'
+V2_GLOBAL=1 v2_refuses "mode refuse with outcome loaded" auth "" '.source.global_partition = {mode: "refuse", present: true, outcome: "loaded"}'
+# a global partition exactly when outcome is loaded
+V2_GLOBAL=1 v2_refuses "a global partition with outcome none" auth "" '.source.global_partition = {mode: "skip", present: false, outcome: "none"}'
+V2_GLOBAL=1 v2_refuses "a global partition with outcome skipped" auth "" '.source.global_partition = {mode: "skip", present: true, outcome: "skipped"}'
+V2_GLOBAL=1 v2_refuses "a global partition with outcome notSelected" auth "" '.source.global_partition = {mode: "load", present: true, outcome: "notSelected"}'
+V2_GLOBAL=1 v2_refuses "a global partition and no source.global_partition (reads as none)" auth "" 'del(.source.global_partition)'
+v2_refuses "outcome loaded without a global partition" auth "" '.source.global_partition = {mode: "load", present: true, outcome: "loaded"}'
+# globals=global needs a loaded global partition
+v2_refuses "globals global with outcome none" auth "" '.source.globals = "global"'
+v2_refuses "globals global with outcome skipped" auth "" '.source.globals = "global" | .source.global_partition = {mode: "skip", present: true, outcome: "skipped"}'
+v2_refuses "globals global with outcome notSelected" auth "" '.source.globals = "global" | .source.global_partition = {mode: "load", present: true, outcome: "notSelected"}'
+V2_GLOBAL=1 v2_accepts "globals global with the global partition loaded" open true '.source.globals = "global"'
+# a global partition needs an open variant
+V2_GLOBAL=1 v2_refuses "a global partition and no open variant (auth run)" auth "" 'del(.variants.open) | del(.open)'
 # open variant only needs the override for open: auth next to a variants.open-less manifest is fine
 reset_world
 make_dataset_v2
