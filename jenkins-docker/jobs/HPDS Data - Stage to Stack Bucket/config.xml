@@ -37,7 +37,9 @@ columnMeta.javabin destination); the checks of the deploy side of the contract d
 metadata.json and phenotypic/PARTITION/allObservationsStore.javabin and phenotypic/PARTITION/columnMeta.javabin for every partition,
 each once, in every variant), partition names of at most 128 characters of [A-Za-z0-9._-] starting with a letter or digit, the path rule
 for src and dest, a sha256 (64 hex, never null) and an integer byte count for every file, each variant entry equal to its files[] or
-partitions[] entry, the encryption_key digest equal to source.key.sha256, and, when an open object exists, open.stigvars_removed=false.
+partitions[] entry, the encryption_key digest equal to source.key.sha256, and, when an open object exists, open.stigvars_removed
+a boolean: false with no other key in open and no static/conceptsToRemove.txt in files[], or true with the complete removal record
+(see &quot;Open with the stigmatized variables removed&quot; below).
 Partition kind and the global partition: every partition has a kind, study or global (absent reads as study), and a partition is named
 global exactly when its kind is global (a name that is global in another letter case, such as Global, is refused). The auth variant never lists a global partition (no partitions/global/ src, no phenotypic/global/
 dest), so an auth stage never copies one; the open variant lists it (its two entries) when the manifest has one. source.globals is split,
@@ -46,6 +48,21 @@ none): outcome loaded needs mode load and present true, skipped needs skip and p
 none needs present false with mode skip, load or refuse. A global partition is in the manifest exactly when the outcome is loaded,
 globals global needs loaded, and a manifest with a global partition needs an open variant. A manifest written before these fields
 existed is still accepted.
+Open with the stigmatized variables removed (open.stigvars_removed=true): the job stages the open variant of such a dataset without
+ALLOW_OPEN_STIGVARS_NOT_REMOVED and with no override. Before anything is staged it checks the whole open.removal record: open holds
+exactly stigvars_removed, removal and files; removal holds exactly concepts_in_list (integer, at least 1), list_sha256 (64 hex, equal to
+the sha256 of static/conceptsToRemove.txt in files[], which must be listed exactly once), list_git_sha (null or 7 to 40 lowercase hex),
+list_source (an s3:// URI), partitions_changed, concepts_removed_total and partitions; removal.partitions names exactly the partitions
+of the manifest, each once, each with exactly name, full_content_sha256, open_content_sha256 (64 hex) and concepts_removed (an integer),
+and concepts_removed above 0 exactly when the two digests differ; partitions_changed is the number of changed partitions and
+concepts_removed_total the sum of concepts_removed, neither 0; open.files holds exactly one entry (whole-number bytes, 64-hex sha256,
+non-empty etag) for open/partitions/PARTITION/columnMeta.javabin of every changed partition and no other, none with the sha256 of the
+full columnMeta.javabin; and the phenotypic/PARTITION/columnMeta.javabin entry of the open variant, for a changed partition, has the
+src open/partitions/PARTITION/columnMeta.javabin with the bytes, sha256 and etag of its open.files entry. Those objects are copied to
+phenotypic/PARTITION/columnMeta.javabin with the same byte check as every other file. The open manifest.tsv then says
+&quot;# stigvars_removed=true&quot; and has no override line, and its rows for the changed partitions show the open/ src. The auth variant
+is the same as without removal.
+
 The files of a variant are staged COPY_PARALLEL at a time (about 1,580 copies per variant for 789 partitions), each followed by a
 byte check against the manifest. The manifest.tsv of a /2 variant carries the extra header lines &quot;# layout=partitioned&quot; and &quot;# partitions=N&quot;, its rows are
 sorted by dest and have a real sha256.
@@ -63,7 +80,8 @@ ALLOW_OPEN_STIGVARS_NOT_REMOVED (default false): the open variant of a /2 datase
 with the stigmatized variables NOT removed (open.stigvars_removed=false). With the default the job REFUSES to stage it. With true (set
 it on a dev deploy Jenkins only) the job prints a banner and writes &quot;# stigvars_removed=false&quot; and
 &quot;# stigvars_override=true&quot; into the manifest.tsv of the open variant; Check For Updates fails on a staged open variant that has the
-first line without the second. The flag has no effect on /1 datasets and legacy tars.
+first line without the second. The flag has no effect on /1 datasets and legacy tars, and none on a /2 dataset whose open variant has the
+stigmatized variables removed (open.stigvars_removed=true): that one is staged with the flag false or true alike, and no override line is written.
 
 URL pairs in build-spec.json (the same rule in Check For Updates): the same v1 dataset prefix (/data/hpds/pheno/datasets/) for both
 lines, the same v2 prefix for both lines, or a v2 prefix as source_dataset_s3_url with a v1 prefix as source_destigmatized_dataset_s3_url
@@ -136,7 +154,7 @@ stack from build-spec.json.&quot; or &quot;staging deploy: not requested&quot;.<
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
           <name>ALLOW_OPEN_STIGVARS_NOT_REMOVED</name>
-          <description>Dev stacks only. Allows the open variant of a partitioned (v2) dataset whose manifest says open.stigvars_removed=false (the open HPDS then serves the full per-partition columnMeta; stigmatized variables are NOT removed) to be staged. Default false: the job refuses it. With true: loud banner and the lines # stigvars_removed=false and # stigvars_override=true in the open manifest.tsv. No effect on v1 datasets and legacy tars.</description>
+          <description>Dev stacks only. Allows the open variant of a partitioned (v2) dataset whose manifest says open.stigvars_removed=false (the open HPDS then serves the full per-partition columnMeta; stigmatized variables are NOT removed) to be staged. Default false: the job refuses it. With true: loud banner and the lines # stigvars_removed=false and # stigvars_override=true in the open manifest.tsv. No effect on v1 datasets and legacy tars, nor on a dataset whose open.stigvars_removed is true (staged without it, no override line).</description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.StringParameterDefinition>
@@ -197,6 +215,8 @@ rm -f staging_deploy.properties
 # always assembled in entry order and nothing is published unless every copy and byte check succeeded.
 # ALLOW_OPEN_STIGVARS_NOT_REMOVED=true: lets the open variant of a v2 dataset whose manifest says open.stigvars_removed=false be
 # staged (dev only; loud banner and the two stigvars lines in the open manifest.tsv). Default false = refuse.
+# A v2 dataset whose open variant has the stigmatized variables removed (open.stigvars_removed=true, with its removal record) is
+# staged without the parameter; its open manifest.tsv says &quot;# stigvars_removed=true&quot; and has no override line.
 # Contract: bdc-hpds-pheno-release/1 or /2 (manifest.json) and bdc-hpds-deploy/1 (manifest.tsv).
 
 refuse() {
@@ -547,8 +567,10 @@ validate_manifest_v1() {
 }
 
 # The deploy-side checks of a bdc-hpds-pheno-release/2 manifest (partitioned dataset) for the current variant. They replace the v1
-# checks above: no removal.* and no columnMeta.javabin destination exist in a v2 manifest. The open variant of a v2 dataset carries the
-# full per-partition columnMeta, so it is staged only with the override (see require_open_override).
+# checks above: no removal.* and no columnMeta.javabin destination exist in a v2 manifest. The open variant of a v2 dataset carries
+# either the full per-partition columnMeta (open.stigvars_removed=false), staged only with the override (see require_open_override),
+# or, with open.stigvars_removed=true, the removed columnMeta of every changed partition, which the removal record in open.removal
+# must account for in full (partitions, digests, counts and open.files); that needs no override.
 validate_manifest_v2() {
     jq -e --arg v &quot;${variant}&quot; &apos;
         def okpath: type == &quot;string&quot; and test(&quot;^[A-Za-z0-9._/-]+$&quot;)
@@ -558,10 +580,47 @@ validate_manifest_v2() {
         def okname: type == &quot;string&quot; and test(&quot;^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$&quot;);
         def okfile: (.bytes | type == &quot;number&quot; and . &gt;= 0 and . == floor) and (.sha256 | hex64);
         def kind: if has(&quot;kind&quot;) then .kind else &quot;study&quot; end;
-        def want($names): [{src: &quot;encryption_key&quot;, dest: &quot;encryption_key&quot;}, {src: &quot;static/metadata.json&quot;, dest: &quot;metadata.json&quot;}]
+        def isint: type == &quot;number&quot; and . &gt;= 0 and . == floor;
+        def removed: (.open | type == &quot;object&quot;) and .open.stigvars_removed == true;
+        def changed: select(.open_content_sha256 != .full_content_sha256);
+        def openfile: type == &quot;object&quot; and (.bytes | isint) and (.sha256 | hex64) and (.etag | type == &quot;string&quot; and test(&quot;^[!-~]+$&quot;));
+        # every file the variants can name, by src: files[], the partitions[] files, and the open.files[] of a removal release
+        def idx: reduce (.files[], (.partitions[] | .name as $p | .files[] | . + {src: (&quot;partitions/&quot; + $p + &quot;/&quot; + .name)}),
+                         (.open | objects | .files | arrays | .[] | objects | select(.src | type == &quot;string&quot;))) as $e ({}; .[$e.src] = $e);
+        # the changed partitions serve open/partitions/&lt;p&gt;/columnMeta.javabin; $chg holds their names as keys
+        def want($names; $chg): [{src: &quot;encryption_key&quot;, dest: &quot;encryption_key&quot;}, {src: &quot;static/metadata.json&quot;, dest: &quot;metadata.json&quot;}]
             + [$names[] as $p | (&quot;allObservationsStore.javabin&quot;, &quot;columnMeta.javabin&quot;) as $f
-               | {src: (&quot;partitions/&quot; + $p + &quot;/&quot; + $f), dest: (&quot;phenotypic/&quot; + $p + &quot;/&quot; + $f)}]
+               | {src: ((if $f == &quot;columnMeta.javabin&quot; and $chg[$p] then &quot;open/partitions/&quot; else &quot;partitions/&quot; end) + $p + &quot;/&quot; + $f), dest: (&quot;phenotypic/&quot; + $p + &quot;/&quot; + $f)}]
             | sort_by(.dest);
+        # open.stigvars_removed == true: the whole removal record
+        def removal_ok:
+            .open.removal as $r | .open.files as $of | idx as $idx | [.partitions[].name] as $pn
+            | [.files[] | select(.src == &quot;static/conceptsToRemove.txt&quot;)] as $lst
+            | ((.open | keys | sort) == [&quot;files&quot;, &quot;removal&quot;, &quot;stigvars_removed&quot;])
+            and ($r | type == &quot;object&quot;
+                 and ((keys | sort) == [&quot;concepts_in_list&quot;, &quot;concepts_removed_total&quot;, &quot;list_git_sha&quot;, &quot;list_sha256&quot;, &quot;list_source&quot;, &quot;partitions&quot;, &quot;partitions_changed&quot;])
+                 and (.concepts_in_list | isint and . &gt;= 1)
+                 and (.list_sha256 | hex64)
+                 and (.list_git_sha == null or (.list_git_sha | type == &quot;string&quot; and test(&quot;^[0-9a-f]{7,40}$&quot;)))
+                 and (.list_source | type == &quot;string&quot; and test(&quot;^s3://.&quot;))
+                 and (.partitions_changed | isint)
+                 and (.concepts_removed_total | isint)
+                 and (.partitions | type == &quot;array&quot;))
+            and (($lst | length) == 1 and $lst[0].sha256 == $r.list_sha256)
+            and all($r.partitions[];
+                type == &quot;object&quot;
+                and ((keys | sort) == [&quot;concepts_removed&quot;, &quot;full_content_sha256&quot;, &quot;name&quot;, &quot;open_content_sha256&quot;])
+                and (.name | type == &quot;string&quot;)
+                and (.full_content_sha256 | hex64) and (.open_content_sha256 | hex64)
+                and (.concepts_removed | isint)
+                and ((.concepts_removed &gt; 0) == (.open_content_sha256 != .full_content_sha256)))
+            and (([$r.partitions[].name] | sort) == ($pn | sort))
+            and ([$r.partitions[] | changed | .name] as $chg
+                 | $r.partitions_changed == ($chg | length) and $r.partitions_changed &gt;= 1
+                   and $r.concepts_removed_total == ([$r.partitions[].concepts_removed] | add) and $r.concepts_removed_total &gt;= 1
+                   and ($of | type == &quot;array&quot; and all(.[]; openfile))
+                   and (([$of[].src] | sort) == ([$chg[] | &quot;open/partitions/&quot; + . + &quot;/columnMeta.javabin&quot;] | sort))
+                   and all($chg[]; . as $p | ($of | map(select(.src == &quot;open/partitions/&quot; + $p + &quot;/columnMeta.javabin&quot;)) | .[0].sha256) != $idx[&quot;partitions/&quot; + $p + &quot;/columnMeta.javabin&quot;].sha256));
         .schema == &quot;bdc-hpds-pheno-release/2&quot;
         and .layout == &quot;partitioned&quot;
         and (.dataset_id | type == &quot;string&quot; and test(&quot;^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{4}Z$&quot;))
@@ -588,34 +647,56 @@ validate_manifest_v2() {
         and all(.partitions[].files[]; okfile)
         and ([.files[] | select(.src == &quot;encryption_key&quot;)] as $k
              | ($k | length) == 1 and $k[0].sha256 == .source.key.sha256)
-        and ((has(&quot;open&quot;) | not) or (.open | type == &quot;object&quot; and .stigvars_removed == false))
+        and ((has(&quot;open&quot;) | not) or (.open | type == &quot;object&quot; and (.stigvars_removed | type == &quot;boolean&quot;)))
+        and (if removed then removal_ok else (has(&quot;open&quot;) | not) or (.open | keys) == [&quot;stigvars_removed&quot;] end)
+        and (([.files[] | select(.src == &quot;static/conceptsToRemove.txt&quot;)] | length) == (if removed then 1 else 0 end))
         and (if $v == &quot;open&quot; then (.open | type == &quot;object&quot;) else true end)
         and (.variants | type == &quot;object&quot;)
         and ((.variants | keys) == [&quot;auth&quot;] or (.variants | keys) == [&quot;auth&quot;, &quot;open&quot;])
         and (has(&quot;open&quot;) == (.variants | has(&quot;open&quot;)))
         and (.variants[$v] | type == &quot;array&quot; and length &gt; 0)
         and ([.partitions[].name] as $n | [.partitions[] | select(kind == &quot;study&quot;) | .name] as $sn
-             | (reduce (.files[], (.partitions[] | .name as $p | .files[] | . + {src: (&quot;partitions/&quot; + $p + &quot;/&quot; + .name)})) as $e ({}; .[$e.src] = $e)) as $idx
-             | all(([{e: .variants.auth, w: want($sn)}] + (if (.variants | has(&quot;open&quot;)) then [{e: .variants.open, w: want($n)}] else [] end))[];
+             | idx as $idx
+             | (if removed then [.open.removal.partitions[] | changed | {key: .name, value: true}] | from_entries else {} end) as $chg
+             | all(([{e: .variants.auth, w: want($sn; {})}] + (if (.variants | has(&quot;open&quot;)) then [{e: .variants.open, w: want($n; $chg)}] else [] end))[];
                    (.e | type == &quot;array&quot;)
                    and ([.e[] | {src: .src, dest: .dest}] | sort_by(.dest)) == .w
                    and all(.e[];
                        (.src | okpath) and (.dest | okpath)
                        and (.etag | type == &quot;string&quot; and test(&quot;^[!-~]+$&quot;))
                        and ($idx[.src] as $f | $f != null and .bytes == $f.bytes and .sha256 == $f.sha256 and .etag == $f.etag))))
-    &apos; &quot;${work}/manifest.json&quot; &gt; /dev/null || refuse &quot;manifest.json is not a valid bdc-hpds-pheno-release/2 (partitioned) manifest with a usable &apos;${variant}&apos; variant (the open variant also needs open.stigvars_removed=false; partition kind and the global partition follow their rules, the auth variant never lists global)&quot;
+    &apos; &quot;${work}/manifest.json&quot; &gt; /dev/null || refuse &quot;manifest.json is not a valid bdc-hpds-pheno-release/2 (partitioned) manifest with a usable &apos;${variant}&apos; variant (an open object needs open.stigvars_removed false, or true with a complete removal record; partition kind and the global partition follow their rules, the auth variant never lists global)&quot;
     require_open_override
 }
 
-# v2 open variant: its manifest says open.stigvars_removed=false, i.e. the full per-partition columnMeta is served by the open HPDS.
-# Refused unless ALLOW_OPEN_STIGVARS_NOT_REMOVED=true (set on a dev deploy Jenkins only). With it: a loud banner and the two
-# stigvars lines in the open manifest.tsv.
+# v2 open variant. With open.stigvars_removed=true (validated above, removal record included) it is staged as it is: no parameter,
+# no banner, and the open manifest.tsv gets &quot;# stigvars_removed=true&quot; and no override line, whatever ALLOW_OPEN_STIGVARS_NOT_REMOVED says.
+# With open.stigvars_removed=false the full per-partition columnMeta is served by the open HPDS: refused unless
+# ALLOW_OPEN_STIGVARS_NOT_REMOVED=true (set on a dev deploy Jenkins only). With it: a loud banner and the two stigvars lines in the
+# open manifest.tsv.
 refuse_open_without_override() {
     [ &quot;${allow_open_stigvars_not_removed}&quot; = true ] || refuse &quot;open: the dataset at ${source_url} serves the open variant with the stigmatized variables NOT removed (open.stigvars_removed=false). Nothing was staged for open. To stage it on a dev stack only, run this job with ALLOW_OPEN_STIGVARS_NOT_REMOVED=true&quot;
 }
 
+# plan_open_stigvars_removed: true when the manifest.json at the v2 source URL has open.stigvars_removed true. A manifest that cannot be
+# read or parsed answers false (the guardrail then refuses); the staging step reads and validates the manifest again.
+plan_open_stigvars_removed() {
+    local plan_manifest answer=&quot;&quot;
+    setup_source_profile
+    plan_manifest=&quot;$(mktemp &quot;${TMPDIR:-/tmp}/hpds-plan-manifest.XXXXXX&quot;)&quot; || return 1
+    if src_aws s3 cp &quot;${source_url}manifest.json&quot; &quot;${plan_manifest}&quot; --only-show-errors &lt; /dev/null &amp;&amp; [ &quot;$(jq -s length &quot;${plan_manifest}&quot; 2&gt; /dev/null)&quot; = 1 ]; then
+        answer=&quot;$(jq -r &apos;.open.stigvars_removed&apos; &quot;${plan_manifest}&quot; 2&gt; /dev/null)&quot;
+    fi
+    rm -f &quot;${plan_manifest}&quot;
+    [ &quot;${answer}&quot; = true ]
+}
+
 require_open_override() {
     [ &quot;${variant}&quot; = open ] || return 0
+    if [ &quot;$(jq -r &apos;.open.stigvars_removed&apos; &quot;${work}/manifest.json&quot;)&quot; = true ]; then
+        stigvars_removed=true
+        return 0
+    fi
     refuse_open_without_override
     stigvars_override=true
     echo &quot;************************************************************************&quot;
@@ -631,7 +712,7 @@ require_open_override() {
 #   instance role, stack bucket:             s3:ListBucket + s3:GetObject + s3:PutObject on data/*, and sts:AssumeRole on the source role
 stage_dataset() {
     local work=dataset_work dataset_id manifest_sha e_src e_dest e_bytes e_sha e_etag expected_rows written_rows copy_start copy_total_bytes
-    local schema layout=flat partitions=&quot;&quot; stigvars_override=false
+    local schema layout=flat partitions=&quot;&quot; stigvars_override=false stigvars_removed=false
     rm -rf &quot;${work}&quot;
     mkdir -p &quot;${work}&quot;
 
@@ -679,7 +760,9 @@ stage_dataset() {
         echo &quot;# dataset_id=${dataset_id}&quot;
         echo &quot;# source=${source_url}&quot;
         echo &quot;# manifest_sha256=${manifest_sha}&quot;
-        if [ &quot;${stigvars_override}&quot; = true ]; then
+        if [ &quot;${stigvars_removed}&quot; = true ]; then
+            echo &quot;# stigvars_removed=true&quot;
+        elif [ &quot;${stigvars_override}&quot; = true ]; then
             echo &quot;# stigvars_removed=false&quot;
             echo &quot;# stigvars_override=true&quot;
         fi
@@ -831,9 +914,10 @@ for variant in ${variants}; do
     variant_setup &quot;${variant}&quot;
     if ! is_staged &quot;${deploy_key_value}&quot; &quot;${stage_prefix}&quot; &quot;${legacy_name}&quot;; then
         validate_source
-        # a v2 prefix always serves the open variant with the stigmatized variables not removed: refuse before anything (auth included) is staged
-        if [ &quot;${variant}&quot; = open ] &amp;&amp; is_dataset_prefix_v2 &quot;${source_url}&quot;; then
-            refuse_open_without_override
+        # a v2 prefix serves the open variant with the stigmatized variables not removed unless its manifest says they were removed:
+        # refuse before anything (auth included) is staged, unless the override is on or the open variant has them removed
+        if [ &quot;${variant}&quot; = open ] &amp;&amp; is_dataset_prefix_v2 &quot;${source_url}&quot; &amp;&amp; [ &quot;${allow_open_stigvars_not_removed}&quot; != true ]; then
+            plan_open_stigvars_removed || refuse_open_without_override
         fi
     fi
 done

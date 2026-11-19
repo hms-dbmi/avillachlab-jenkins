@@ -185,6 +185,7 @@ DATASET_ID=2026-11-04T0930Z
 DATASET_URL="s3://$SRC_BUCKET/data/hpds/pheno/datasets/$DATASET_ID/"
 DATASET_DIR="$FAKE_S3/$SRC_BUCKET/data/hpds/pheno/datasets/$DATASET_ID"
 STACK=stack-bucket
+ZERO64="$(printf '0%.0s' $(seq 1 64))"
 
 sha() { shasum -a 256 "$1" | cut -d ' ' -f 1; }
 sha256_text() { printf '%s' "$1" | shasum -a 256 | cut -d ' ' -f 1; }
@@ -1946,6 +1947,7 @@ with open(os.path.join(d, "manifest.json"), "w") as fh:
     json.dump(m, fh)
 PY
     [ -z "${V2_GLOBAL:-}" ] || add_global_v2
+    [ -z "${V2_REMOVED:-}" ] || add_removal_v2
 }
 
 # add_global_v2: turn the fixture into one with a global partition that only the open variant lists (a manifest of the current shape:
@@ -1970,6 +1972,55 @@ add_global_v2() {
             | $byname[$n] + {src: ("partitions/global/" + $n), dest: ("phenotypic/global/" + $n)} | del(.name)]
         | .source.globals = "both"
         | .source.global_partition = {mode: "load", present: true, outcome: "loaded"}' "$d/manifest.json" > "$T/m2.json" && mv "$T/m2.json" "$d/manifest.json"
+}
+
+# add_removal_v2: turn the fixture into a dataset whose open variant has the stigmatized variables removed (open.stigvars_removed=true):
+# the first two partitions by name are changed (global comes first when the fixture has it), the others are unchanged. The digests are
+# synthetic. static/conceptsToRemove.txt is in files[], open/partitions/<p>/columnMeta.javabin objects exist for the changed
+# partitions only, and variants.open serves them for those partitions.
+add_removal_v2() {
+    local d="$DATASET2_DIR"
+    printf '\\phs000000\\x\n\\phs999999\\y\n' > "$d/static/conceptsToRemove.txt"
+    python3 -I - "$d" << 'PY' || { echo "cannot build the removal fixture"; exit 1; }
+import hashlib, json, os, sys
+d = sys.argv[1]
+m = json.load(open(os.path.join(d, "manifest.json")))
+def sha(b): return hashlib.sha256(b).hexdigest()
+def entry(rel, **extra):
+    data = open(os.path.join(d, rel), "rb").read()
+    e = {"bytes": len(data), "sha256": sha(data), "etag": '"etag-%s"' % rel}
+    e.update(extra)
+    return e
+names = [p["name"] for p in m["partitions"]]
+changed = names[:2]
+lst = entry("static/conceptsToRemove.txt")
+m["files"].append(dict(src="static/conceptsToRemove.txt", **lst))
+rparts, ofiles = [], []
+for n in names:
+    full = sha(("FULL-CONTENT-" + n).encode())
+    if n in changed:
+        rparts.append({"name": n, "full_content_sha256": full, "open_content_sha256": sha(("OPEN-CONTENT-" + n).encode()), "concepts_removed": 5})
+        rel = "open/partitions/%s/columnMeta.javabin" % n
+        os.makedirs(os.path.join(d, "open", "partitions", n), exist_ok=True)
+        with open(os.path.join(d, rel), "w") as fh:
+            fh.write("OPEN-CM-" + n)
+        ofiles.append(dict(src=rel, **entry(rel)))
+    else:
+        rparts.append({"name": n, "full_content_sha256": full, "open_content_sha256": full, "concepts_removed": 0})
+ofiles.sort(key=lambda e: e["src"])
+m["open"] = {"stigvars_removed": True, "removal": {
+    "concepts_in_list": 2, "list_sha256": lst["sha256"], "list_git_sha": None,
+    "list_source": "s3://example/data/hpds/pheno/final/conceptsToRemove.txt",
+    "partitions_changed": len(changed), "concepts_removed_total": 5 * len(changed), "partitions": rparts}, "files": ofiles}
+byname = {e["src"]: e for e in ofiles}
+for v in m["variants"]["open"]:
+    for n in changed:
+        if v["dest"] == "phenotypic/%s/columnMeta.javabin" % n:
+            o = byname["open/partitions/%s/columnMeta.javabin" % n]
+            v.update(src=o["src"], bytes=o["bytes"], sha256=o["sha256"], etag=o["etag"])
+with open(os.path.join(d, "manifest.json"), "w") as fh:
+    json.dump(m, fh)
+PY
 }
 
 # mutate_v2 <jq filter>: edit the fixture's manifest.json
@@ -2076,6 +2127,7 @@ want_files="$( (jq -r '.variants.open[].dest' "$DATASET2_DIR/manifest.json"; ech
 [ "$(stage_files $OPEN_DIR)" = "$want_files" ] && ok "v2 open layout equals the auth layout: nested partitions, no conceptsToRemove.txt" || bad "v2 open layout: $(stage_files $OPEN_DIR)"
 check "v2 open manifest.tsv: variant, layout and partitions lines" bash -c "grep -qxF '# variant=open' '$OM2' && grep -qxF '# layout=partitioned' '$OM2' && grep -qxF '# partitions=3' '$OM2'"
 check "v2 open manifest.tsv has # stigvars_removed=false and # stigvars_override=true" bash -c "grep -qxF '# stigvars_removed=false' '$OM2' && grep -qxF '# stigvars_override=true' '$OM2'"
+check "v2 open manifest.tsv with the override: every # line is before the column header (none among the rows)" test "$(awk '/^#/ && body { n++ } !/^#/ { body = 1 } END { print n + 0 }' "$OM2")" = 0
 check "v2 open manifest.tsv: 9 comment lines, 8 rows counted after the column header" test "$(grep -c '^#' "$OM2")" = 9 -a "$(tsv_rows "$OM2" | wc -l | tr -d ' ')" = 8
 check "v2 open: the open prefix carries the full per-partition columnMeta.javabin" cmp "$STAGE/$OPEN_DIR/phenotypic/phs000000.c1/columnMeta.javabin" "$DATASET2_DIR/partitions/phs000000.c1/columnMeta.javabin"
 check "v2 open: a loud banner is printed" bash -c "grep -qF '$V2_OPEN_NOTE' '$T/out' && grep -q '^\*\*\*\*' '$T/out' && grep -qF 'FULL per-partition columnMeta' '$T/out'"
@@ -2123,10 +2175,140 @@ cfu_open_header "open header with # stigvars_removed=false and # stigvars_overri
 cfu_open_header "open header with # stigvars_override=true before # stigvars_removed=false passes" 0 "# stigvars_override=true" "# stigvars_removed=false"
 cfu_open_header "open header with # stigvars_removed=false and no override fails" 1 "# stigvars_removed=false"
 check "CFU: that failure writes no key files" cfu_no_keys
-cfu_open_header "open header with # stigvars_removed=true passes (a later phase)" 0 "# stigvars_removed=true"
-cfu_open_header "open header with neither line passes" 0
-cfu_open_header "open header with only # stigvars_override=true passes" 0 "# stigvars_override=true"
-cfu_open_header "# stigvars_removed=false as a longer value (=falsey) is not the marker" 0 "# stigvars_removed=falsey"
+# the open-host header rule for a partitioned open manifest.tsv: exactly "# stigvars_removed=true" with no "# stigvars_override" line, or
+# "# stigvars_removed=false" with "# stigvars_override=true"; everything else is refused
+cfu_open_header "open header with exactly # stigvars_removed=true and no override line passes" 0 "# stigvars_removed=true"
+check "CFU: that pass writes the three key files" bash -c "cd '$REPO' && test -s datasetKey.txt && test -s destigmatizedDatasetKey.txt && test -s genomicDatasetKey.txt"
+cfu_open_header "open header with # stigvars_removed=true between other header lines passes" 0 "# dataset_id=x" "# stigvars_removed=true" "# source=y"
+cfu_open_header_refused() { # <description> <header lines...>
+    local d="$1"
+    shift
+    cfu_open_header "$d" 1 "$@"
+    check "CFU: $d: says so, names the deploy key and schedules nothing" bash -c "grep -q '^ERROR: partitioned open dataset has an invalid stigvars header' '$T/err' && grep -q 'deploy key $C1' '$T/err' && grep -qx 'Nothing was scheduled.' '$T/err'"
+    check "CFU: $d: writes no key files" cfu_no_keys
+}
+cfu_open_header_refused "open header with neither stigvars line is refused" 
+cfu_open_header_refused "open header with only # stigvars_override=true is refused" "# stigvars_override=true"
+cfu_open_header_refused "# stigvars_removed=falsey is refused" "# stigvars_removed=falsey"
+cfu_open_header_refused "# stigvars_removed=falsey with the override is refused" "# stigvars_removed=falsey" "# stigvars_override=true"
+cfu_open_header_refused "# stigvars_removed=TRUE is refused" "# stigvars_removed=TRUE"
+cfu_open_header_refused "# stigvars_removed=truey is refused" "# stigvars_removed=truey"
+cfu_open_header_refused "# stigvars_removed= (no value) is refused" "# stigvars_removed="
+cfu_open_header_refused "# stigvars_removed=true with a trailing space is refused" "# stigvars_removed=true "
+cfu_open_header_refused "true together with # stigvars_override=true is refused" "# stigvars_removed=true" "# stigvars_override=true"
+cfu_open_header_refused "true together with # stigvars_override=false is refused" "# stigvars_removed=true" "# stigvars_override=false"
+cfu_open_header_refused "true together with a bare # stigvars_override is refused" "# stigvars_removed=true" "# stigvars_override"
+cfu_open_header_refused "false with # stigvars_override=false is refused" "# stigvars_removed=false" "# stigvars_override=false"
+cfu_open_header_refused "# stigvars_removed=true twice is refused" "# stigvars_removed=true" "# stigvars_removed=true"
+cfu_open_header_refused "# stigvars_removed=false twice with the override is refused" "# stigvars_removed=false" "# stigvars_removed=false" "# stigvars_override=true"
+cfu_open_header_refused "# stigvars_removed=true and # stigvars_removed=false together are refused" "# stigvars_removed=true" "# stigvars_removed=false"
+cfu_open_header_refused "# stigvars_removed=true and # stigvars_removed=false with the override are refused" "# stigvars_removed=true" "# stigvars_removed=false" "# stigvars_override=true"
+cfu_open_header_refused "false with the override twice is refused" "# stigvars_removed=false" "# stigvars_override=true" "# stigvars_override=true"
+cfu_open_header_refused "false with the override and a second, different override line is refused" "# stigvars_removed=false" "# stigvars_override=true" "# stigvars_override=false"
+# flat (no # layout= line) is unchanged: refused only for # stigvars_removed=false without the override line
+cfu_flat_header() { # <description> <expected rc> <header lines...>
+    local d="$1" want="$2" l
+    shift 2
+    reset_world
+    cfu_repo "$DATASET_URL2" "$DATASET_URL2"
+    stage_manifest "$C1" javabins_rekeyed
+    stage_manifest "$C1" destigmatized_javabins_rekeyed
+    {
+        for l in "# bdc-hpds-deploy/1" "# variant=open" "# dataset_id=x" "$@"; do printf '%s\n' "$l"; done
+        printf 'dest\tbytes\tsha256\tetag\tsrc\n'
+        printf 'metadata.json\t7\t%s\t"e"\tmetadata.json\n' "$(printf '0%.0s' $(seq 1 64))"
+    } > "$FAKE_S3/$STACK/data/$C1/$OPEN_DIR/manifest.tsv"
+    run_cfu
+    [ "$rc" = "$want" ] && ok "CFU flat: $d (rc $want)" || { bad "CFU flat: $d (rc=$rc, want $want)"; cat "$T/err"; }
+}
+cfu_flat_header "no stigvars line passes" 0
+cfu_flat_header "# stigvars_removed=true passes" 0 "# stigvars_removed=true"
+cfu_flat_header "# stigvars_removed=true with the override line passes" 0 "# stigvars_removed=true" "# stigvars_override=true"
+cfu_flat_header "only # stigvars_override=true passes" 0 "# stigvars_override=true"
+cfu_flat_header "# stigvars_removed=falsey passes (not the marker)" 0 "# stigvars_removed=falsey"
+cfu_flat_header "# stigvars_removed=false with the override passes" 0 "# stigvars_removed=false" "# stigvars_override=true"
+cfu_flat_header "# stigvars_removed=false without the override fails" 1 "# stigvars_removed=false"
+check "CFU flat: that failure is the false-without-override error and writes no key files" bash -c "grep -q '^ERROR: open dataset is staged with stigmatized variables not removed' '$T/err'" 
+check "CFU flat: that failure writes no key files" cfu_no_keys
+cfu_flat_header "an unknown layout value is refused" 1 "# layout=flat"
+check "CFU flat: an unknown layout writes no key files" cfu_no_keys
+# the stigvars lines must be in the header (above the column header), not among the rows
+cfu_open_rows_line() { # <description> <expected rc> <line placed after the column header>
+    reset_world
+    cfu_repo "$DATASET_URL2" "$DATASET_URL2"
+    stage_manifest "$C1" javabins_rekeyed
+    stage_manifest "$C1" destigmatized_javabins_rekeyed
+    {
+        printf '%s\n' "# bdc-hpds-deploy/1" "# variant=open" "# layout=partitioned" "# partitions=3"
+        printf 'dest\tbytes\tsha256\tetag\tsrc\n'
+        printf '%s\n' "$3"
+    } > "$FAKE_S3/$STACK/data/$C1/$OPEN_DIR/manifest.tsv"
+    run_cfu
+    [ "$rc" = "$2" ] && ok "CFU: $1 (rc $2)" || { bad "CFU: $1 (rc=$rc, want $2)"; cat "$T/err"; }
+}
+# a header line after the column header never counts, it is refused (appending a line must not turn a refused manifest.tsv into an accepted one)
+cfu_open_rows_line_refused() { # <description> <partitioned|flat> <header lines (a single string with \n)> <line after the column header>
+    local d="$1" lay="$2" hdr="$3" tail_line="$4" l
+    reset_world
+    cfu_repo "$DATASET_URL2" "$DATASET_URL2"
+    stage_manifest "$C1" javabins_rekeyed
+    stage_manifest "$C1" destigmatized_javabins_rekeyed
+    {
+        printf '%s\n' "# bdc-hpds-deploy/1" "# variant=open"
+        [ "$lay" = flat ] || printf '%s\n' "# layout=partitioned" "# partitions=3"
+        while IFS= read -r l; do [ -z "$l" ] || printf '%s\n' "$l"; done <<< "$hdr"
+        printf 'dest\tbytes\tsha256\tetag\tsrc\n'
+        printf 'metadata.json\t7\t%s\t"e"\tstatic/metadata.json\n' "$ZERO64"
+        printf '%s\n' "$tail_line"
+    } > "$FAKE_S3/$STACK/data/$C1/$OPEN_DIR/manifest.tsv"
+    run_cfu
+    if [ "$rc" = 1 ] && grep -q '^ERROR: open manifest.tsv has a # stigvars_removed, # stigvars_override, # layout or # partitions line after the column header' "$T/err" && grep -qx 'Nothing was scheduled.' "$T/err" && cfu_no_keys; then
+        ok "CFU: $d"
+    else
+        bad "CFU: $d (rc=$rc)"; cat "$T/err"
+    fi
+}
+cfu_open_rows_line_refused "partitioned: a trailing # stigvars_removed=true after a header with no stigvars line is refused" partitioned "" "# stigvars_removed=true"
+cfu_open_rows_line_refused "partitioned: a valid # stigvars_removed=true header plus a trailing # stigvars_removed=true is refused" partitioned "# stigvars_removed=true" "# stigvars_removed=true"
+cfu_open_rows_line_refused "partitioned: a valid # stigvars_removed=true header plus a trailing # stigvars_override=true is refused" partitioned "# stigvars_removed=true" "# stigvars_override=true"
+cfu_open_rows_line_refused "partitioned: a # stigvars_removed=false header plus a trailing # stigvars_override=true is refused" partitioned "# stigvars_removed=false" "# stigvars_override=true"
+cfu_open_rows_line_refused "partitioned: a valid false and override header plus a trailing # stigvars_override=true is refused" partitioned "# stigvars_removed=false
+# stigvars_override=true" "# stigvars_override=true"
+cfu_open_rows_line_refused "partitioned: a trailing # layout=partitioned is refused" partitioned "# stigvars_removed=true" "# layout=partitioned"
+cfu_open_rows_line_refused "partitioned: a trailing # partitions=3 is refused" partitioned "# stigvars_removed=true" "# partitions=3"
+cfu_open_rows_line_refused "flat: a # stigvars_removed=false header plus a trailing # stigvars_override=true is refused" flat "# stigvars_removed=false" "# stigvars_override=true"
+cfu_open_rows_line_refused "flat: a trailing # layout=partitioned is refused" flat "" "# layout=partitioned"
+cfu_open_rows_line_refused "flat: a trailing # stigvars_removed=true is refused" flat "" "# stigvars_removed=true"
+# a carriage return on a header value
+CR="$(printf '\r')"
+cfu_open_cr() { # <description> <partitioned|flat> <header lines...>
+    local d="$1" lay="$2" l
+    shift 2
+    reset_world
+    cfu_repo "$DATASET_URL2" "$DATASET_URL2"
+    stage_manifest "$C1" javabins_rekeyed
+    stage_manifest "$C1" destigmatized_javabins_rekeyed
+    {
+        printf '%s\n' "# bdc-hpds-deploy/1" "# variant=open"
+        [ "$lay" = flat ] || printf '%s\n' "# layout=partitioned" "# partitions=3"
+        for l in "$@"; do printf '%s\n' "$l"; done
+        printf 'dest\tbytes\tsha256\tetag\tsrc\n'
+        printf 'metadata.json\t7\t%s\t"e"\tstatic/metadata.json\n' "$ZERO64"
+    } > "$FAKE_S3/$STACK/data/$C1/$OPEN_DIR/manifest.tsv"
+    run_cfu
+    if [ "$rc" = 1 ] && grep -q '^ERROR: ' "$T/err" && grep -qx 'Nothing was scheduled.' "$T/err" && cfu_no_keys; then ok "CFU: $d"; else bad "CFU: $d (rc=$rc)"; cat "$T/err"; fi
+}
+cfu_open_cr "partitioned: # stigvars_removed=true with a trailing CR is refused" partitioned "# stigvars_removed=true$CR"
+cfu_open_cr "partitioned: # stigvars_removed=false and # stigvars_override=true with a CR on the override is refused" partitioned "# stigvars_removed=false" "# stigvars_override=true$CR"
+cfu_open_cr "partitioned: # stigvars_removed=false with a CR and the override is refused" partitioned "# stigvars_removed=false$CR" "# stigvars_override=true"
+cfu_open_cr "flat: # stigvars_removed=false with a CR and no override is refused (not read as a non-marker)" flat "# stigvars_removed=false$CR"
+cfu_open_cr "flat: # stigvars_override=true with a CR is refused" flat "# stigvars_removed=false" "# stigvars_override=true$CR"
+cfu_open_cr "partitioned: # layout=partitioned with a CR is refused" partitioned "# stigvars_removed=true" "# layout=partitioned$CR"
+cfu_open_rows_line "a # stigvars_removed=true line after the column header is not in the header, the header has no stigvars line: refused" 1 "# stigvars_removed=true"
+# layout
+cfu_open_header_refused "# layout=flat is refused" "# stigvars_removed=true" "# layout=flat"
+cfu_open_header_refused "two # layout=partitioned lines are refused" "# stigvars_removed=true" "# layout=partitioned"
+cfu_open_header_refused "# layout=partitioned with a trailing space is refused" "# stigvars_removed=true" "# layout=partitioned "
 # only the open manifest.tsv is read: the same lines in the auth one do not matter
 reset_world
 cfu_repo "$DATASET_URL2" "$DATASET_URL2"
@@ -2222,7 +2404,6 @@ run_import auth "$DATASET_URL2"
 [ "$rc" != 0 ] && grep -q "has schema 'bdc-hpds-pheno-release/3'" "$T/err" && ok "an unknown schema is refused with the schema named" || bad "schema /3 (rc=$rc)"
 
 # ---- /2 refusals (the deploy-side subset of the validator); every one stages nothing and copies nothing
-ZERO64="$(printf '0%.0s' $(seq 1 64))"
 v2_refuses() { # <what> <variant> <override flag: true|""> <jq filter> [message fragment]
     local what="$1" v="$2" flag="$3" filter="$4" frag="${5:-not a valid bdc-hpds-pheno-release/2}" sd="$AUTH_DIR"
     [ "$v" != open ] || sd="$OPEN_DIR"
@@ -2272,10 +2453,10 @@ v2_refuses "a repeated partition name" auth "" '.partitions[1].name = .partition
 v2_refuses "no partitions" auth "" '.partitions = [] | .variants.auth |= .[0:2]'
 v2_refuses "a partition that is not in the variant" auth "" '.partitions += [{"name":"phs999999.c9","files":[]}]'
 v2_refuses "a malformed dataset_id" auth "" '.dataset_id = "x"'
-v2_refuses "open.stigvars_removed is true (a later phase; refused for auth too)" auth "" '.open.stigvars_removed = true'
+v2_refuses "open.stigvars_removed is true without a removal record (refused for auth too)" auth "" '.open.stigvars_removed = true'
 v2_refuses "open.stigvars_removed is missing" auth "" 'del(.open.stigvars_removed)'
 v2_refuses "open.stigvars_removed is a string" auth "" '.open.stigvars_removed = "false"'
-v2_refuses "open.stigvars_removed is true for the open variant, flag on" open true '.open.stigvars_removed = true'
+v2_refuses "open.stigvars_removed is true without a removal record, for the open variant, flag on" open true '.open.stigvars_removed = true'
 v2_refuses "no open object for the open variant, flag on" open true 'del(.open)'
 v2_refuses "no variants.open for HPDS_VARIANT=open, flag on" open true 'del(.variants.open)'
 v2_refuses "no variants.open and no open object for HPDS_VARIANT=open, flag on" open true 'del(.variants.open) | del(.open)'
@@ -2294,6 +2475,218 @@ v2_refuses "no variants.auth (open run, flag on)" open true 'del(.variants.auth)
 v2_refuses "variants.auth is null" open true '.variants.auth = null'
 v2_refuses "variants is empty" auth "" '.variants = {}'
 v2_refuses "variants.auth is not an array" auth "" '.variants.auth = {}'
+
+# ---- open with the stigmatized variables removed (open.stigvars_removed=true): staged without the override, the whole removal record
+# is checked first (rules 4, 7, 8, 9 and 11 of the deploy-side subset). V2_REMOVED=1 builds the fixture: three partitions, the first two
+# by name changed (open/partitions/<p>/columnMeta.javabin), the third unchanged; V2_GLOBAL=1 V2_REMOVED=1 adds a global partition
+# that is changed too. Only the placeholder accessions and synthetic digests.
+V2_RM_NOTE='STIGMATIZED VARIABLES NOT REMOVED'
+reset_world
+V2_REMOVED=1 make_dataset_v2
+check "removal fixture: stigvars_removed true, a removal record for every partition, 2 changed of 3" jq -e '.open.stigvars_removed == true and (.open.removal.partitions | length) == 3 and .open.removal.partitions_changed == 2 and (.open.files | length) == 2' "$DATASET2_DIR/manifest.json"
+check "removal fixture: conceptsToRemove.txt is in files[] and is not a variant dest" jq -e '([.files[] | select(.src == "static/conceptsToRemove.txt")] | length) == 1 and ([.variants[][] | select(.dest | test("conceptsToRemove"))] | length) == 0' "$DATASET2_DIR/manifest.json"
+check "removal fixture: the changed partitions serve open/ srcs in variants.open, auth keeps the full columnMeta" jq -e '([.variants.open[] | select(.src | startswith("open/"))] | length) == 2 and ([.variants.auth[] | select(.src | startswith("open/"))] | length) == 0' "$DATASET2_DIR/manifest.json"
+
+no_allow_flag
+run_import open "$DATASET_URL2"
+[ "$rc" = 0 ] && ok "removal: open stages WITHOUT ALLOW_OPEN_STIGVARS_NOT_REMOVED" || { bad "removal: open without the flag (rc=$rc)"; cat "$T/err"; }
+RM_OM="$STAGE/$OPEN_DIR/manifest.tsv"
+want_files="$( (jq -r '.variants.open[].dest' "$DATASET2_DIR/manifest.json"; echo manifest.tsv) | sort | tr '\n' ' ')"
+[ "$(stage_files $OPEN_DIR)" = "$want_files" ] && ok "removal: the open layout is the open set (nested partitions, no conceptsToRemove.txt, no open/ directory)" || bad "removal: open layout: $(stage_files $OPEN_DIR)"
+check "removal: manifest.tsv has # stigvars_removed=true and no override line, nor any other stigvars line" bash -c "grep -qxF '# stigvars_removed=true' '$RM_OM' && test \$(grep -c stigvars '$RM_OM') = 1 && ! grep -q 'stigvars_override' '$RM_OM'"
+check "removal: manifest.tsv header: variant, layout, partitions and manifest_sha256" bash -c "grep -qxF '# variant=open' '$RM_OM' && grep -qxF '# layout=partitioned' '$RM_OM' && grep -qxF '# partitions=3' '$RM_OM' && grep -qxF '# manifest_sha256=$(sha "$DATASET2_DIR/manifest.json")' '$RM_OM'"
+check "removal: every # line of manifest.tsv is before the column header (none among the rows)" test "$(awk '/^#/ && body { n++ } !/^#/ { body = 1 } END { print n + 0 }' "$RM_OM")" = 0
+check "removal: manifest.tsv has 8 comment lines and 8 rows counted after the column header" test "$(grep -c '^#' "$RM_OM")" = 8 -a "$(tsv_rows "$RM_OM" | wc -l | tr -d ' ')" = 8
+check "removal: the rows of the two changed partitions show the open/partitions/<p>/columnMeta.javabin src" bash -c "test \$(grep -v '^#' '$RM_OM' | tail -n +2 | cut -f5 | grep -c '^open/partitions/.*/columnMeta.javabin\$') = 2 && grep -v '^#' '$RM_OM' | tail -n +2 | cut -f1,5 | grep -qxF \"\$(printf 'phenotypic/phs000000.c1/columnMeta.javabin\topen/partitions/phs000000.c1/columnMeta.javabin')\""
+check "removal: the row of the unchanged partition shows the partitions/ src" bash -c "grep -v '^#' '$RM_OM' | tail -n +2 | cut -f1,5 | grep -qxF \"\$(printf 'phenotypic/phs999999.c1/columnMeta.javabin\tpartitions/phs999999.c1/columnMeta.javabin')\""
+check "removal: the rows equal the variant entries (dest, bytes, sha256, etag, src), sorted by dest" bash -c "diff <(jq -r '.variants.open | sort_by(.dest)[] | [.dest, (.bytes | tostring), .sha256, .etag, .src] | @tsv' '$DATASET2_DIR/manifest.json') <(grep -v '^#' '$RM_OM' | tail -n +2)"
+check "removal: a changed partition's staged columnMeta.javabin is the open/ object, byte for byte" bash -c "cmp '$STAGE/$OPEN_DIR/phenotypic/phs000000.c1/columnMeta.javabin' '$DATASET2_DIR/open/partitions/phs000000.c1/columnMeta.javabin' && cmp '$STAGE/$OPEN_DIR/phenotypic/phs123456.c1/columnMeta.javabin' '$DATASET2_DIR/open/partitions/phs123456.c1/columnMeta.javabin' && ! cmp -s '$STAGE/$OPEN_DIR/phenotypic/phs000000.c1/columnMeta.javabin' '$DATASET2_DIR/partitions/phs000000.c1/columnMeta.javabin'"
+check "removal: the unchanged partition's staged columnMeta.javabin is the full one" cmp "$STAGE/$OPEN_DIR/phenotypic/phs999999.c1/columnMeta.javabin" "$DATASET2_DIR/partitions/phs999999.c1/columnMeta.javabin"
+check "removal: the open/ objects were read from the source with the source role, as every copy" test "$(grep -c "^ident=source.* aws s3 cp s3://$SRC_BUCKET/data/hpds/pheno-partitioned/datasets/$DATASET_ID2/open/partitions/" "$FAKE_AWS_IDENTITY_LOG")" = 2
+check "removal: every copy was byte-checked (8 files, 8 head-object calls)" test "$(grep -c 's3api head-object' "$FAKE_AWS_LOG")" = 8
+check "removal: no override banner, no mention of the override" bash -c "! grep -q '$V2_RM_NOTE' '$T/out' && ! grep -q 'ALLOW_OPEN_STIGVARS_NOT_REMOVED' '$T/out' && ! grep -q '^\*\*\*\*' '$T/out'"
+check "removal: open staging writes no fence_mapping.json and no conceptsToRemove.txt object" bash -c "test ! -e '$STAGE/fence_mapping.json' && test \$(find '$STAGE' -name 'conceptsToRemove*' | wc -l | tr -d ' ') = 0"
+check "removal: manifest.tsv is the last object written" bash -c "grep -E 'aws s3 cp (-|dataset_work/manifest.tsv) s3://' '$FAKE_AWS_LOG' | tail -1 | grep -q '/$OPEN_DIR/manifest.tsv'"
+
+# the override flag plays no role on a removal dataset
+reset_world
+V2_REMOVED=1 make_dataset_v2
+allow_flag
+run_import open "$DATASET_URL2"
+no_allow_flag
+[ "$rc" = 0 ] && ok "removal: open with ALLOW_OPEN_STIGVARS_NOT_REMOVED=true stages normally" || { bad "removal: open with the flag (rc=$rc)"; cat "$T/err"; }
+check "removal with the flag: # stigvars_removed=true, no override line, no banner" bash -c "grep -qxF '# stigvars_removed=true' '$RM_OM' && ! grep -q 'stigvars_override' '$RM_OM' && test \$(grep -c stigvars '$RM_OM') = 1 && ! grep -q '$V2_RM_NOTE' '$T/out' && ! grep -q '^\*\*\*\*' '$T/out'"
+check "removal with the flag: the same rows as without it" bash -c "diff <(jq -r '.variants.open | sort_by(.dest)[] | [.dest, (.bytes | tostring), .sha256, .etag, .src] | @tsv' '$DATASET2_DIR/manifest.json') <(grep -v '^#' '$RM_OM' | tail -n +2)"
+
+# both, and Check For Updates on what the stage job wrote
+reset_world
+V2_REMOVED=1 make_dataset_v2
+no_allow_flag
+run_import both "$DATASET_URL2"
+[ "$rc" = 0 ] && ok "removal: both stages with no flag, auth then open" || { bad "removal: both (rc=$rc)"; cat "$T/err"; }
+check "removal both: the auth manifest.tsv has no stigvars line and the full columnMeta of every partition" bash -c "test \$(grep -c stigvars '$STAGE/$AUTH_DIR/manifest.tsv') = 0 && ! grep -q 'open/' '$STAGE/$AUTH_DIR/manifest.tsv' && cmp '$STAGE/$AUTH_DIR/phenotypic/phs000000.c1/columnMeta.javabin' '$DATASET2_DIR/partitions/phs000000.c1/columnMeta.javabin'"
+check "removal both: auth first, then open" bash -c "
+    a=\$(grep -n '/data/$C1/$AUTH_DIR/manifest.tsv' '$FAKE_AWS_LOG' | head -1 | cut -d: -f1)
+    o=\$(grep -n '/data/$C1/$OPEN_DIR/' '$FAKE_AWS_LOG' | head -1 | cut -d: -f1)
+    [ -n \"\$a\" ] && [ -n \"\$o\" ] && [ \"\$a\" -lt \"\$o\" ]"
+check "removal both: fence_mapping.json is the static metadata.json, written once" bash -c "cmp '$STAGE/fence_mapping.json' '$DATASET2_DIR/static/metadata.json' && test \$(grep -c 's3://.*/fence_mapping.json' '$FAKE_AWS_LOG') = 1"
+run_cfu
+[ "$rc" = 0 ] && ok "CFU: removal data staged by the stage job (# stigvars_removed=true, no override) passes" || { bad "CFU on removal data (rc=$rc)"; cat "$T/err"; }
+check "CFU: removal data: the three keys are written" bash -c "cd '$REPO' && test -s datasetKey.txt && test -s destigmatizedDatasetKey.txt && test -s genomicDatasetKey.txt"
+run_import_in_repo open
+check "removal: a second open run skips the staged variant" grep -q 'already staged, skipping' "$T/out"
+
+# one at a time (COPY_PARALLEL=1): the same rows
+reset_world
+V2_REMOVED=1 make_dataset_v2
+export COPY_PARALLEL=1
+run_import open "$DATASET_URL2"
+unset COPY_PARALLEL
+[ "$rc" = 0 ] && ok "removal: open with COPY_PARALLEL=1 stages" || { bad "removal: COPY_PARALLEL=1 (rc=$rc)"; cat "$T/err"; }
+check "removal COPY_PARALLEL=1: the same header and rows" bash -c "grep -qxF '# stigvars_removed=true' '$RM_OM' && ! grep -q stigvars_override '$RM_OM' && diff <(jq -r '.variants.open | sort_by(.dest)[] | [.dest, (.bytes | tostring), .sha256, .etag, .src] | @tsv' '$DATASET2_DIR/manifest.json') <(grep -v '^#' '$RM_OM' | tail -n +2)"
+
+# a list_git_sha of 7 to 40 lowercase hex, or null, is accepted
+v2r_accepts() { # <what> <variant> <jq filter>
+    local what="$1" v="$2" filter="$3" sd="$AUTH_DIR"
+    [ "$v" != open ] || sd="$OPEN_DIR"
+    reset_world
+    V2_REMOVED=1 make_dataset_v2
+    mutate_v2 "$filter"
+    no_allow_flag
+    run_import "$v" "$DATASET_URL2"
+    if [ "$rc" = 0 ] && [ -e "$STAGE/$sd/manifest.tsv" ]; then ok "removal accepted ($v): $what"; else bad "removal accepted ($v): $what (rc=$rc)"; head -3 "$T/err"; fi
+}
+v2r_accepts "list_git_sha with 7 hex characters" open '.open.removal.list_git_sha = "abcdef0"'
+v2r_accepts "list_git_sha with 40 hex characters" open ".open.removal.list_git_sha = \"$(printf 'a%.0s' $(seq 1 40))\""
+v2r_accepts "list_git_sha null" open '.open.removal.list_git_sha = null'
+v2r_accepts "the removal record is also checked, and accepted, on an auth run" auth '.'
+v2r_accepts "removal.partitions in another order than partitions[]" open '.open.removal.partitions |= reverse'
+
+# ---- refusals, one per condition of rule 11 (and rules 4, 7, 8, 9); each stages and copies nothing
+export V2_REMOVED=1
+RMV='.open.removal'
+FULL1='(.partitions[] | select(.name == "phs000000.c1") | .files[] | select(.name == "columnMeta.javabin") | .sha256)'
+OF1='(.open.files[] | select(.src == "open/partitions/phs000000.c1/columnMeta.javabin"))'
+VO1='(.variants.open[] | select(.dest == "phenotypic/phs000000.c1/columnMeta.javabin"))'
+VOU='(.variants.open[] | select(.dest == "phenotypic/phs999999.c1/columnMeta.javabin"))'
+RP1='(.open.removal.partitions[] | select(.name == "phs000000.c1"))'
+RPU='(.open.removal.partitions[] | select(.name == "phs999999.c1"))'
+# open (object): exactly stigvars_removed, removal, files
+v2_refuses "open has an extra key" open "" '.open.extra = 1'
+v2_refuses "open has an extra key (auth run)" auth "" '.open.extra = 1'
+v2_refuses "open has no removal" open "" 'del(.open.removal)'
+v2_refuses "open has no files" open "" 'del(.open.files)'
+v2_refuses "open is only {stigvars_removed: true}" open "" '.open = {"stigvars_removed": true}'
+v2_refuses "open.stigvars_removed is the string true" open "" '.open.stigvars_removed = "true"'
+# removal: exact keys and types
+v2_refuses "removal has an extra key" open "" "$RMV.extra = 1"
+v2_refuses "removal lacks concepts_in_list" open "" "del($RMV.concepts_in_list)"
+v2_refuses "removal lacks list_sha256" open "" "del($RMV.list_sha256)"
+v2_refuses "removal lacks list_git_sha" open "" "del($RMV.list_git_sha)"
+v2_refuses "removal lacks list_source" open "" "del($RMV.list_source)"
+v2_refuses "removal lacks partitions_changed" open "" "del($RMV.partitions_changed)"
+v2_refuses "removal lacks concepts_removed_total" open "" "del($RMV.concepts_removed_total)"
+v2_refuses "removal lacks partitions" open "" "del($RMV.partitions)"
+v2_refuses "removal is not an object" open "" "$RMV = []"
+v2_refuses "concepts_in_list is 0" open "" "$RMV.concepts_in_list = 0"
+v2_refuses "concepts_in_list is a string" open "" "$RMV.concepts_in_list = \"2\""
+v2_refuses "concepts_in_list is not a whole number" open "" "$RMV.concepts_in_list = 1.5"
+v2_refuses "list_sha256 is not hex" open "" "$RMV.list_sha256 = \"xyz\""
+v2_refuses "list_sha256 is uppercase" open "" "$RMV.list_sha256 |= ascii_upcase"
+v2_refuses "list_sha256 is null" open "" "$RMV.list_sha256 = null"
+v2_refuses "list_git_sha has 6 hex characters" open "" "$RMV.list_git_sha = \"abcdef\""
+v2_refuses "list_git_sha has 41 hex characters" open "" "$RMV.list_git_sha = \"$(printf 'a%.0s' $(seq 1 41))\""
+v2_refuses "list_git_sha is uppercase" open "" "$RMV.list_git_sha = \"ABCDEF0\""
+v2_refuses "list_git_sha is a number" open "" "$RMV.list_git_sha = 1234567"
+v2_refuses "list_source is not an s3 URI" open "" "$RMV.list_source = \"https://example/list.txt\""
+v2_refuses "list_source is not a string" open "" "$RMV.list_source = 5"
+v2_refuses "partitions_changed is a string" open "" "$RMV.partitions_changed = \"2\""
+v2_refuses "concepts_removed_total is not a whole number" open "" "$RMV.concepts_removed_total = 10.5"
+v2_refuses "concepts_removed_total is a string" open "" "$RMV.concepts_removed_total = \"10\""
+v2_refuses "removal.partitions is an object" open "" "$RMV.partitions = {}"
+# list_sha256 against static/conceptsToRemove.txt in files[] (rules 11 and 4)
+v2_refuses "list_sha256 differs from the sha256 of static/conceptsToRemove.txt in files[]" open "" "$RMV.list_sha256 = \"$ZERO64\""
+v2_refuses "files[] has a different conceptsToRemove.txt sha256" open "" '(.files[] | select(.src == "static/conceptsToRemove.txt") | .sha256) = "'"$ZERO64"'"'
+v2_refuses "static/conceptsToRemove.txt is not in files[] (rule 4)" open "" '.files |= map(select(.src != "static/conceptsToRemove.txt"))'
+v2_refuses "static/conceptsToRemove.txt is listed twice in files[]" open "" '.files += [.files[] | select(.src == "static/conceptsToRemove.txt")]'
+# removal.partitions names
+v2_refuses "removal.partitions lacks a partition" open "" "$RMV.partitions |= .[0:2]"
+v2_refuses "removal.partitions has an extra partition" open "" "$RMV.partitions += [{name: \"phs999999.c9\", full_content_sha256: \"$ZERO64\", open_content_sha256: \"$ZERO64\", concepts_removed: 0}]"
+v2_refuses "removal.partitions repeats a partition and lacks another" open "" "$RMV.partitions[2] = $RMV.partitions[0]"
+v2_refuses "removal.partitions has another name than partitions[]" open "" "$RPU.name = \"phs999999.c2\""
+v2_refuses "removal.partitions is empty" open "" "$RMV.partitions = []"
+v2_refuses "a removal.partitions element has an extra key" open "" "$RP1.extra = 1"
+v2_refuses "a removal.partitions element lacks a key" open "" "del($RP1.concepts_removed)"
+v2_refuses "a removal.partitions element is not an object" open "" "$RMV.partitions[0] = \"phs000000.c1\""
+v2_refuses "full_content_sha256 is not hex" open "" "$RP1.full_content_sha256 = \"xyz\""
+v2_refuses "open_content_sha256 is not hex" open "" "$RP1.open_content_sha256 = \"xyz\""
+v2_refuses "open_content_sha256 is uppercase" open "" "$RP1.open_content_sha256 |= ascii_upcase"
+v2_refuses "a digest is null" open "" "$RP1.full_content_sha256 = null"
+v2_refuses "concepts_removed is negative" open "" "$RP1.concepts_removed = -1"
+v2_refuses "concepts_removed is a string" open "" "$RP1.concepts_removed = \"5\""
+v2_refuses "concepts_removed is not a whole number" open "" "$RP1.concepts_removed = 1.5"
+# equivalence: concepts_removed > 0 iff the digests differ
+v2_refuses "a changed partition has concepts_removed 0" open "" "$RP1.concepts_removed = 0"
+v2_refuses "an unchanged partition has concepts_removed above 0" open "" "$RPU.concepts_removed = 1"
+v2_refuses "a partition's open digest equals the full one but concepts_removed is above 0" open "" "$RP1.open_content_sha256 = $RP1.full_content_sha256"
+# counts
+v2_refuses "partitions_changed is too small" open "" "$RMV.partitions_changed = 1"
+v2_refuses "partitions_changed is too large" open "" "$RMV.partitions_changed = 3"
+v2_refuses "concepts_removed_total is too small" open "" "$RMV.concepts_removed_total = 9"
+v2_refuses "concepts_removed_total is too large" open "" "$RMV.concepts_removed_total = 11"
+# a release that removed nothing is not a removal release
+v2_refuses "a release that removed nothing: every partition unchanged, no open.files, total 0, partitions_changed 0" open "" '. as $m | .open.removal.partitions |= map(.open_content_sha256 = .full_content_sha256 | .concepts_removed = 0) | .open.removal.partitions_changed = 0 | .open.removal.concepts_removed_total = 0 | .open.files = [] | .variants.open |= map(. as $e | ($m.variants.auth[] | select(.dest == $e.dest)) // $e)'
+v2_refuses "partitions_changed 0 with a total above 0" open "" "$RMV.partitions_changed = 0"
+v2_refuses "concepts_removed_total 0 with the partitions changed" open "" "$RMV.concepts_removed_total = 0"
+# open.files: exactly the changed partitions
+v2_refuses "open.files lacks a changed partition" open "" '.open.files |= .[1:]'
+v2_refuses "open.files is empty" open "" '.open.files = []'
+v2_refuses "open.files has an entry for an unchanged partition" open "" '.open.files += [{src: "open/partitions/phs999999.c1/columnMeta.javabin", bytes: 9, sha256: "'"$ZERO64"'", etag: "\"e9\""}]'
+v2_refuses "open.files repeats an entry" open "" '.open.files += [.open.files[0]]'
+v2_refuses "open.files names another object" open "" '.open.files[0].src = "open/partitions/phs000000.c1/columnMeta.csv"'
+v2_refuses "open.files has an entry under partitions/ instead of open/" open "" '.open.files[0].src = "partitions/phs000000.c1/columnMeta.javabin"'
+v2_refuses "open.files is an object" open "" '.open.files = {}'
+v2_refuses "an open.files entry has a non-integer bytes" open "" "$OF1.bytes = 1.5 | $VO1.bytes = 1.5"
+v2_refuses "an open.files entry has a string bytes" open "" "$OF1.bytes = \"12\" | $VO1.bytes = \"12\""
+v2_refuses "an open.files entry has a sha256 that is not hex" open "" "$OF1.sha256 = \"xyz\" | $VO1.sha256 = \"xyz\""
+v2_refuses "an open.files entry has a null sha256" open "" "$OF1.sha256 = null | $VO1.sha256 = null"
+v2_refuses "an open.files entry has an empty etag" open "" "$OF1.etag = \"\" | $VO1.etag = \"\""
+v2_refuses "an open.files entry has no etag" open "" "del($OF1.etag) | del($VO1.etag)"
+v2_refuses "an open.files sha256 equals the sha256 of the full columnMeta.javabin (variants.open follows it)" open "" "$FULL1 as \$f | $OF1.sha256 = \$f | $VO1.sha256 = \$f"
+# variants.open: the changed partition's entry
+v2_refuses "variants.open keeps the full src for a changed partition" open "" "$VO1.src = \"partitions/phs000000.c1/columnMeta.javabin\""
+v2_refuses "variants.open keeps the full entry (src, bytes, sha256, etag) for a changed partition" open "" '. as $m | '"$VO1"' = ($m.variants.auth[] | select(.dest == "phenotypic/phs000000.c1/columnMeta.javabin"))'
+v2_refuses "variants.open takes the open/ src for an unchanged partition" open "" "$VOU.src = \"open/partitions/phs999999.c1/columnMeta.javabin\""
+v2_refuses "variants.open takes the src of another changed partition" open "" "$VO1.src = \"open/partitions/phs123456.c1/columnMeta.javabin\""
+v2_refuses "variants.open has another bytes than open.files" open "" "$VO1.bytes = 999"
+v2_refuses "variants.open has another sha256 than open.files" open "" "$VO1.sha256 = \"$ZERO64\""
+v2_refuses "variants.open has another etag than open.files" open "" "$VO1.etag = \"\\\"other\\\"\""
+v2_refuses "variants.open has an extra entry" open "" '.variants.open += [{src: "open/partitions/phs999999.c1/allObservationsStore.javabin", dest: "phenotypic/phs999999.c1/allObservationsStore.javabin", bytes: 1, sha256: "'"$ZERO64"'", etag: "\"x\""}]'
+v2_refuses "variants.auth takes an open/ src" auth "" '(.variants.auth[] | select(.dest == "phenotypic/phs000000.c1/columnMeta.javabin")) |= (.src = "open/partitions/phs000000.c1/columnMeta.javabin")'
+v2_refuses "variants.auth lists conceptsToRemove.txt" auth "" '.variants.auth += [{src: "static/conceptsToRemove.txt", dest: "conceptsToRemove.txt", bytes: 1, sha256: "'"$ZERO64"'", etag: "\"x\""}]'
+v2_refuses "variants.open lists conceptsToRemove.txt" open "" '.variants.open += [{src: "static/conceptsToRemove.txt", dest: "conceptsToRemove.txt", bytes: 1, sha256: "'"$ZERO64"'", etag: "\"x\""}]'
+# a wrong removal record is refused for an auth stage as well (subset D checks the manifest as a whole)
+v2_refuses "a wrong removal record refuses an auth run too" auth "" "$RMV.partitions_changed = 1"
+v2_refuses "no variants.open with a true open object" auth "" 'del(.variants.open)'
+unset V2_REMOVED
+
+# the false form (rules 4 and 7): no other key, no conceptsToRemove.txt in files[]
+v2_refuses "open.stigvars_removed false with an extra key" open true '.open.extra = 1'
+v2_refuses "open.stigvars_removed false with an empty removal record" open true '.open.removal = {}'
+v2_refuses "open.stigvars_removed false with static/conceptsToRemove.txt in files[]" open true '.files += [{src: "static/conceptsToRemove.txt", bytes: 1, sha256: .files[0].sha256, etag: "\"x\""}]'
+v2_refuses "open.stigvars_removed false with static/conceptsToRemove.txt in files[] (auth run)" auth "" '.files += [{src: "static/conceptsToRemove.txt", bytes: 1, sha256: .files[0].sha256, etag: "\"x\""}]'
+
+# a global partition is changed too (the same full list goes to every partition, global included)
+reset_world
+V2_GLOBAL=1 V2_REMOVED=1 make_dataset_v2
+check "removal + global fixture: global is changed, in removal.partitions and in open.files, and served from open/" jq -e '([.open.removal.partitions[] | select(.name == "global" and .concepts_removed > 0)] | length) == 1 and ([.open.files[] | select(.src == "open/partitions/global/columnMeta.javabin")] | length) == 1 and ([.variants.open[] | select(.dest == "phenotypic/global/columnMeta.javabin" and .src == "open/partitions/global/columnMeta.javabin")] | length) == 1' "$DATASET2_DIR/manifest.json"
+run_import both "$DATASET_URL2"
+[ "$rc" = 0 ] && ok "removal + global: both stages with no flag" || { bad "removal + global (rc=$rc)"; cat "$T/err"; }
+check "removal + global: open has the removed global columnMeta, auth has no global" bash -c "cmp '$STAGE/$OPEN_DIR/phenotypic/global/columnMeta.javabin' '$DATASET2_DIR/open/partitions/global/columnMeta.javabin' && test ! -e '$STAGE/$AUTH_DIR/phenotypic/global' && grep -qxF '# partitions=4' '$STAGE/$OPEN_DIR/manifest.tsv' && grep -qxF '# stigvars_removed=true' '$STAGE/$OPEN_DIR/manifest.tsv'"
+V2_GLOBAL=1 V2_REMOVED=1 v2_refuses "removal + global: removal.partitions lacks the global partition" open "" '.open.removal.partitions |= map(select(.name != "global"))'
+V2_GLOBAL=1 V2_REMOVED=1 v2_refuses "removal + global: the global partition serves the full columnMeta though it is changed" open "" '(.variants.open[] | select(.dest == "phenotypic/global/columnMeta.javabin") | .src) = "partitions/global/columnMeta.javabin"'
+reset_world
+make_dataset_v2
 
 # ---- manifest.json must hold exactly one JSON document (jq -e judges the last output only, so an extra document could carry entries
 # or a fence mapping past the validation). Refused before anything is read or copied, for v1 and v2: the only source read is the
@@ -2483,7 +2876,7 @@ make_dataset_v2
 no_allow_flag
 run_import both "$DATASET_URL2"
 [ "$rc" != 0 ] && grep -q 'REFUSED: open: ' "$T/err" && ok "v2 both without the override: the open refusal ends the build non-zero" || bad "v2 both, no override (rc=$rc)"
-check "v2 both without the override: nothing is staged, not even auth, and no copy or source read is made (only the staged-marker lookups)" bash -c "test ! -e '$STAGE' && test \$(grep -c 'aws s3 cp\|sts ' '$FAKE_AWS_LOG') = 0 && test \$(grep -vc 's3api list-objects-v2' '$FAKE_AWS_LOG') = 0"
+check "v2 both without the override: nothing is staged, not even auth, and no copy is made (only the staged-marker lookups and the one read of manifest.json that tells whether the stigmatized variables were removed)" bash -c "test ! -e '$STAGE' && test \$(grep -c 'cp - \|sts \|s3api head-object' '$FAKE_AWS_LOG') = 0 && test \$(grep -v 's3api list-objects-v2' '$FAKE_AWS_LOG' | grep -vc 's3://$SRC_BUCKET/data/hpds/pheno-partitioned/datasets/$DATASET_ID2/manifest.json ') = 0 && test \$(grep -c 'manifest.json ' '$FAKE_AWS_LOG') = 1"
 check "v2 both without the override: no Next line" test "$(grep -c '^Next:' "$T/out")" = 0
 # an open variant that is already staged is skipped and needs no override, so auth can still be staged on its own run
 reset_world
@@ -2593,7 +2986,15 @@ for w in ("Dev stacks only", "Default false", "refuses it", "stigvars_removed=fa
     assert w in d, w
 PY
 check "stage description: names v2, the guardrail, the extra header lines, the URL pairs and the rollback" bash -c "for w in 'bdc-hpds-pheno-release/2' 'ALLOW_OPEN_STIGVARS_NOT_REMOVED (default false)' 'REFUSES to stage it' '# layout=partitioned' '# partitions=N' 'the same v2 prefix for both lines' 'a v2 prefix as source_dataset_s3_url with a v1 prefix' 'Rollback from v2' 'pheno-partitioned/datasets'; do grep -qF -- \"\$w\" '$T/import.desc' || { echo missing: \$w; exit 1; }; done"
-check "CFU description: names the URL rule and the open header check" bash -c "for w in 'v2 (partitioned) prefix' '# stigvars_removed=false' '# stigvars_override=true' 'ALLOW_OPEN_STIGVARS_NOT_REMOVED'; do grep -qF -- \"\$w\" '$T/cfu.desc' || { echo missing: \$w; exit 1; }; done"
+check "CFU description: names the URL rule and the open header check" bash -c "for w in 'v2 (partitioned) prefix' '# stigvars_removed=false' '# stigvars_override=true' 'ALLOW_OPEN_STIGVARS_NOT_REMOVED' '# layout=partitioned' '# stigvars_removed=true' 'no \"# stigvars_override\" line' 'A flat one (no layout line)'; do grep -qF -- \"\$w\" '$T/cfu.desc' || { echo missing: \$w; exit 1; }; done"
+check "stage description: names the removal case, the record checks, the manifest.tsv header and that no override is involved" bash -c "for w in 'open.stigvars_removed=true' 'without ALLOW_OPEN_STIGVARS_NOT_REMOVED and with no override' 'open.removal record' 'list_sha256' 'partitions_changed' 'concepts_removed_total' 'open.files' 'open/partitions/PARTITION/columnMeta.javabin' '# stigvars_removed=true' 'no override line' 'static/conceptsToRemove.txt'; do grep -qF -- \"\$w\" '$T/import.desc' || { echo missing: \$w; exit 1; }; done"
+check "stage job: the ALLOW_OPEN_STIGVARS_NOT_REMOVED parameter says it has no effect on a removal dataset" bash -c "python3 -I - '$IMPORT_XML' << 'PY'
+import sys, xml.etree.ElementTree as E
+r = E.parse(sys.argv[1]).getroot()
+b = [e for e in r.findall('.//hudson.model.BooleanParameterDefinition') if e.findtext('name') == 'ALLOW_OPEN_STIGVARS_NOT_REMOVED'][0]
+d = ' '.join(b.findtext('description').split())
+assert 'stigvars_removed is true' in d and 'no override line' in d
+PY"
 check "stage job: v2 adds no job step: the Groovy deploy step is the only SystemGroovy step (no new script to approve)" python3 -I - "$IMPORT_XML" << 'PY'
 import sys, xml.etree.ElementTree as E
 r = E.parse(sys.argv[1]).getroot()
