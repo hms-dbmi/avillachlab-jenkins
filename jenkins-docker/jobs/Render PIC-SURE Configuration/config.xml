@@ -5,13 +5,15 @@
 
 The .tftpl is the file people edit. Pull it with Download PIC-SURE Configuration Template, change it, push it back with Upload PIC-SURE Configuration Template, then render. The rendered .env in S3 is a build artifact: hand-editing it accomplishes nothing, because the next render overwrites it.
 
-Secrets are reused, not minted. PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT are read back out of this stack's currently rendered gateway.env, operations.env and query.env, and LOGGING_API_KEY out of the shared logging.env that every stack reads. PICSURE_INTERNAL_TOKEN is read back out of the shared picsure-dictionary.env, and out of this stack&apos;s auth-hpds.env, query.env and visualization.env when the dictionary env does not carry it yet. Re-rendering one service therefore leaves the values the other services are still running with alone. If the files that share a value disagree, the run aborts instead of picking one.
+Secrets are reused, not minted. PICSURE_APPLICATION_TOKEN, QUERY_SERVICE_INTERNAL_TOKEN and AGGREGATE_OBFUSCATION_SALT are read back out of this stack's currently rendered gateway.env, operations.env and query.env, and LOGGING_API_KEY out of the shared logging.env that every stack reads. PICSURE_INTERNAL_TOKEN is read back out of the shared picsure-dictionary.env, and out of this stack&apos;s auth-hpds.env, open-hpds.env, query.env and visualization.env when the dictionary env does not carry it yet. Re-rendering one service therefore leaves the values the other services are still running with alone. If the files that share a value disagree, the run aborts instead of picking one.
 
 ROTATE_STACK_SECRETS and ROTATE_LOGGING_API_KEY mint instead of reusing. Each requires every consumer of its values to render in the same run: gateway, operations and query for the first; logging, gateway, operations, visualization and dictionary for the second. Both are checkboxes on Rotate PIC-SURE Stack Secrets, which is the job to use, because a new value is only safe once the matching redeploys have followed it. A first render, where the object does not exist yet, mints under the same all-consumers gate; an object that exists but holds a blank value aborts and sends you to the rotation job.
 
 LOGGING_API_KEY is one value for every stack. This job renders it into logging.env, which has no stack segment, and into the dictionary env and this stack's gateway, operations and visualization env files. Two consumers are not rendered here. Upload PSAMA Configuration adds the key to psama.env, and the frontend reads it from configs/pic-sure-frontend/&lt;target_stack&gt;/bdc.env, which is uploaded by hand through Upload PIC-SURE-Frontend Configuration. Minting a new key here leaves both of those files, and every other stack's gateway, operations and visualization env files, on the old key until each is uploaded or rendered again. Until then their audit events are dropped.
 
-PICSURE_INTERNAL_TOKEN is also one value for every stack. The dictionary checks it on its /internal endpoints and auth HPDS presents it there. The query service checks it on its own /internal endpoints and visualization presents it there. This job therefore renders it into the stackless picsure-dictionary.env and into this stack&apos;s auth-hpds.env, query.env and visualization.env whenever RENDER_DICTIONARY, RENDER_AUTH_HPDS, RENDER_QUERY or RENDER_VISUALIZATION is set. When two of those files hold values that differ, the run aborts before Terraform. A run mints a value only when none of them holds one and RENDER_DICTIONARY is true, so that the new value lands in the one file every other stack reads it back from. ROTATE_PICSURE_INTERNAL_TOKEN mints regardless and requires RENDER_DICTIONARY, RENDER_AUTH_HPDS, RENDER_QUERY and RENDER_VISUALIZATION all true. ADOPT_PICSURE_INTERNAL_TOKEN overwrites this stack&apos;s selected copies with the dictionary&apos;s value, which is how every other stack follows a rotation. A selected template that does not reference the token stops the run: the value could not be read back afterwards, and each stack would end up minting its own. That is most likely a shared S3 template from before the token, so add the PICSURE_INTERNAL_TOKEN line to it. An infrastructure revision from before the token, one that declares no picsure_internal_token variable, renders as it did before unless a selected env file carries a token now. Then the run stops, because rendering that file would drop the token, and for the dictionary env it would drop it for every stack. When a file assigns the token twice the last assignment counts, as it does for the container, and a trailing carriage return is ignored.
+PICSURE_INTERNAL_TOKEN is also one value for every stack. The dictionary checks it on its /internal endpoints, and auth HPDS and open HPDS present it there. The query service checks it on its own /internal endpoints and visualization presents it there. This job therefore renders it into the stackless picsure-dictionary.env and into this stack&apos;s auth-hpds.env, open-hpds.env, query.env and visualization.env whenever RENDER_DICTIONARY, RENDER_AUTH_HPDS, RENDER_OPEN_HPDS, RENDER_QUERY or RENDER_VISUALIZATION is set. open-hpds.env counts in every environment, including one that builds no open HPDS host, because the Deployment Pipeline renders it everywhere. When two of those files hold values that differ, the run aborts before Terraform. A run mints a value only when none of them holds one and RENDER_DICTIONARY is true, so that the new value lands in the one file every other stack reads it back from. ROTATE_PICSURE_INTERNAL_TOKEN mints regardless and requires RENDER_DICTIONARY, RENDER_AUTH_HPDS, RENDER_OPEN_HPDS, RENDER_QUERY and RENDER_VISUALIZATION all true. ADOPT_PICSURE_INTERNAL_TOKEN overwrites this stack&apos;s selected copies with the dictionary&apos;s value, which is how every other stack follows a rotation. A selected template that does not reference the token stops the run: the value could not be read back afterwards, and each stack would end up minting its own. That is most likely a shared S3 template from before the token, so add the PICSURE_INTERNAL_TOKEN line to it. An infrastructure revision from before the token, one that declares no picsure_internal_token variable, renders as it did before unless a selected env file carries a token now. Then the run stops, because rendering that file would drop the token, and for the dictionary env it would drop it for every stack. When a file assigns the token twice the last assignment counts, as it does for the container, and a trailing carriage return is ignored.
+
+HPDS reads the dictionary at DICTIONARY_URL when it builds a PFB export, and hpds-auth.env.tftpl and hpds-open.env.tftpl set it. When the copy of one of those templates in the checked-out infrastructure revision sets DICTIONARY_URL and the shared S3 template this job would render from does not, the run stops before anything is minted or rendered, because every PFB export served from that env file would end in ERROR. Add the DICTIONARY_URL line to that S3 template through Download and Upload PIC-SURE Configuration Template. An infrastructure revision whose own copy does not set DICTIONARY_URL renders as it did before.
 
 The controller global include_open_hpds reaches Terraform whenever RENDER_GATEWAY or RENDER_QUERY is set. gateway.env takes GATEWAY_OPEN_ACCESS_ENABLED from it, and query.env names the open HPDS backend in HPDS_OPEN_URL only when it is true. A query.env rendered without it would drop the open backend, and /hpds/open would answer 503.
 
@@ -89,12 +91,12 @@ No secret reaches the console. Terraform masks the content of every env file tha
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
           <name>ROTATE_PICSURE_INTERNAL_TOKEN</name>
-          <description>Mint a new PICSURE_INTERNAL_TOKEN instead of reusing the rendered one. The dictionary and the query service check it, and auth HPDS and visualization present it, so this requires RENDER_DICTIONARY, RENDER_AUTH_HPDS, RENDER_QUERY and RENDER_VISUALIZATION all true, and all four must be redeployed afterwards. One value serves every stack: configs/picsure-dictionary/picsure-dictionary.env has no stack segment. Every other stack&apos;s auth HPDS, query service and visualization must then be rendered with ADOPT_PICSURE_INTERNAL_TOKEN and redeployed together with that stack&apos;s dictionary, or its PFB exports end in ERROR and its query service rejects visualization&apos;s /internal calls. Use the Rotate PIC-SURE Stack Secrets job with this box ticked; it does this stack&apos;s render and redeploys and names the follow-ups at the end.</description>
+          <description>Mint a new PICSURE_INTERNAL_TOKEN instead of reusing the rendered one. The dictionary and the query service check it, and auth HPDS, open HPDS and visualization present it, so this requires RENDER_DICTIONARY, RENDER_AUTH_HPDS, RENDER_OPEN_HPDS, RENDER_QUERY and RENDER_VISUALIZATION all true, and all five must be redeployed afterwards, the open HPDS where the environment has one. One value serves every stack: configs/picsure-dictionary/picsure-dictionary.env has no stack segment. Every other stack&apos;s auth HPDS, open HPDS, query service and visualization must then be rendered with ADOPT_PICSURE_INTERNAL_TOKEN and redeployed together with that stack&apos;s dictionary, or its PFB exports end in ERROR and its query service rejects visualization&apos;s /internal calls. Use the Rotate PIC-SURE Stack Secrets job with this box ticked; it does this stack&apos;s render and every redeploy except the open HPDS, and names the open HPDS deploy and the follow-ups at the end.</description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
           <name>ADOPT_PICSURE_INTERNAL_TOKEN</name>
-          <description>Take PICSURE_INTERNAL_TOKEN from the shared picsure-dictionary.env and overwrite this stack&apos;s selected copies with it, instead of aborting when they differ. Requires RENDER_AUTH_HPDS, RENDER_QUERY and RENDER_VISUALIZATION true for every copy that has to change, and each of those services must be redeployed afterwards. This is the follow-up for every other stack after a rotation. It cannot be combined with ROTATE_PICSURE_INTERNAL_TOKEN, and it aborts when the dictionary env holds no value to adopt.</description>
+          <description>Take PICSURE_INTERNAL_TOKEN from the shared picsure-dictionary.env and overwrite this stack&apos;s selected copies with it, instead of aborting when they differ. Requires RENDER_AUTH_HPDS, RENDER_OPEN_HPDS, RENDER_QUERY and RENDER_VISUALIZATION true for every copy that has to change, and each of those services must be redeployed afterwards. This is the follow-up for every other stack after a rotation. It cannot be combined with ROTATE_PICSURE_INTERNAL_TOKEN, and it aborts when the dictionary env holds no value to adopt.</description>
           <defaultValue>false</defaultValue>
         </hudson.model.BooleanParameterDefinition>
         <hudson.model.BooleanParameterDefinition>
@@ -221,11 +223,12 @@ if [ &quot;$render_logging&quot; = &quot;true&quot; ] || [ &quot;$render_gateway
 fi
 
 # PICSURE_INTERNAL_TOKEN is checked by the dictionary and the query service on /internal, and
-# presented by auth HPDS and visualization. picsure-dictionary.env has no stack segment, so it is
-# the one copy every stack reads. Each entry below is a per-stack consumer: the name of its render
-# flag, the flag&apos;s value, its rendered env object, and its template.
+# presented by auth HPDS, open HPDS and visualization. picsure-dictionary.env has no stack segment,
+# so it is the one copy every stack reads. Each entry below is a per-stack consumer: the name of
+# its render flag, the flag&apos;s value, its rendered env object, and its template.
 internal_token_stack_consumers=(
   &quot;RENDER_AUTH_HPDS|${render_auth_hpds}|configs/hpds/${TARGET_STACK}/auth-hpds.env|hpds-auth.env.tftpl&quot;
+  &quot;RENDER_OPEN_HPDS|${render_open_hpds}|configs/hpds/${TARGET_STACK}/open-hpds.env|hpds-open.env.tftpl&quot;
   &quot;RENDER_QUERY|${render_query}|configs/query/${TARGET_STACK}/query.env|query.env.tftpl&quot;
   &quot;RENDER_VISUALIZATION|${render_visualization}|configs/pic-sure-visualization/${TARGET_STACK}/visualization.env|visualization.env.tftpl&quot;
 )
@@ -264,12 +267,12 @@ if [ &quot;$rotate_logging_api_key&quot; = &quot;true&quot; ] &amp;&amp; [ &quot
   exit 1
 fi
 
-# The dictionary and the query service check PICSURE_INTERNAL_TOKEN, and auth HPDS and
+# The dictionary and the query service check PICSURE_INTERNAL_TOKEN, and auth HPDS, open HPDS and
 # visualization present it. A consumer left on the old value has its /internal calls rejected, or
 # rejects them: every PFB export on that stack ends in ERROR, and so does every /internal call
 # visualization makes to the query service.
 if [ &quot;$rotate_picsure_internal_token&quot; = &quot;true&quot; ] &amp;&amp; [ &quot;$all_internal_token_consumers_selected&quot; != &quot;true&quot; ]; then
-  echo &quot;Error: ROTATE_PICSURE_INTERNAL_TOKEN changes a value that the dictionary, auth HPDS, the query service and visualization share between them.&quot; &gt;&amp;2
+  echo &quot;Error: ROTATE_PICSURE_INTERNAL_TOKEN changes a value that the dictionary, auth HPDS, open HPDS, the query service and visualization share between them.&quot; &gt;&amp;2
   echo &quot;Set all of these true so they render together, then redeploy each: RENDER_DICTIONARY, ${internal_token_stack_flags}.&quot; &gt;&amp;2
   exit 1
 fi
@@ -404,6 +407,23 @@ resolve_template() {
   echo &quot;No S3 template found, using repo version of ${template_file}&quot;
 }
 
+resolve_hpds_template() {
+  local template_file=$1
+  local revision_sets_dictionary_url=false
+
+  if grep -q &apos;^DICTIONARY_URL=&apos; &quot;templates/${template_file}&quot;; then
+    revision_sets_dictionary_url=true
+  fi
+
+  resolve_template &quot;configs/hpds/templates&quot; &quot;$template_file&quot;
+
+  if [ &quot;$revision_sets_dictionary_url&quot; = &quot;true&quot; ] &amp;&amp; ! grep -q &apos;^DICTIONARY_URL=&apos; &quot;templates/${template_file}&quot;; then
+    echo &quot;Error: templates/${template_file} does not set DICTIONARY_URL, so the env file it renders would carry none. HPDS reads the dictionary at that URL when it builds a PFB export, and every PFB export served from that env file would end in ERROR.&quot; &gt;&amp;2
+    echo &quot;Infrastructure revision ${INFRASTRUCTURE_GIT_HASH:-} sets DICTIONARY_URL in its own copy of ${template_file}, so the template in use is the shared S3 template, and it predates DICTIONARY_URL. Add the DICTIONARY_URL line to s3://${stack_s3_bucket}/configs/hpds/templates/${template_file} through Download and Upload PIC-SURE Configuration Template, then re-run this job.&quot; &gt;&amp;2
+    exit 1
+  fi
+}
+
 if [ &quot;$render_gateway&quot; = &quot;true&quot; ]; then
   resolve_template &quot;configs/gateway/templates&quot; &quot;gateway.env.tftpl&quot;
 fi
@@ -417,11 +437,11 @@ if [ &quot;$render_query&quot; = &quot;true&quot; ]; then
 fi
 
 if [ &quot;$render_auth_hpds&quot; = &quot;true&quot; ]; then
-  resolve_template &quot;configs/hpds/templates&quot; &quot;hpds-auth.env.tftpl&quot;
+  resolve_hpds_template &quot;hpds-auth.env.tftpl&quot;
 fi
 
 if [ &quot;$render_open_hpds&quot; = &quot;true&quot; ]; then
-  resolve_template &quot;configs/hpds/templates&quot; &quot;hpds-open.env.tftpl&quot;
+  resolve_hpds_template &quot;hpds-open.env.tftpl&quot;
 fi
 
 if [ &quot;$render_visualization&quot; = &quot;true&quot; ]; then
@@ -896,7 +916,7 @@ if [ &quot;$resolve_internal_token&quot; = &quot;true&quot; ]; then
     picsure_internal_token=&quot;$generated_value&quot;
     picsure_internal_token_origin=generated
     if [ &quot;$rotate_picsure_internal_token&quot; != &quot;true&quot; ]; then
-      echo &quot;Warning: no rendered env file carried PICSURE_INTERNAL_TOKEN, so a new one was minted into the dictionary env that every stack shares. Redeploy the dictionary on every stack, and render and redeploy auth HPDS, the query service and visualization on every stack, before PFB exports and visualization&apos;s /internal calls to the query service can succeed.&quot; &gt;&amp;2
+      echo &quot;Warning: no rendered env file carried PICSURE_INTERNAL_TOKEN, so a new one was minted into the dictionary env that every stack shares. Redeploy the dictionary on every stack, and render and redeploy auth HPDS, open HPDS, the query service and visualization on every stack, before PFB exports and visualization&apos;s /internal calls to the query service can succeed.&quot; &gt;&amp;2
     fi
   fi
 
