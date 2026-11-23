@@ -13,6 +13,8 @@ LOGGING_API_KEY is one value for every stack. This job renders it into logging.e
 
 PICSURE_INTERNAL_TOKEN is also one value for every stack. The dictionary checks it on its /internal endpoints and auth HPDS presents it there. The query service checks it on its own /internal endpoints and visualization presents it there. This job therefore renders it into the stackless picsure-dictionary.env and into this stack&apos;s auth-hpds.env, query.env and visualization.env whenever RENDER_DICTIONARY, RENDER_AUTH_HPDS, RENDER_QUERY or RENDER_VISUALIZATION is set. When two of those files hold values that differ, the run aborts before Terraform. A run mints a value only when none of them holds one and RENDER_DICTIONARY is true, so that the new value lands in the one file every other stack reads it back from. ROTATE_PICSURE_INTERNAL_TOKEN mints regardless and requires RENDER_DICTIONARY, RENDER_AUTH_HPDS, RENDER_QUERY and RENDER_VISUALIZATION all true. ADOPT_PICSURE_INTERNAL_TOKEN overwrites this stack&apos;s selected copies with the dictionary&apos;s value, which is how every other stack follows a rotation. A selected template that does not reference the token stops the run: the value could not be read back afterwards, and each stack would end up minting its own. That is most likely a shared S3 template from before the token, so add the PICSURE_INTERNAL_TOKEN line to it. An infrastructure revision from before the token, one that declares no picsure_internal_token variable, renders as it did before unless a selected env file carries a token now. Then the run stops, because rendering that file would drop the token, and for the dictionary env it would drop it for every stack. When a file assigns the token twice the last assignment counts, as it does for the container, and a trailing carriage return is ignored.
 
+The controller global include_open_hpds reaches Terraform whenever RENDER_GATEWAY or RENDER_QUERY is set. gateway.env takes GATEWAY_OPEN_ACCESS_ENABLED from it, and query.env names the open HPDS backend in HPDS_OPEN_URL only when it is true. A query.env rendered without it would drop the open backend, and /hpds/open would answer 503.
+
 TARGET_STACK means what it says for six of the eight objects. picsure-dictionary.env and logging.env are the exceptions: their keys carry no stack segment, so every stack's deploy pulls those files and rendering either one reaches all of them at once.
 
 operations.env carries no database password. It names the AWS Secrets Manager MySQL driver and passes database_app_user_secret_name as the datasource username, so the operations service reads the rotating app-user password itself when it connects. The host is database_host_address, the same value PSAMA is built with.
@@ -952,10 +954,11 @@ apply_args=(
   -var=&quot;render_dictionary=${render_dictionary}&quot;
 )
 
-# include_open_hpds is read only by the gateway template, and its value comes from a Jenkins
-# global. Passing it on a non-gateway run would still reference that global, and set -u would
-# abort the run on a controller where the global is unset. The Terraform default is false.
-if [ &quot;$render_gateway&quot; = &quot;true&quot; ]; then
+# include_open_hpds is read by the gateway and query templates, and its value comes from a Jenkins
+# global. Passing it on a run that renders neither would still reference that global, and set -u
+# would abort the run on a controller where the global is unset. The Terraform default is false,
+# which leaves HPDS_OPEN_URL out of query.env.
+if [ &quot;$render_gateway&quot; = &quot;true&quot; ] || [ &quot;$render_query&quot; = &quot;true&quot; ]; then
   apply_args+=(-var=&quot;include_open_hpds=${include_open_hpds}&quot;)
 fi
 
